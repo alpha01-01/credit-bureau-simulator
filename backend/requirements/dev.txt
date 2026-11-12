@@ -1,0 +1,13 @@
+-r base.txt
+
+# Testing
+pytest==8.4.2
+pytest-django==4.14.0
+hypothesis==6.170.15
+
+# Quality
+ruff==0.17.5
+mypy==1.19.1
+django-stubs[compatible-mypy]==5.2.9
+djangorestframework-stubs[compatible-mypy]==3.16.9
+import-linter==2.16

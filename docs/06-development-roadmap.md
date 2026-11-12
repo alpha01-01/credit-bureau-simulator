@@ -1,914 +1,446 @@
-CREDIT BUREAU SIMULATOR
-DOCUMENT 06 — DEVELOPMENT ROADMAP, IMPLEMENTATION STRATEGY AND TESTING PLAN
+# CREDIT BUREAU SIMULATOR (SimB)
 
-Document ID: CBS-DRTP-001
-Version: 0.1
-Status: Initial Development Roadmap
-Project: Credit Bureau Simulator
-Primary Market: Ghana
-Backend: Django + Django REST Framework
-Frontend: React + Three.js / React Three Fiber
-Database: Microsoft SQL Server
-Development Approach: Incremental, test-driven where practical, Git-managed
+## DOCUMENT 06 — DEVELOPMENT ROADMAP, IMPLEMENTATION STRATEGY AND TESTING PLAN
 
-1. Document Purpose
+**Document ID:** CBS-DRTP-001
+**Version:** 0.2
+**Status:** Approved
+**Date:** 12 November 2026
+**Supersedes:** Version 0.1 (see Git history)
+**Depends on:** Documents 01, 03, 04, 05 and **07 (takes precedence)**
+**Team:** Project owner and Claude
 
-This document establishes the implementation roadmap for the Credit Bureau Simulator.
+---
 
-It converts the product requirements, functional specification, technical architecture, database design and simulation design into an actionable development plan.
+# 1. Purpose
 
-It defines:
+This document turns the approved design into an ordered build plan. It defines:
 
-Development phases.
-Implementation priorities.
-Technical milestones.
-Repository organization.
-Git workflow.
-Testing strategy.
-Deployment approach.
-Acceptance criteria.
-Project risks.
-Version 1 completion requirements.
+* The phases, and the increments inside each phase.
+* What "done" means for each increment.
+* Which reference material each increment depends on.
+* The technology stack as amended by Document 07.
+* Repository layout, Git practice and the testing strategy.
+* Risks, and the immediate next tasks.
 
-The objective is to build a working credit bureau simulation incrementally, ensuring that each major component is functional before expanding the system.
+Version 0.1 built the bureau module by module (organisation → providers → core DB → processing → … → simulation → UI → 3D). The game did not exist until Phase 8. Version 0.2 replaces that with a **walking skeleton**: a thin version of the whole loop, playable from the first weeks, which is then deepened.
 
-2. Development Philosophy
+---
 
-The project will follow six principles.
+# 2. Principles
 
-2.1 Build working systems before visual complexity
+**2.1 Playable early, deep later.**
+Every increment leaves the game in a state that can be run and looked at. Depth is added to a working loop, never to an isolated module.
 
-The first priority is a functioning bureau backend.
+**2.2 Thin slices through every layer.**
+An increment touches world, pipeline, simulation, finance and UI as needed to make one behaviour real end to end.
 
-The project should be able to receive synthetic submissions, validate records, identify duplicates, store accepted records and generate processing summaries before significant investment is made in the 3D office.
+**2.3 Quality is not deferred.**
+Each increment ships with its tests, its "Why?" drill-down and its audit trail. "Code exists" is not "done" (Section 11).
 
-2.2 Develop in small increments
+**2.4 Real rules, flagged assumptions.**
+Real-world practice is mirrored exactly (Document 07, D11). Until reference material arrives, placeholders are written as configuration, marked `ASSUMPTION`, and listed in an assumptions register so they can be replaced without code changes.
 
-Each phase should produce a working and testable outcome.
+**2.5 Determinism is a feature.**
+Same seed plus same actions gives the same game. This is protected by tests from the first increment.
 
-Avoid building the entire backend, frontend, finance system and 3D environment simultaneously.
+**2.6 The truth boundary is sacred.**
+Bureau modules never read the world layer (Document 07, Section 7.1). This is enforced by automated checks from the first increment that creates both.
 
-2.3 Maintain a single source of truth
+---
 
-The backend and SQL Server database are authoritative.
+# 3. Technology Stack (as amended)
 
-The frontend should display and interact with information supplied by backend services.
+| Layer | Choice | Notes |
+| --- | --- | --- |
+| Language (backend) | Python 3.12+ | |
+| Web framework | Django (current LTS) + Django REST Framework | |
+| Database | **PostgreSQL** (current stable) via psycopg 3 | D1. Row-level security reserved for the Analytics SQL console |
+| Data processing | pandas, NumPy | |
+| Machine learning | scikit-learn | Phase 3 |
+| Background work | Database-backed job table + worker management command | D2. Celery/Redis only if a measured workload needs them |
+| Simulation | Dedicated simulation worker process; deterministic tick engine | Document 07, Section 5.3 |
+| Frontend | React 19 + TypeScript, built with Vite | |
+| Styling | Tailwind CSS | |
+| Server state | TanStack Query (or equivalent) | Server is authoritative |
+| Charts | A single charting library chosen in Phase 0 | |
+| 3D (Phase 4) | Three.js via React Three Fiber, Drei | |
+| Testing | pytest, pytest-django, Hypothesis (property tests), Vitest, Playwright (added with S8) | |
+| Quality | ruff (lint + format), mypy (strict), oxlint, Prettier, import-linter | import-linter enforces module boundaries; oxlint replaced ESLint (Vite default, faster) |
+| Local environment | PostgreSQL in Docker Desktop (WSL2) or native Windows installer; Django and Vite run natively | Either PostgreSQL option is supported |
+| Version control | Git; GitHub remote when the owner chooses | |
 
-2.4 Preserve data integrity
+Exact versions are pinned during Phase 0 and recorded in the repository.
 
-Credit information, financial transactions, simulation events and audit records must follow defined business rules.
+---
 
-2.5 Use Git continuously
+# 4. Phase Overview
 
-Every meaningful implementation milestone should be committed.
+| Phase | Name | Outcome | Estimate |
+| --- | --- | --- | --- |
+| 0 | Foundations | Repository, tooling, empty app running end to end, CI-style checks locally | 1–2 weeks |
+| 1 | Walking skeleton | One full game month playable end to end through a basic UI | 6–8 weeks |
+| 2 | First playable slice | Document 07, Section 13: polished, balanced, missions M1–M6 | about 8–10 weeks |
+| 3 | Version 1 breadth | Analytics, scenarios, difficulty, economy, more playable roles, M7–M8 | 4–6 months |
+| 4 | The office | 3D isometric office tied to live simulation state | 2–3 months |
+| 5 | Release preparation | Hardening, external playtesting, packaging | 1 month |
 
-The repository must show the development history of the project.
+**Total to Version 1: about 11–15 months.** The first playable slice lands at about month 4–5.
 
-2.6 Test as features are developed
+Estimates assume steady weekly progress and timely reference material. The real constraint is review and play-testing time, not code volume. Estimates are revisited at the end of each phase.
 
-Testing should not be postponed until the end of the project.
+---
 
-Each module should have appropriate unit, integration and API tests.
+# 5. Phase 0 — Foundations (1–2 weeks)
 
-3. Implementation Strategy
+**Objective:** a clean, reproducible project in which every later increment can be built and tested.
 
-The project will use a modular monolith.
+| # | Task |
+| --- | --- |
+| 0.1 | Repository layout (Section 10); README with setup steps for Windows |
+| 0.2 | PostgreSQL running locally; `.env.example`; settings split (base / dev / test) |
+| 0.3 | Django project with DRF; custom user model **before** the first migration |
+| 0.4 | Module skeletons: `world`, `simulation`, `bureau` sub-apps, `finance`, `org`, `audit`, `workitems` (Section 10) |
+| 0.5 | import-linter contract: no bureau module may import `world` |
+| 0.6 | React + TypeScript + Vite + Tailwind shell; API client; health-check page |
+| 0.7 | Test runners (pytest, Vitest), linters, formatters; a single `check` script that runs them all |
+| 0.8 | Pre-commit hook running the fast checks |
+| 0.9 | Assumptions register (`docs/assumptions.md`) |
+| 0.10 | Choose and pin all versions |
 
-The backend will initially run as one Django application with logically separated modules.
+**Exit criteria**
 
-The frontend will be a separate React application.
+* A fresh clone runs on Windows by following the README.
+* `check` passes: lint, type check, boundary contract, backend and frontend tests.
+* The frontend displays data fetched from the backend, read from PostgreSQL.
 
-SQL Server will hold the main operational database.
+---
 
-Redis and Celery will support background processing.
+# 6. Phase 1 — Walking Skeleton (6–8 weeks)
 
-Docker will provide a reproducible development environment.
+**Objective:** one complete game month, end to end, through a basic UI. Everything is thin; nothing is fake.
 
-3.1 Development sequence
+Each increment is demoable on its own.
 
-The preferred implementation sequence is:
+## S1 — World generator v0
 
-Development environment and repository.
-Django project foundation.
-Database connectivity and organization management.
-User authentication and role-based access.
-Provider and subscriber management.
-Credit bureau database.
-Data submission and processing pipeline.
-Credit reports and enquiries.
-Financial accounting.
-Analytics and scoring.
-Simulation engine.
-Employee and task management.
-React dashboard.
-3D office environment.
-Integration and system testing.
-Deployment and release preparation.
-
-Some frontend work can proceed alongside backend development once stable APIs exist.
-
-4. Project Development Phases
-PHASE 0 — Project Preparation
-
-Objective: Establish the project workspace and development standards.
-
-Activities
-Finalize initial documentation.
-Create GitHub repository.
-Establish project directory structure.
-Install required development tools.
-Configure Python environment.
-Configure Node.js environment.
-Configure SQL Server.
-Configure Docker.
-Establish development and test environments.
-Deliverables
-Git repository.
-Project README.
-Environment configuration.
-Initial backend project.
-Initial frontend project.
-Database connection.
-Development instructions.
-Exit criteria
-Backend starts successfully.
-Frontend starts successfully.
-SQL Server connection works.
-Git repository is initialized.
-Environment variables are separated from source code.
-PHASE 1 — Backend Foundation
-
-Objective: Build the backend foundation and organization structure.
-
-Django applications
-
-Initial applications:
-
-accounts
-organizations
-employees
-departments
-audit
-Activities
-Create Django project.
-Configure SQL Server connectivity.
-Configure REST Framework.
-Implement custom user model before initial migrations.
-Implement organization management.
-Implement department management.
-Implement employee management.
-Implement authentication.
-Implement role-based permissions.
-Establish audit event infrastructure.
-Deliverables
-Working Django API.
-Authentication endpoints.
-Organization endpoints.
-Department endpoints.
-Employee endpoints.
-Initial database migrations.
-Unit and API tests.
-Exit criteria
-
-A user can authenticate, access permitted organization information and interact with organization and employee records through the API.
-
-PHASE 2 — Provider and Subscriber Management
-
-Objective: Establish institutional relationships.
-
-Applications
-providers
-sales
-products
-Activities
-Create provider institutions.
-Create branches.
-Manage provider onboarding.
-Create subscribers.
-Manage subscriber agreements.
-Create product catalogue.
-Establish product pricing.
-Record contracts.
-Deliverables
-Provider management API.
-Subscriber management API.
-Product catalogue.
-Contract management.
-Initial synthetic institution records.
-Exit criteria
-
-The bureau can onboard a synthetic institution, register it as a provider or subscriber, and manage its products and contractual relationships.
-
-PHASE 3 — Core Credit Bureau Database
-
-Objective: Establish the customer, facility and historical credit information model.
-
-Applications
-bureau_core
-referencing
-Activities
-Implement customer master records.
-Implement individual profiles.
-Implement business profiles.
-Implement customer identifiers.
-Implement customer contact records.
-Implement credit accounts.
-Implement monthly account observations.
-Implement repayment transactions.
-Implement customer matching.
-Implement account matching.
-Implement historical record handling.
-Deliverables
-Customer database.
-Business database.
-Credit account database.
-Account observation history.
-Referencing services.
-Synthetic historical credit records.
-Exit criteria
-
-A customer can hold multiple credit accounts, and each account can hold multiple reporting-period observations without creating a new account every month.
-
-PHASE 4 — Data Submission and Processing Engine
-
-Objective: Build the first major operational workflow.
-
-This is the most important early project milestone.
-
-Applications
-submissions
-data_quality
-data_processing
-Activities
-Receive synthetic Excel or CSV files.
-Register submissions.
-Store original files.
-Validate file structures.
-Validate mandatory fields.
-Clean selected fields.
-Detect duplicates.
-Reference existing customers.
-Reference existing credit accounts.
-Separate accepted and unloadable records.
-Load accepted records.
-Generate processing summaries.
-Preserve processing logs.
-Deliverables
-Submission register.
-File upload interface/API.
-Processing engine.
-Validation framework.
-Cleansing rules.
-Duplicate detection.
-Customer and account referencing.
-Unloadable record management.
-Processing reports.
-Exit criteria
-
-A synthetic lender file can pass through the entire processing workflow, with accepted and rejected records traceable to the original submission.
-
-The system must also be able to process a later monthly file containing existing accounts and create new observations rather than duplicate account masters.
-
-PHASE 5 — Credit Reports and Enquiries
-
-Objective: Turn stored credit data into bureau products.
-
-Applications
-products
-bureau_core
-sales
-Activities
-Individual credit report generation.
-Business credit report generation.
-Batch enquiry processing.
-Customer search.
-Account history retrieval.
-Enquiry logging.
-Consent and authorization workflow simulation.
-Product usage recording.
-Deliverables
-Individual credit report.
-Business credit report.
-Batch enquiry endpoint.
-Report history.
-Enquiry register.
-Exit criteria
-
-An authorized subscriber can request a synthetic customer report and receive a response generated from stored bureau records.
-
-5. PHASE 6 — Finance and Accounting
-
-Objective: Establish an operational accounting system.
-
-Application
-finance
-Activities
-Chart of accounts.
-Journal entries.
-Journal lines.
-Double-entry validation.
-Posting and reversal.
-Customer invoicing.
-Payment recording.
-Accounts receivable.
-Accounts payable.
-Payroll accounting.
-Financial statements.
-Deliverables
-General ledger.
-Trial balance.
-Income statement.
-Balance sheet.
-Cash flow reporting.
-Invoice and payment management.
-Exit criteria
-
-Business transactions generate accounting entries, and all posted journal entries balance.
-
-Financial reports must derive from posted ledger transactions.
-
-6. PHASE 7 — Analytics and Credit Scoring
-
-Objective: Build actual analytical capabilities using synthetic bureau data.
-
-Applications
-analytics
-scoring
-Activities
-Build analytical datasets.
-Develop portfolio summaries.
-Calculate delinquency measures.
-Calculate default indicators.
-Engineer credit risk features.
-Train baseline models.
-Evaluate models.
-Implement a logistic regression scorecard.
-Store model versions.
-Store score results.
-Perform fairness analysis.
-Deliverables
-Portfolio analytics.
-Credit risk reports.
-Model training pipeline.
-Model evaluation reports.
-Versioned scorecard.
-Score result history.
-Exit criteria
-
-The system can train and evaluate a model using synthetic historical data, preserve its version and produce reproducible scores.
-
-Sensitive demographic attributes must not automatically be used as scoring inputs. They may be considered in controlled fairness audits.
-
-7. PHASE 8 — Simulation Engine
-
-Objective: Convert the operational bureau into a time-based business simulation.
-
-Application
-simulation
-Activities
-Implement game sessions.
-Implement startup and established scenarios.
-Implement difficulty settings.
-Implement simulation clock.
-Implement scheduled events.
-Implement task management.
-Implement task dependencies.
-Implement employee states.
-Implement AI employee scheduling.
-Implement economic variables.
-Implement objectives and progression.
-Deliverables
-Simulation engine.
-Simulation clock.
-Task scheduler.
-Employee task assignment.
-Event system.
-Scenario configuration.
-Objective management.
-Exit criteria
-
-The player can advance simulation time, trigger scheduled activities and observe backend-controlled business changes.
-
-8. PHASE 9 — Department Applications and Management Dashboard
-
-Objective: Provide usable interfaces for the bureau's departments.
-
-Frontend
-
-React and Tailwind CSS.
-
-Activities
-Authentication screens.
-CEO dashboard.
-Department navigation.
-Employee management screens.
-Provider management screens.
-Submission management screens.
-Data quality screens.
-Credit database screens.
-Finance screens.
-Analytics screens.
-Sales and subscriber screens.
-Compliance screens.
-Task management screens.
-Deliverables
-Working management dashboard.
-Department applications.
-API integrations.
-Role-specific navigation.
-Notifications and task views.
-Exit criteria
-
-The player can perform major business operations through the frontend without relying on direct database manipulation.
-
-9. PHASE 10 — Three-Dimensional Office
-
-Objective: Build the interactive office environment.
-
-Technologies
-Three.js.
-React Three Fiber.
-Drei where appropriate.
-Tailwind CSS for surrounding application UI.
-Activities
-Build office environment.
-Create floors and rooms.
-Add departments.
-Add desks and workstations.
-Add employees.
-Implement navigation.
-Implement object selection.
-Connect office objects to backend records.
-Display employee states.
-Display department activity.
-Add visual notifications.
-Deliverables
-Three-floor office.
-Interactive departments.
-Employee representations.
-Office navigation.
-Workstation interactions.
-Department application integration.
-Exit criteria
-
-The player can navigate the office and open actual departmental applications through relevant office objects.
-
-10. PHASE 11 — Integration and Release Preparation
-
-Objective: Verify that the major systems operate together.
-
-Activities
-Backend integration tests.
-Frontend integration tests.
-End-to-end testing.
-Performance testing.
-Security review.
-Database integrity review.
-Backup and restoration testing.
-Error handling review.
-User experience review.
-Deployment preparation.
-Deliverables
-Integrated Version 1 application.
-Test reports.
-Deployment configuration.
-Release notes.
-User documentation.
-Exit criteria
-
-The system meets the agreed Version 1 acceptance criteria and can be deployed into a controlled environment.
-
-11. Recommended First Working Milestone
-
-The first major demonstration should be:
-
-Monthly Credit Data Submission and Processing
-
-The demonstration should follow this workflow:
-
-A synthetic institution is registered.
-The institution submits a synthetic monthly file.
-The system registers the file.
-The system validates its structure.
-The system checks mandatory fields.
-The system cleans selected fields.
-The system detects duplicates.
-The system references existing customers.
-The system references existing accounts.
-The system identifies unloadable records.
-The system loads accepted records.
-The system generates a processing summary.
-The system preserves source lineage.
-A subsequent monthly file updates the historical observation timeline.
-
-This milestone will prove that the simulator has a functioning credit bureau core.
-
-12. Repository Structure
-
-The initial repository should use a clear separation between backend, frontend, documentation and deployment configuration.
-
-text
-credit-bureau-simulator/
-│
+* Seeded generation of individuals, businesses, lenders and loans (Document 07, Section 7).
+* Monthly loan evolution using the missed-payment hazard model; arrears, days past due, write-off.
+* Generation of 36 months of history for the Established scenario.
+* Command-line tool: `generate_world --seed N --scale default`.
+
+**Done when:** two runs with the same seed produce identical worlds; default rates over time sit in a plausible configured band; generation at default scale completes in a reasonable time on a laptop (target set in Phase 0).
+
+## S2 — Provider files
+
+* Data Quality Profile per provider (Document 07, Section 7.3), as configuration.
+* File writer: each provider's true book → noisy CSV/XLSX in the provider's template.
+* A defect ledger in the world layer recording every injected defect and the correct value.
+
+**Depends on:** R1, R2 (templates, code lists). Until available, a placeholder template marked `ASSUMPTION`.
+
+**Done when:** every defect in a file is recorded in the defect ledger, and a clean profile produces a file that matches the truth exactly.
+
+## S3 — Pipeline v0
+
+* Submission register, raw file storage with checksum, staging.
+* Template validation, mandatory-field validation, one cleansing rule (phone normalisation), exact duplicate detection.
+* Exact-identifier customer referencing (using `provider_customer_link`) and account referencing (unique institution + account number).
+* Accepted records loaded to `core.*`; unloadables recorded with reasons; processing run summary.
+
+**Depends on:** R1–R3 for real rules; placeholders until then.
+
+**Done when:** month 1 loads; month 2 for the same provider creates new observations on existing accounts, not new accounts; every loaded observation traces to its source file and row; processing totals reconcile (received = accepted + unloadable + duplicate).
+
+## S4 — Clock and tick engine
+
+* Game record; 15-minute ticks; working-day calendar; skip nights, weekends and holidays.
+* Seeded RNG streams per `(world_seed, tick, stream)`.
+* Idempotent ticks; scheduled events (provider file arrival on its submission day, late arrival per profile).
+* API: state, pause/resume, speed, advance one hour / one day / to next event.
+
+**Done when:** a replay test runs a month twice from the same seed and action log and produces identical database state (compared by checksums of ordered table contents).
+
+## S5 — Work items and employees v0
+
+* Generic work-item framework: type, evidence, allowed decisions, correct answer (from the world, never shown to the bureau), assignee, outcome.
+* Two work-item types: **uncertain match review** and **unloadable record triage**.
+* Employees with skill per work-item type, morale, workload; AI resolution model (Document 07, Section 8.3).
+* Player can resolve the same items.
+* Decisions are applied to the bureau database; every AI decision stores its explanation.
+
+**Done when:** a highly skilled employee is measurably more accurate than a junior one over a large sample; wrong decisions really produce false merges or wrongly rejected records in the bureau view.
+
+## S6 — Enquiries and demand v0
+
+* World lenders generate loan applications from their origination volume.
+* Subscribers decide whether to enquire (Document 07, Section 6.4, simplified).
+* Enquiry → bureau search → hit / useful / correct outcome, measured against the truth.
+* Basic individual credit report (structure per R9 when available).
+* Usage records for billing.
+
+**Done when:** enquiry volume responds to coverage and price in the expected direction; every enquiry is logged with its purpose.
+
+## S7 — Finance v0
+
+* Chart of accounts; journal posting service enforcing balance inside a transaction; reversal instead of editing.
+* Automatic posting from business events: usage invoices at month-end, payroll, rent, customer payments.
+* Trial balance, income statement, balance sheet, cash position.
+
+**Done when:** every posted journal balances; statements derive only from posted entries; a full month's events produce the expected ledger.
+
+## S8 — Thin UI
+
+* Time controls, morning briefing and inbox.
+* CEO dashboard (revenue, cash, backlog, coverage, hit rate).
+* Submissions register and processing run detail.
+* Work queues with match review and unloadable triage screens.
+* Customer and account lookup (the bureau view).
+* Ledger and statements.
+* "Why?" drill-down on every figure shown.
+
+**Phase 1 exit criteria**
+
+1. A player can start an Established game and play one full month through the UI.
+2. Five providers submit; files are processed; work items are resolved by employees and by the player.
+3. Subscribers make enquiries; usage is billed; payroll and rent are posted; statements are correct.
+4. The month replays identically from seed plus action log.
+5. The truth-boundary contract has never been violated.
+6. All checks pass.
+
+At the end of Phase 1 the team plays it and writes down what is fun, what is tedious and what is confusing. That list shapes Phase 2.
+
+---
+
+# 7. Phase 2 — First Playable Slice (about 8–10 weeks)
+
+**Objective:** Document 07, Section 13. A complete, polished and balanced experience within a narrow scope.
+
+| Area | Work |
+| --- | --- |
+| Real-world fidelity | Replace placeholders with real templates, code lists, validation and error codes, matching practice and SLAs (R1–R5). Assumptions register shrinks. |
+| Data Operations depth | Fuzzy matching; near-duplicates; template-mapping work items; basic rule editor; matching thresholds; tooling levels (Document 07, Section 8.2) |
+| Consequences | Disputes from wrong reports; dispute work items with deadlines (L.I. 2394, R7); consequence-chain recording |
+| Flywheel | Data asset metrics (coverage, depth, accuracy estimate, freshness, identity integrity); three-audience reputation; subscriber renewal and churn |
+| Providers | Feedback reports, provider training, SLA penalties; Data Quality Profiles that respond to them |
+| Managed systems | Sales (pipeline, pricing per R8, proposals); HR (hire, train, assign); IT (capacity, incident events with responses) |
+| Pressure and failure | Cash warnings and overdraft; regulator escalation ladder; board confidence |
+| Learning | Missions M1–M6; mission debriefs; monthly Data Quality Review; Bureau Handbook v1 with explicit citations (R6, R7), reviewed by the owner |
+| Balancing tools | Headless simulation runs with scripted strategies ("strict quality", "fast coverage", "cheap staffing") to compare outcomes across many seeds |
+| Polish | Onboarding flow, empty states, error states, performance, accessibility basics |
+
+**Exit criteria:** Document 07, Section 13.2, in full.
+
+---
+
+# 8. Phase 3 — Version 1 Breadth (4–6 months)
+
+Ordered by value; the order may change after Phase 2 playtesting.
+
+1. **Analytics (Playable):** portfolio analytics; scorecard workbench (dataset selection, feature engineering, logistic regression, scorecard scaling, validation with AUC/Gini/KS, deployment, monitoring) using the confirmed 90+ DPD in 12 months definition (D13); read-only SQL console isolated per game with PostgreSQL row-level security; fairness checks on restricted attributes.
+2. **Credit score product:** scores in reports; pricing; demand effect.
+3. **Scenarios and difficulty:** Sandbox, Startup Bureau, difficulty parameter sets, assistance toggles.
+4. **Economy:** progressive variables (Document 05, Section 13) driving `macro_stress` and lending volume.
+5. **Compliance (Playable):** access reviews, audit findings, consent and permissible-purpose checks (R12), retention rules (R11).
+6. **Finance (Playable):** reconciliation, payables, budgets versus actuals.
+7. **Sales (Playable):** prospecting, negotiation, contract terms.
+8. **Customer Support and Product Development (Managed).**
+9. **Missions M7–M8; Handbook v2.**
+10. **Business credit reports and batch enquiries.**
+
+**Exit criteria:** PRD (Document 01) Section 25 success criteria 1, 3–15, with the department depth tiers of Document 07, Section 9.
+
+---
+
+# 9. Phases 4 and 5
+
+## Phase 4 — The Office (2–3 months)
+
+* Isometric three-floor office in React Three Fiber with a simple, consistent low-poly art style.
+* Employees shown at desks, in meetings and moving, driven only by simulation state.
+* Selecting desks, rooms, server racks and people opens the relevant application panel.
+* Performance budget for ordinary laptops; the 2D interface remains fully playable without the office.
+
+## Phase 5 — Release Preparation (about 1 month)
+
+* External playtesting (D16) and fixes.
+* Security review, backup and restore test, error handling review.
+* Packaging and deployment to a controlled environment.
+* Final title (D15) and trademark check.
+* Player-facing documentation.
+
+---
+
+# 10. Repository Structure
+
+```text
+Bureau_Sim/
 ├── backend/
-│   ├── config/
+│   ├── config/                 settings (base, dev, test), urls
 │   ├── apps/
-│   │   ├── accounts/
-│   │   ├── organizations/
-│   │   ├── employees/
-│   │   ├── departments/
-│   │   ├── providers/
-│   │   ├── subscribers/
-│   │   ├── submissions/
-│   │   ├── data_quality/
-│   │   ├── data_processing/
-│   │   ├── referencing/
-│   │   ├── bureau_core/
-│   │   ├── analytics/
-│   │   ├── scoring/
-│   │   ├── products/
-│   │   ├── sales/
-│   │   ├── finance/
-│   │   ├── infrastructure/
-│   │   ├── compliance/
-│   │   ├── support/
-│   │   ├── simulation/
-│   │   ├── tasks/
-│   │   ├── audit/
-│   │   └── notifications/
-│   │
+│   │   ├── accounts/           users, roles, membership
+│   │   ├── org/                organisation, departments, employees
+│   │   ├── world/              GROUND TRUTH — borrowers, loans, economy,
+│   │   │                       provider data-quality profiles, defect ledger
+│   │   ├── simulation/         game, clock, ticks, events, scenarios, missions
+│   │   ├── workitems/          work-item framework, AI resolution
+│   │   ├── bureau/             the bureau's own systems:
+│   │   │   ├── providers/      institutions, branches, templates
+│   │   │   ├── submissions/    register, files, processing runs
+│   │   │   ├── quality/        validation, cleansing, unloadables
+│   │   │   ├── referencing/    customer and account matching
+│   │   │   ├── core/           customers, accounts, observations, enquiries
+│   │   │   └── reports/        credit reports
+│   │   ├── commercial/         subscribers, products, prices, contracts, usage
+│   │   ├── finance/            ledger, invoices, payments, statements
+│   │   ├── analytics/          (Phase 3) datasets, models, scores
+│   │   └── audit/              audit events
 │   ├── tests/
-│   ├── manage.py
-│   └── requirements.txt
-│
+│   └── manage.py
 ├── frontend/
-│   ├── public/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── features/
-│   │   ├── pages/
-│   │   ├── layouts/
-│   │   ├── office3d/
-│   │   ├── services/
-│   │   ├── hooks/
-│   │   ├── context/
-│   │   └── assets/
-│   └── package.json
-│
-├── database/
-│   ├── scripts/
-│   ├── seed_data/
-│   └── documentation/
-│
+│   └── src/
+│       ├── app/                shell, routing, time controls
+│       ├── features/           one folder per area (dataops, finance, …)
+│       ├── components/         shared UI
+│       ├── api/                typed API client
+│       └── office3d/           (Phase 4)
 ├── docs/
-│   ├── 01-product-requirements.md
-│   ├── 02-functional-specification.md
-│   ├── 03-technical-architecture.md
-│   ├── 04-database-design.md
-│   ├── 05-game-world-simulation.md
-│   └── 06-development-roadmap.md
-│
-├── infrastructure/
-│   ├── docker/
-│   └── deployment/
-│
-├── scripts/
+│   ├── 01 … 07                 design documents
+│   ├── assumptions.md          assumptions register
+│   └── references/             source material (private/ is ignored)
+├── scripts/                    check, setup and utility scripts
+├── docker-compose.yml          PostgreSQL (optional)
 ├── .env.example
-├── .gitignore
-├── docker-compose.yml
 └── README.md
+```
 
+**Boundary rules (enforced by import-linter):**
 
-The structure may be adjusted as implementation reveals better boundaries.
+* No module under `bureau/`, `commercial/`, `finance/` or `analytics/` may import `world`.
+* Only `simulation` and `workitems` may read `world`, and only to drive the world and to score decisions.
+* Modules talk to each other through service functions, not each other's models.
 
-13. Git and Version Control Strategy
+---
 
-Git will be used throughout development.
+# 11. Definition of Done
 
-The repository should preserve meaningful implementation history.
+An increment is done only when all of the following hold:
 
-13.1 Branching
+1. Its stated "done when" conditions are demonstrated.
+2. Unit and integration tests cover its rules, including failure paths.
+3. Every figure it adds to the UI has a working "Why?" drill-down.
+4. Significant actions write audit events.
+5. Any new `ASSUMPTION` is listed in the assumptions register.
+6. Determinism and boundary checks still pass.
+7. The `check` script passes.
+8. It has been played or exercised by the team, not only tested.
+9. It is committed with a clear message.
 
-Recommended branches:
+---
 
-main: stable and tested work.
-develop: integrated development work.
-feature/*: individual features.
-fix/*: bug fixes.
-docs/*: documentation changes.
+# 12. Testing Strategy
 
-For a small development team, avoid excessive branching complexity.
+| Level | What it covers | Examples |
+| --- | --- | --- |
+| Unit | Single rules and functions | Phone normalisation, date parsing, journal balancing, P(correct) formula |
+| Property | Rules that must hold for any input | Cleansing never changes a valid value; processing totals always reconcile |
+| Integration | Module interactions | File → pipeline → `core.*`; month-end → invoices → ledger |
+| API | Contracts, permissions, organisation isolation | A player cannot read another game's records |
+| Simulation | Whole-system behaviour over time | Replay determinism; invariants checked after every tick; golden-month snapshot |
+| Truth scoring | Bureau accuracy against the world | False-merge and false-split rates computed correctly |
+| Balance | Game design, not correctness | Headless strategy runs across many seeds; no single dominant strategy |
+| Frontend | Components and flows | Vitest for logic; Playwright for key journeys |
+| End to end | Complete journeys | Start game → process month → resolve items → close month |
 
-13.2 Commit conventions
+**Invariants checked after every tick in test runs:**
 
-Use descriptive commit messages.
+* Every observation has source lineage.
+* At most one current observation per account and reporting date.
+* Every posted journal balances; the trial balance balances.
+* No bureau table references a world identifier.
+* Task and work-item states are valid.
 
-Examples:
+**Determinism rules for all code:**
 
-text
-docs: add product requirements document
-docs: add functional specification
-docs: add technical architecture
-docs: add database design
-feat: initialize django backend
-feat: configure sql server connection
-feat: implement organization model
-feat: add provider registration endpoint
-feat: implement submission register
-feat: add structural validation service
-test: add submission validation tests
-fix: correct monthly account referencing
+* All randomness comes from the seeded streams; never the global random module, `uuid4` for logic, or wall-clock time.
+* Every query whose order affects results has an explicit `ORDER BY`.
+* Money uses `Decimal`; never floating point.
 
-13.3 Commit frequency
+---
 
-Commit after each meaningful unit of work.
+# 13. Reference Material Dependencies
 
-Examples:
+Work does not stop for missing material; placeholders are used and flagged. But real rules must arrive before each phase exits.
 
-Initial project setup.
-A completed model and migration.
-A completed API endpoint.
-A completed processing service.
-A completed test suite.
-A completed frontend feature.
+| Material (see `docs/references/`) | Needed by | Blocks exit of |
+| --- | --- | --- |
+| R1 Templates, R2 Code lists | S2, S3 | Phase 2 |
+| R3 Validation and error codes | S3 | Phase 2 |
+| R4 Matching practice | S5 | Phase 2 |
+| R5 Submission calendar and SLAs | S4 | Phase 2 |
+| R6 Act 726, R7 L.I. 2394 | Disputes, Handbook | Phase 2 |
+| R8 Pricing and contracts | S6, S7 | Phase 2 |
+| R9 Report layouts | S6 | Phase 3 |
+| R10–R16 | Phase 3 features | Phase 3 / Phase 5 |
 
-Do not wait until an entire phase is finished before committing.
+---
 
-13.4 Repository protection
-Never commit .env files.
-Never commit credentials.
-Never commit real customer data.
-Never commit production database backups.
-Exclude generated and temporary files.
-Use synthetic data for demonstrations.
-Review changes before merging into main.
-14. Testing Strategy
+# 14. Git Practice
 
-Testing will be integrated into each development phase.
+* **Branches:** `main` is always working. Short-lived branches per increment (`feat/s3-pipeline`, `fix/…`, `docs/…`), merged when the Definition of Done is met. No `develop` branch for a two-person team.
+* **Commits:** small and descriptive, using prefixes `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`.
+* **Tags:** each increment and phase is tagged when done (`s1`, `s2`, …, `phase-1`, `slice-1`).
+* **Never commit:** `.env` files, credentials, real customer data, database dumps, or anything in `docs/references/private/`.
+* **Remote:** a GitHub repository is added when the owner decides; until then the local repository is the source of truth and should be backed up.
 
-14.1 Unit testing
+---
 
-Test individual functions and services.
+# 15. Progress Tracking
 
-Examples:
+Progress is tracked in `docs/progress.md`, one line per increment:
 
-Customer identifier normalization.
-Phone number validation.
-Date validation.
-Duplicate detection.
-Account matching.
-Financial balance validation.
-Simulation time calculations.
-14.2 Integration testing
+| Increment | Status | Started | Done | Notes |
+| --- | --- | --- | --- | --- |
 
-Test interactions between modules.
+Status values: Not started, In progress, In review, Blocked, Done.
 
-Examples:
+At the end of each phase, a short review records: what was built, what playing it revealed, estimate accuracy, and changes to the plan.
 
-Submission registration and file storage.
-Processing and unloadable record creation.
-Customer referencing and account loading.
-Invoice generation and journal posting.
-Simulation tasks and employee assignments.
-14.3 API testing
+---
 
-Test:
+# 16. Risk Register
 
-Authentication.
-Permissions.
-Request validation.
-Response formats.
-Error handling.
-Pagination.
-Organization-level data isolation.
-14.4 Frontend testing
-
-Test:
-
-Navigation.
-Forms.
-API interactions.
-Role-specific screens.
-Error states.
-Dashboard calculations.
-14.5 End-to-end testing
-
-Test complete business workflows.
-
-Example:
-
-Provider submission → validation → cleansing → referencing → loading → credit report generation.
-
-14.6 Data integrity testing
-
-The following must always hold:
-
-Every credit account references a valid customer.
-Every account observation references a valid account.
-An account cannot have duplicate accepted observations for the same reporting date.
-Every accepted observation has source lineage.
-Every posted journal balances.
-Historical records are preserved.
-Unauthorized users cannot access another organization's records.
-15. Synthetic Test Data Strategy
-
-All test data must be synthetic.
-
-The project should maintain reusable datasets for:
-
-Individual customers.
-Business customers.
-Customer identifiers.
-Financial institutions.
-Branches.
-Credit facilities.
-Monthly observations.
-Repayment transactions.
-Unloadable records.
-Duplicate records.
-Enquiries.
-
-The test datasets should include both valid and intentionally problematic records.
-
-Examples of test scenarios:
-
-Missing customer identifier.
-Invalid phone number.
-Duplicate customer.
-Duplicate account.
-Existing account with a new reporting month.
-Account with a changed outstanding balance.
-Written-off facility.
-Restructured facility.
-Business customer with multiple identifiers.
-Incorrect reporting period.
-
-Test fixtures should be deterministic so that failures can be reproduced.
-
-16. Performance and Reliability
-
-Performance should be measured rather than assumed.
-
-Areas to monitor:
-
-Submission processing duration.
-Number of records processed per minute.
-Database query duration.
-API response time.
-Background task duration.
-Memory consumption.
-Frontend loading time.
-3D rendering performance.
-
-Large files should be processed asynchronously where appropriate.
-
-Database queries should use appropriate indexes and pagination.
-
-The system should handle failed background tasks without silently losing work or creating duplicate business transactions.
-
-17. Security and Operational Controls
-
-Development must include:
-
-Authentication.
-Role-based authorization.
-Organization-level access control.
-Input validation.
-Safe file upload handling.
-Audit logging.
-Secure environment configuration.
-Database backup procedures.
-Error logging.
-Controlled access to sensitive synthetic records.
-
-The project should document its security limitations and avoid presenting the simulator as a certified production credit bureau.
-
-18. Deployment Strategy
-
-The first deployment should be a controlled development or demonstration environment.
-
-Recommended services:
-
-Django backend.
-React frontend.
-Microsoft SQL Server.
-Redis.
-Celery worker.
-Celery scheduler where required.
-File storage.
-Reverse proxy where appropriate.
-
-Docker should be used to standardize the services that can be containerized.
-
-SQL Server licensing, hosting requirements and the chosen operating environment must be evaluated before selecting a production deployment configuration.
-
-19. Project Risk Register
-Risk	Potential impact	Mitigation
-Excessive scope	Delayed implementation	Build in phases
-Poor database design	Rework and data inconsistencies	Validate core data model early
-SQL Server integration issues	Development delays	Test Django backend compatibility early
-Overinvestment in 3D	Delayed business functionality	Build operational workflows first
-Weak data matching	Incorrect bureau records	Use explicit matching rules and review queues
-Financial inconsistencies	Incorrect financial reports	Enforce transactional double-entry controls
-Uncontrolled simulation events	Unreliable game state	Use backend-controlled events and idempotency
-Insufficient testing	Hidden defects	Test continuously
-Poor Git discipline	Difficult recovery and collaboration	Commit small, meaningful changes
-Excessive AI complexity	Unnecessary development cost	Start with deterministic employee behavior
-20. Development Progress Tracking
-
-Each phase should have:
-
-A defined objective.
-Assigned tasks.
-Deliverables.
-Tests.
-Acceptance criteria.
-Git commits.
-Completion status.
-
-Suggested status values:
-
-Not Started.
-In Progress.
-Under Review.
-Blocked.
-Completed.
-
-A phase must not be marked completed merely because its code exists.
-
-It must satisfy its acceptance criteria.
-
-21. Version 1 Completion Criteria
-
-Version 1 will be considered complete when:
-
-A player can start a bureau scenario.
-The organization and departments can be managed.
-Employees can be assigned tasks.
-Provider institutions can submit synthetic data.
-Data submissions can be processed.
-Customer and account referencing works.
-Historical credit observations are preserved.
-Credit reports can be generated.
-Financial transactions are recorded using double-entry accounting.
-Basic analytics and credit scoring work.
-The simulation clock controls business events.
-AI employees perform assigned tasks.
-The React dashboard supports major business operations.
-The 3D office connects to actual business records.
-Important actions are auditable.
-Core workflows pass automated tests.
-The application can be deployed in a controlled environment.
-22. Immediate Development Priorities
-
-After this document is approved, development should begin with the following tasks:
-
-Task 1 — Repository creation
-
-Create the GitHub repository and initial directory structure.
-
-Task 2 — Development environment
-
-Configure Python, Django, React, Node.js, SQL Server and Docker.
-
-Task 3 — Database connectivity
-
-Verify that Django can connect to SQL Server and execute migrations.
-
-Task 4 — Initial backend models
-
-Implement organization, department, user, employee and institution models.
-
-Task 5 — First automated tests
-
-Test database operations, model constraints and API permissions.
-
-Task 6 — First synthetic records
-
-Create the initial bureau organization, departments, employees and provider institutions.
-
-Task 7 — First operational workflow
-
-Begin the monthly credit data submission and processing pipeline.
-
-23. Document Dependencies and Next Step
-
-This document depends on:
-
-Document 01 — Product Requirements Document.
-Document 02 — Functional Specification.
-Document 03 — Technical Architecture and System Design.
-Document 04 — Database Design and Data Dictionary.
-Document 05 — Game World and Simulation Design.
-
-The documentation foundation now contains six documents.
-
-The next stage is implementation.
-
-Recommended first implementation milestone: Repository initialization, development environment setup and SQL Server connectivity verification.
-
-END OF DOCUMENT 06
-
-Document ID: CBS-DRTP-001
-Version: 0.1
-Status: Initial Development Roadmap
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| Reference material arrives late | Placeholder rules persist; rework | Rules as configuration; assumptions register; prioritised request list |
+| World model feels unrealistic | Data and scoring lose credibility | Calibrate against Bank of Ghana statistics (R15) and owner experience; tune in Phase 2 |
+| The game is accurate but not fun | Players leave | Walking skeleton first; team play sessions every increment; balance tooling |
+| Scope creep | Version 1 slips | Department depth tiers; Document 07 is the gate for new features |
+| Determinism silently broken | Replays and tests become unreliable | Replay test from S4 onwards; determinism rules (Section 12) |
+| Truth leaks into bureau code | Game becomes meaningless | import-linter contract from Phase 0; invariant check |
+| Matching logic wrong | Corrupted bureau data | Truth scoring measures it directly; review queues |
+| Financial inconsistencies | Wrong statements | Posting service as the only write path; balance invariants |
+| Windows environment friction | Lost time | Native Django and Vite; PostgreSQL via Docker or native installer; README tested on a clean setup |
+| 3D overinvestment | Delays core gameplay | 3D is Phase 4; 2D is always fully playable |
+| Regulatory content inaccurate | Misleads learners | Explicit citations with source versions; owner review (D14) |
+
+---
+
+# 17. Immediate Next Tasks
+
+1. Owner reviews this document.
+2. Phase 0 begins: repository layout, PostgreSQL, Django, React shell, checks.
+3. In parallel, the owner starts collecting Priority 1 reference material (R1–R8).
+4. S1 (world generator) begins as soon as Phase 0 exits.
+
+---
+
+## DOCUMENT CONTROL
+
+| Field | Value |
+| --- | --- |
+| Document ID | CBS-DRTP-001 |
+| Version | 0.2 |
+| Status | Approved |
+| Change history | 0.1 module-by-module roadmap; 0.2 rewritten around the walking skeleton and first playable slice per Document 07 |
+| Next step | Phase 0 in progress |
