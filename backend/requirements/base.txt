@@ -1,0 +1,5 @@
+# Runtime dependencies (pinned). Update deliberately; record changes in the commit message.
+Django==5.2.19
+djangorestframework==3.16.1
+psycopg[binary]==3.3.9
+django-environ==0.14.0

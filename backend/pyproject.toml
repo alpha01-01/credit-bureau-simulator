@@ -1,0 +1,67 @@
+[project]
+name = "simb-backend"
+version = "0.0.0"
+description = "SimB credit bureau simulator: backend"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["**/migrations/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "DJ", "S", "SIM", "RUF", "T20"]
+ignore = ["RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+strict = true
+exclude = ["migrations/"]
+
+[[tool.mypy.overrides]]
+module = ["environ", "environ.*", "importlinter.*"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+testpaths = ["tests", "apps"]
+python_files = ["test_*.py"]
+addopts = "--strict-markers -ra"
+
+# --- Module boundaries -------------------------------------------------------
+# Document 06, Section 10. The world layer is hidden ground truth.
+
+[tool.importlinter]
+root_package = "apps"
+
+[[tool.importlinter.contracts]]
+name = "Bureau-side code never reads the world (truth boundary)"
+type = "forbidden"
+source_modules = [
+    "apps.accounts",
+    "apps.org",
+    "apps.bureau",
+    "apps.commercial",
+    "apps.finance",
+    "apps.audit",
+]
+forbidden_modules = ["apps.world"]
+
+[[tool.importlinter.contracts]]
+name = "The world does not depend on the bureau's systems"
+type = "forbidden"
+source_modules = ["apps.world"]
+forbidden_modules = [
+    "apps.bureau",
+    "apps.commercial",
+    "apps.finance",
+    "apps.workitems",
+    "apps.simulation",
+]

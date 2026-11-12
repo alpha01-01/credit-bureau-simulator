@@ -7,7 +7,7 @@
 | 03 | [Technical Architecture](03-technical-architecture.md) | CBS-TAD-001 v0.1 | Amended by 07 |
 | 04 | [Database Design](04-database-design.md) | CBS-DBD-001 v0.1 | Amended by 07 |
 | 05 | [Game World and Simulation](05-game-world-simulation.md) | CBS-GWSD-001 v0.1 | Amended by 07 |
-| 06 | [Development Roadmap](06-development-roadmap.md) | CBS-DRTP-001 v0.1 | To be revised next, per 07 §13–15 |
+| 06 | [Development Roadmap](06-development-roadmap.md) | CBS-DRTP-001 v0.2 | Approved |
 | 07 | [Core Gameplay and Learning Design](07-core-gameplay-design.md) | CBS-CGD-001 v0.2 | Approved |
 
 Where documents conflict, **07 takes precedence** until the earlier documents are revised. Its decisions log (Section 14) lists every amendment.
