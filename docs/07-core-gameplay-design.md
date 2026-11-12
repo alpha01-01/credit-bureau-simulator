@@ -3,9 +3,10 @@
 ## DOCUMENT 07 — CORE GAMEPLAY AND LEARNING DESIGN
 
 **Document ID:** CBS-CGD-001
-**Version:** 0.1
-**Status:** Draft for review
+**Version:** 0.2
+**Status:** Approved — decisions D1–D10 approved by owner; owner inputs recorded in Section 15
 **Date:** 12 November 2026
+**Working title:** SimB
 **Depends on:** CBS-PRD-001 (01), CBS-TAD-001 (03), CBS-DBD-001 (04), CBS-GWSD-001 (05), CBS-DRTP-001 (06)
 
 ---
@@ -601,9 +602,11 @@ Every metric, every employee decision and every event offers a **Why?** link tha
 
 ## 11.4 The Bureau Handbook
 
-An in-game reference that explains each concept the player encounters (e.g. "days past due", "permissible purpose", "unloadable record", "double-entry"), with a short "In practice" note on how real bureaus generally handle it.
+An in-game reference that explains each concept the player encounters (e.g. "days past due", "permissible purpose", "unloadable record", "double-entry"), with an "In practice" note on how it works in the real Ghanaian market.
 
-The Handbook is educational. It must not present itself as legal advice or a statement of any specific regulator's requirements. Content touching Ghanaian law (Act 726, Act 843) must be reviewed by a subject-matter expert before release.
+Regulatory content is **explicit**: the Handbook and in-game rules cite the relevant provisions of the Credit Reporting Act, 2007 (Act 726), the Credit Reporting Regulations, 2020 (L.I. 2394), the Data Protection Act, 2012 (Act 843) and Bank of Ghana directives by name and section. The project owner reviews all regulatory content before release. Each citation records the source document and version it was taken from, so it can be updated when the law changes.
+
+The Handbook still carries a disclaimer that it is educational and not legal advice.
 
 ---
 
@@ -679,7 +682,7 @@ The slice is complete when:
 5. A replay test reproduces a full game month exactly from seed plus action log.
 6. Every posted journal balances; financial statements derive only from posted entries.
 7. The bureau modules never read the world layer (enforced by tests).
-8. At least five external players have played it, and their feedback has been incorporated.
+8. The project team has played it end to end at least three times with different strategies and recorded its findings. (External playtesters join after the slice; see Section 15.)
 
 ---
 
@@ -700,16 +703,26 @@ The slice is complete when:
 
 ---
 
-# 15. Open Questions
+# 15. Owner Inputs (Resolved)
 
-These need the project owner's input before or during the first slice.
+| # | Topic | Decision |
+| --- | --- | --- |
+| D11 | **Domain fidelity** | The game mirrors real-world practice in every area: submission templates and field lists, status and error codes, validation rules, matching practice, dispute timelines, report layouts, consent and permissible purpose, retention, pricing and contracts. Simplification is allowed only in pacing and scale, never in what the rules are. Source material is collected in [`docs/references/`](references/README.md). Where no source is available, the item is marked `ASSUMPTION` in code and documents until verified. |
+| D12 | **Pricing** | Realistic GHS prices and contract structures, taken from reference material provided by the owner. Placeholder values are flagged `ASSUMPTION` until then. |
+| D13 | **Default definition** | Confirmed: **90+ days past due within a 12-month performance window.** |
+| D14 | **Regulatory content** | Explicit, cited by Act and section (Section 11.4). The owner reviews all regulatory content. |
+| D15 | **Title** | Working title **SimB**. A final title will be chosen before any public release. |
+| D16 | **Playtesting** | The project team are the playtesters for the first slice. External players join afterwards. |
 
-1. **Domain accuracy.** Which real-world practices should the game mirror closely (file templates, field lists, status codes, dispute timelines), and which may be simplified? The project owner's bureau experience is the reference.
-2. **Pricing.** Realistic GHS price ranges for individual reports, business reports and batch enquiries, and typical contract structures.
-3. **Default definition.** Confirm 90+ days past due within 12 months as the default definition for scoring.
-4. **Regulatory content.** How explicitly should Act 726 and Act 843 be referenced in-game, and who reviews that content?
-5. **Name and identity.** Final game title and visual identity.
-6. **Playtesters.** Who are the first five external players for exit criterion 8?
+## 15.1 Market context to reflect
+
+The real Ghanaian market informs the simulated one:
+
+* The Bank of Ghana licenses and supervises credit bureaus; in recent years the market has been dominated by one bureau by enquiry volume, with a small number of competitors. Rival bureaus remain deferred (Document 05, Section 14.2), but the demand model's "outside option" (Section 6.4) should be calibrated with this in mind.
+* The set of institutions that participate in credit reporting has been widening beyond banks and savings and loans (e.g. microfinance, fintechs, and more recently telcos and retailers). Provider types in the world model should support this range, even if the first slice uses only banks, savings and loans, and microfinance lenders.
+* Real bureau names and brands are **not** used in the game. All bureaus, lenders and people are fictional.
+
+These points must be checked against the reference material in `docs/references/` before they become game rules.
 
 ---
 
@@ -718,6 +731,7 @@ These need the project owner's input before or during the first slice.
 | Field | Value |
 | --- | --- |
 | Document ID | CBS-CGD-001 |
-| Version | 0.1 |
-| Status | Draft for review |
-| Next step | Owner review; then revise Document 06 (roadmap) to reflect Sections 13 and 14 |
+| Version | 0.2 |
+| Status | Approved |
+| Change history | 0.1 draft; 0.2 owner approved D1–D10 and resolved open questions (D11–D16) |
+| Next step | Collect reference material; revise Document 06 (roadmap) to reflect Sections 13–15 |

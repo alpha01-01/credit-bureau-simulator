@@ -28,3 +28,6 @@ storage/
 Thumbs.db
 .vscode/
 .idea/
+
+# Confidential reference material (see docs/references/README.md)
+docs/references/private/
