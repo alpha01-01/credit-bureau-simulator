@@ -14,8 +14,12 @@ from typing import Any
 from django.db import transaction
 from django.db.models import Max
 
+from apps.workitems.models import WorkItem
+from apps.workitems.work import resolve_by_player
+
 from .clock import TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
+from .judgement import sync_work_items
 from .models import SPEEDS, EventStatus, Game, GameStatus, PlayerAction
 
 ADVANCE_UNITS = ("hour", "day", "next_event")
@@ -74,6 +78,20 @@ def advance_by(game: Game, unit: str, count: int = 1) -> Game:
     return game
 
 
+def resolve_item(game: Game, item_number: int, decision: str) -> WorkItem:
+    """The player decides a work item, at the current game time."""
+    item = WorkItem.objects.filter(organization=game.organization, item_number=item_number).first()
+    if item is None:
+        raise ClockError(f"No work item {item_number}")
+    record(game, "RESOLVE_ITEM", {"item": item_number, "decision": decision})
+    cal = calendar(game)
+    at = cal.tick_end(game.current_tick) if game.current_tick else cal.tick_start(1)
+    try:
+        return resolve_by_player(item, decision, game.current_tick, at)
+    finally:
+        sync_work_items(game, game.current_tick)
+
+
 def step(game: Game) -> Game:
     """One tick of a running clock (used by the clock worker). Not an action: speed is."""
     return advance(game, 1)
@@ -95,6 +113,8 @@ def replay(source: Game, target: Game) -> Game:
                 target = set_speed(target, int(action.payload["speed"]))
             case "ADVANCE":
                 target = advance_by(target, action.payload["unit"], int(action.payload["count"]))
+            case "RESOLVE_ITEM":
+                resolve_item(target, int(action.payload["item"]), str(action.payload["decision"]))
             case other:
                 raise ClockError(f"Unknown action {other}")
     if target.current_tick < source.current_tick:  # ticks run by the clock worker

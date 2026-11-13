@@ -87,3 +87,9 @@ name = "The bureau is driven by the simulation, never the reverse"
 type = "forbidden"
 source_modules = ["apps.bureau", "apps.org"]
 forbidden_modules = ["apps.simulation", "apps.workitems"]
+
+[[tool.importlinter.contracts]]
+name = "Work items never read the world (answers are supplied by the simulation)"
+type = "forbidden"
+source_modules = ["apps.workitems"]
+forbidden_modules = ["apps.world", "apps.simulation"]

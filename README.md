@@ -103,6 +103,10 @@ backend/.venv/Scripts/python backend/manage.py run_clock
 
 `run_clock` advances running games in real time (at 1x a game hour takes 20 seconds). The API at `/api/v1/games/<id>/clock/` reports the clock and accepts `pause/`, `resume/`, `speed/` and `advance/` (by hour, day or to the next event). `delete_game --game N` removes a game and its bureau; `delete_game --world N` removes a world with all its games.
 
+## The work queue
+
+Records the pipeline cannot settle on its own become work items: uncertain customer matches (an identifier matches but the name or date of birth does not) and unloadable records with a plausible correction. The Data Operations team works through them while the clock runs; you can decide items yourself through `/api/v1/games/<id>/work-items/`. Every decision is applied to the bureau as given, right or wrong.
+
 ## Checks
 
 Run everything (formatting, lint, module boundaries, types, migrations, tests) before merging:

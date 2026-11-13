@@ -99,6 +99,9 @@ class ProcessingRun(models.Model):
     records_accepted = models.IntegerField(default=0)
     records_unloadable = models.IntegerField(default=0)
     records_duplicated = models.IntegerField(default=0)
+    records_pending = models.IntegerField(
+        default=0, help_text="Held for review at the end of the run"
+    )
     customers_created = models.IntegerField(default=0)
     accounts_created = models.IntegerField(default=0)
     observations_created = models.IntegerField(default=0)
@@ -114,7 +117,10 @@ class ProcessingRun(models.Model):
     @property
     def reconciles(self) -> bool:
         return self.records_received == (
-            self.records_accepted + self.records_unloadable + self.records_duplicated
+            self.records_accepted
+            + self.records_unloadable
+            + self.records_duplicated
+            + self.records_pending
         )
 
 
@@ -122,6 +128,7 @@ class RecordStatus(models.TextChoices):
     ACCEPTED = "ACCEPTED", "Accepted"
     UNLOADABLE = "UNLOADABLE", "Unloadable"
     DUPLICATE = "DUPLICATE", "Duplicate"
+    PENDING_REVIEW = "PENDING_REVIEW", "Held for review"
 
 
 class StagingRecord(models.Model):

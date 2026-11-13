@@ -1,4 +1,4 @@
-"""Pipeline v0: process a received submission into the bureau database (roadmap S3).
+"""Pipeline: process a received submission into the bureau database (roadmap S3, S5).
 
 Stages (Document 04, Section 18):
   structural validation  - file columns must match the template exactly (T001)
@@ -6,9 +6,12 @@ Stages (Document 04, Section 18):
   cleansing              - C001 phone normalisation, logged
   duplicate detection    - exact duplicate rows (D001); repeated accounts (D002)
   field validation       - mandatory fields, formats, code lists (F001-F012)
-  referencing            - exact-identifier customer and account matching
+  referencing            - customer and account matching; weak identifier
+                           matches are held for review (S5)
   loading                - accepted records become observations; conflicts (L001)
-  summary                - received = accepted + unloadable + duplicate
+  review cases           - uncertain matches, and unloadable records with a
+                           plausible correction, go to the Data Operations queue
+  summary                - received = accepted + unloadable + duplicate + pending
 
 A run is atomic: it either completes in full or leaves nothing behind.
 """
@@ -19,6 +22,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from django.db import transaction
 from django.db.models import Max
@@ -34,9 +38,22 @@ from apps.bureau.core.models import (
     IndividualProfile,
     ProviderCustomerLink,
 )
-from apps.bureau.quality.models import Severity, TransformationLog, ValidationIssue
-from apps.bureau.quality.rules import Issue, cleanse, validate
-from apps.bureau.referencing.matching import Pending, Referencer, observed_accounts
+from apps.bureau.quality.models import (
+    CaseType,
+    ReviewCase,
+    Severity,
+    TransformationLog,
+    ValidationIssue,
+)
+from apps.bureau.quality.rules import Issue, cleanse, propose_corrections, validate
+from apps.bureau.referencing.matching import (
+    MatchQuestion,
+    NewCustomer,
+    Pending,
+    Referencer,
+    observed_accounts,
+)
+from apps.org.models import Organization
 from apps.standards.submission_template import FileKind, header
 
 from .intake import read_rows
@@ -51,7 +68,7 @@ from .models import (
     SubmissionStatus,
 )
 
-PROCESSING_VERSION = "pipeline-v0"
+PROCESSING_VERSION = "pipeline-v1"
 BATCH = 2000
 
 
@@ -66,6 +83,8 @@ class _Row:
     duplicate_of: int | None = None
     issues: list[Issue] = field(default_factory=list)
     account: CreditAccount | None = None
+    question: MatchQuestion | None = None
+    proposal: dict[str, str] = field(default_factory=dict)
 
 
 def process_submission(submission: Submission, at: datetime | None = None) -> ProcessingRun:
@@ -89,18 +108,27 @@ def process_submission(submission: Submission, at: datetime | None = None) -> Pr
         for stored in submission.files.order_by("file_name", "pk"):
             if stored.file_status == FileStatus.REJECTED:
                 continue
-            staged = _stage_file(run, stored, file_issues)
-            rows.extend(staged)
+            rows.extend(_stage_file(run, stored, file_issues))
 
         pending = Pending()
-        _reference(submission, rows, pending)
-        _save(run, submission, rows, pending, file_issues)
+        for kind in FileKind:
+            batch = [
+                r
+                for r in rows
+                if r.status == RecordStatus.ACCEPTED and r.file.file_kind == kind.value
+            ]
+            if batch:
+                _reference(submission, kind, batch, pending)
+        save_pending(submission.organization, pending)
+        records = _save_rows(run, submission, rows, file_issues)
+        _open_cases(submission.organization, rows, records, at)
 
         counts = Counter(r.status for r in rows)
         run.records_received = len(rows)
         run.records_accepted = counts[RecordStatus.ACCEPTED]
         run.records_unloadable = counts[RecordStatus.UNLOADABLE]
         run.records_duplicated = counts[RecordStatus.DUPLICATE]
+        run.records_pending = counts[RecordStatus.PENDING_REVIEW]
         run.customers_created = len(pending.customers)
         run.accounts_created = len(pending.accounts)
         run.observations_created = run.records_accepted
@@ -171,40 +199,38 @@ def _stage_file(
             account_rows.add(account)
         if any(i.severity == Severity.ERROR for i in row.issues):
             row.status = RecordStatus.UNLOADABLE
+            row.proposal = propose_corrections(cleansed, row.issues, period)
     return rows
 
 
-def _reference(submission: Submission, rows: list[_Row], pending: Pending) -> None:
-    for kind in FileKind:
-        accepted = [
-            r for r in rows if r.status == RecordStatus.ACCEPTED and r.file.file_kind == kind.value
-        ]
-        if not accepted:
-            continue
-        referencer = Referencer(submission, kind, [r.cleansed for r in accepted], pending)
-        # An observation already loaded for this date is a load conflict, not a new row.
-        existing = {a.facility_account_number: a.pk for a in referencer.accounts.values() if a.pk}
-        clashes = observed_accounts(list(existing.values()), submission.reporting_period)
-        for row in accepted:
-            if existing.get(row.cleansed["ACCOUNT_NUMBER"]) in clashes:
-                row.status = RecordStatus.UNLOADABLE
-                row.issues.append(Issue("L001", "ACCOUNT_NUMBER", row.cleansed["ACCOUNT_NUMBER"]))
-                continue
-            customer, issues = referencer.customer_for(row.cleansed)
-            row.account, account_issues = referencer.account_for(row.cleansed, customer)
-            row.issues.extend(issues + account_issues)
-
-
-def _save(
-    run: ProcessingRun,
+def _reference(
     submission: Submission,
+    kind: FileKind,
     rows: list[_Row],
     pending: Pending,
-    file_issues: list[ValidationIssue],
+    resolution: tuple[str, int | None] | None = None,
 ) -> None:
-    organization = submission.organization
+    referencer = Referencer(submission, kind, [r.cleansed for r in rows], pending)
+    # An observation already loaded for this date is a load conflict, not a new row.
+    existing = {a.facility_account_number: a.pk for a in referencer.accounts.values() if a.pk}
+    clashes = observed_accounts(list(existing.values()), submission.reporting_period)
+    for row in rows:
+        if existing.get(row.cleansed["ACCOUNT_NUMBER"]) in clashes:
+            row.status = RecordStatus.UNLOADABLE
+            row.issues.append(Issue("L001", "ACCOUNT_NUMBER", row.cleansed["ACCOUNT_NUMBER"]))
+            continue
+        customer, issues = referencer.customer_for(row.cleansed, resolution)
+        if isinstance(customer, MatchQuestion):
+            row.status = RecordStatus.PENDING_REVIEW
+            row.question = customer
+            continue
+        row.account, account_issues = referencer.account_for(row.cleansed, customer)
+        row.issues.extend(issues + account_issues)
+        row.status = RecordStatus.ACCEPTED
 
-    # Bureau records created by referencing, parents before children.
+
+def save_pending(organization: Organization, pending: Pending) -> None:
+    """Create the customers, links and accounts referencing decided on, parents first."""
     if pending.customers:
         first = organization.allocate("last_customer_seq", len(pending.customers))
         for i, customer in enumerate(pending.customers):
@@ -220,7 +246,55 @@ def _save(
         list(pending.updated_accounts.values()), ["account_status"], batch_size=BATCH
     )
 
-    # Staging: every row as received, with its outcome.
+
+def observation(
+    values: dict[str, str],
+    account: CreditAccount,
+    submission: Submission,
+    stored: SubmissionFile,
+    row_number: int,
+    run: ProcessingRun,
+) -> AccountObservation:
+    return AccountObservation(
+        credit_account=account,
+        reporting_date=submission.reporting_period,
+        outstanding_balance=Decimal(values["CURRENT_BALANCE"]),
+        arrears_amount=Decimal(values["ARREARS_AMOUNT"]),
+        days_past_due=int(values["DAYS_PAST_DUE"]),
+        instalment_amount=Decimal(values["INSTALMENT_AMOUNT"]),
+        amount_paid=Decimal(values["AMOUNT_PAID"]),
+        facility_status=values["ACCOUNT_STATUS"],
+        asset_classification=values["ASSET_CLASSIFICATION"],
+        is_written_off=values["ACCOUNT_STATUS"] == "WO",
+        source_submission=submission,
+        source_file=stored,
+        source_row_number=row_number,
+        processing_run=run,
+    )
+
+
+def issue_rows(
+    run: ProcessingRun,
+    stored: SubmissionFile,
+    record: StagingRecord,
+    number: int,
+    issues: list[Issue],
+) -> list[ValidationIssue]:
+    return [
+        ValidationIssue(
+            run=run, file=stored, record=record, source_row_number=number, field=i.field,
+            rule_code=i.rule_code, severity=i.severity, message=i.message, value=i.value[:200],
+        )
+        for i in issues
+    ]  # fmt: skip
+
+
+def _save_rows(
+    run: ProcessingRun,
+    submission: Submission,
+    rows: list[_Row],
+    file_issues: list[ValidationIssue],
+) -> list[StagingRecord]:
     records = [
         StagingRecord(
             run=run,
@@ -239,14 +313,7 @@ def _save(
     transformations = []
     observations = []
     for row, record in zip(rows, records, strict=True):
-        for issue in row.issues:
-            issues.append(
-                ValidationIssue(
-                    run=run, file=row.file, record=record, source_row_number=row.number,
-                    field=issue.field, rule_code=issue.rule_code, severity=issue.severity,
-                    message=issue.message, value=issue.value[:200],
-                )
-            )  # fmt: skip
+        issues.extend(issue_rows(run, row.file, record, row.number, row.issues))
         for name, rule, before, after in row.transformations:
             transformations.append(
                 TransformationLog(
@@ -257,25 +324,73 @@ def _save(
         if row.status == RecordStatus.ACCEPTED:
             if row.account is None:
                 raise RuntimeError(f"Accepted row {row.number} has no account")
-            v = row.cleansed
             observations.append(
-                AccountObservation(
-                    credit_account=row.account,
-                    reporting_date=submission.reporting_period,
-                    outstanding_balance=Decimal(v["CURRENT_BALANCE"]),
-                    arrears_amount=Decimal(v["ARREARS_AMOUNT"]),
-                    days_past_due=int(v["DAYS_PAST_DUE"]),
-                    instalment_amount=Decimal(v["INSTALMENT_AMOUNT"]),
-                    amount_paid=Decimal(v["AMOUNT_PAID"]),
-                    facility_status=v["ACCOUNT_STATUS"],
-                    asset_classification=v["ASSET_CLASSIFICATION"],
-                    is_written_off=v["ACCOUNT_STATUS"] == "WO",
-                    source_submission=submission,
-                    source_file=row.file,
-                    source_row_number=row.number,
-                    processing_run=run,
-                )
+                observation(row.cleansed, row.account, submission, row.file, row.number, run)
             )
     ValidationIssue.objects.bulk_create(issues, batch_size=BATCH)
     TransformationLog.objects.bulk_create(transformations, batch_size=BATCH)
     AccountObservation.objects.bulk_create(observations, batch_size=BATCH)
+    return records
+
+
+def _open_cases(
+    organization: Organization, rows: list[_Row], records: list[StagingRecord], at: datetime
+) -> None:
+    wanted = [
+        (row, record)
+        for row, record in zip(rows, records, strict=True)
+        if row.question is not None or (row.status == RecordStatus.UNLOADABLE and row.proposal)
+    ]
+    open_cases(organization, wanted, at)
+
+
+def open_cases(
+    organization: Organization, wanted: list[tuple[Any, StagingRecord]], at: datetime
+) -> list[ReviewCase]:
+    """Create review cases for rows with a match question or a proposed correction."""
+    if not wanted:
+        return []
+    first = organization.allocate("last_case_seq", len(wanted))
+    cases = []
+    for n, (row, record) in enumerate(wanted):
+        question: MatchQuestion | None = row.question
+        if question is not None:
+            candidate = question.candidate
+            candidate_id = (
+                candidate.customer.pk if isinstance(candidate, NewCustomer) else candidate
+            )
+            cases.append(
+                ReviewCase(
+                    organization=organization,
+                    case_number=first + n,
+                    case_type=CaseType.MATCH_REVIEW,
+                    record=record,
+                    candidate_customer_id=candidate_id,
+                    score=question.comparison.score,
+                    evidence={
+                        "identifier_field": question.identifier_field,
+                        "identifier": row.cleansed.get(question.identifier_field, ""),
+                        "reasons": question.comparison.reasons,
+                    },
+                    opened_at=at,
+                )
+            )
+        else:
+            cases.append(
+                ReviewCase(
+                    organization=organization,
+                    case_number=first + n,
+                    case_type=CaseType.UNLOADABLE_TRIAGE,
+                    record=record,
+                    evidence={
+                        "errors": [
+                            {"rule": i.rule_code, "field": i.field, "value": i.value}
+                            for i in row.issues
+                            if i.severity == Severity.ERROR
+                        ]
+                    },
+                    proposal=row.proposal,
+                    opened_at=at,
+                )
+            )
+    return ReviewCase.objects.bulk_create(cases, batch_size=BATCH)

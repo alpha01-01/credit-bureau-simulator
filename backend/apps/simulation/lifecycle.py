@@ -27,9 +27,10 @@ from apps.bureau.core.models import (
     ProviderCustomerLink,
 )
 from apps.bureau.providers.models import Institution, InstitutionBranch
-from apps.bureau.quality.models import TransformationLog, ValidationIssue
+from apps.bureau.quality.models import ReviewCase, TransformationLog, ValidationIssue
 from apps.bureau.submissions.models import ProcessingRun, StagingRecord, Submission, SubmissionFile
-from apps.org.models import Organization
+from apps.org.models import Employee, Organization
+from apps.workitems.models import WorkItem
 from apps.world.generation.persist import delete_world
 
 from .models import Delivery, Game, PlayerAction, ScheduledEvent, TickLog
@@ -47,6 +48,8 @@ _CUSTOMERS = f"SELECT id FROM {_table(Customer)} WHERE organization_id = %(org)s
 _INSTITUTIONS = f"SELECT id FROM {_table(Institution)} WHERE organization_id = %(org)s"
 
 _ORDER: tuple[tuple[type[Model], str], ...] = (
+    (WorkItem, "organization_id = %(org)s"),
+    (ReviewCase, "organization_id = %(org)s"),
     (TransformationLog, f"record_id IN ({_RECORDS})"),
     (ValidationIssue, f"run_id IN ({_RUNS})"),
     (
@@ -71,6 +74,7 @@ _ORDER: tuple[tuple[type[Model], str], ...] = (
     (TickLog, "game_id = %(game)s"),
     (PlayerAction, "game_id = %(game)s"),
     (Game, "id = %(game)s"),
+    (Employee, "organization_id = %(org)s"),
     (Organization, "id = %(org)s"),
 )
 

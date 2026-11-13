@@ -19,6 +19,12 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.bureau.quality.models import ALLOWED_DECISIONS
+from apps.bureau.submissions.review import ReviewError
+from apps.org.models import Employee
+from apps.workitems.models import WorkItem
+from apps.workitems.work import WorkError
+
 from . import controls
 from .engine import ClockError
 from .models import Game
@@ -77,3 +83,102 @@ def _field(request: Request, name: str) -> Any:
     if name not in request.data:
         raise ValueError(f"'{name}' is required")
     return request.data[name]
+
+
+# --- Work queue -----------------------------------------------------------------------
+#
+#   GET  /api/v1/games/<id>/work-items/?status=OPEN
+#   GET  /api/v1/games/<id>/work-items/<number>/
+#   POST /api/v1/games/<id>/work-items/<number>/resolve/   {"decision": "..."}
+#   GET  /api/v1/games/<id>/employees/
+#
+# The answer key (correct decision, whether a decision was right) is never sent:
+# the player learns it from consequences and the debrief.
+
+
+def _item_summary(item: WorkItem) -> dict[str, Any]:
+    return {
+        "number": item.item_number,
+        "type": item.item_type,
+        "status": item.status,
+        "difficulty": item.difficulty,
+        "created_tick": item.created_tick,
+        "assignee": item.assignee.employee_number if item.assignee else None,
+        "decision": item.decision or None,
+        "resolved_by": item.resolved_by or None,
+        "resolved_tick": item.resolved_tick,
+    }
+
+
+@api_view(["GET"])
+def work_items(request: Request, game_id: int) -> Response:
+    game = _game(request, game_id)
+    items = WorkItem.objects.filter(organization=game.organization).select_related("assignee")
+    if status_filter := request.query_params.get("status"):
+        items = items.filter(status=status_filter)
+    return Response([_item_summary(i) for i in items.order_by("item_number")[:500]])
+
+
+@api_view(["GET"])
+def work_item(request: Request, game_id: int, number: int) -> Response:
+    game = _game(request, game_id)
+    item = get_object_or_404(
+        WorkItem.objects.select_related("case__record", "case__candidate_customer", "assignee"),
+        organization=game.organization,
+        item_number=number,
+    )
+    case = item.case
+    candidate = None
+    if case.candidate_customer is not None:
+        customer = case.candidate_customer
+        profile = getattr(customer, "individual", None)
+        candidate = {
+            "reference": customer.customer_reference,
+            "name": f"{profile.first_name} {profile.last_name}" if profile else None,
+            "date_of_birth": profile.date_of_birth.isoformat()
+            if profile and profile.date_of_birth
+            else None,
+        }
+    return Response(
+        _item_summary(item)
+        | {
+            "record": case.record.cleansed,
+            "candidate": candidate,
+            "score": case.score,
+            "evidence": case.evidence,
+            "proposal": case.proposal,
+            "allowed_decisions": list(ALLOWED_DECISIONS[case.case_type]),
+            "explanation": item.explanation or None,
+        }
+    )
+
+
+@api_view(["POST"])
+def resolve_work_item(request: Request, game_id: int, number: int) -> Response:
+    game = _game(request, game_id)
+    try:
+        item = controls.resolve_item(game, number, str(_field(request, "decision")))
+    except (ClockError, WorkError, ReviewError, ValueError) as exc:
+        return _error(exc)
+    return Response(_item_summary(item))
+
+
+@api_view(["GET"])
+def employees(request: Request, game_id: int) -> Response:
+    game = _game(request, game_id)
+    return Response(
+        [
+            {
+                "number": e.employee_number,
+                "name": f"{e.first_name} {e.last_name}",
+                "job_title": e.job_title,
+                "skills": e.skills,
+                "experience": e.experience,
+                "morale": e.morale,
+                "done_today": e.done_today,
+            }
+            for e in Employee.objects.filter(organization=game.organization).order_by(
+                "employee_number"
+            )
+        ]
+    )

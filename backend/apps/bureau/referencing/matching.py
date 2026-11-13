@@ -21,6 +21,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from apps.bureau.core.models import (
     BusinessProfile,
@@ -35,6 +36,11 @@ from apps.bureau.core.models import (
 )
 from apps.bureau.providers.models import Institution
 from apps.bureau.quality.rules import MOBILE, Issue, parse_date
+from apps.bureau.referencing.similarity import (
+    Comparison,
+    compare_businesses,
+    compare_individuals,
+)
 from apps.bureau.submissions.models import Submission
 from apps.standards.submission_template import FileKind
 
@@ -44,6 +50,7 @@ class NewCustomer:
     """Handle for a customer created in this run (unsaved models cannot be dict keys)."""
 
     customer: Customer
+    identity: tuple[Any, ...] = ()
 
 
 # An existing customer is known by its id; a new one by its handle.
@@ -60,6 +67,20 @@ _PHONE_FIELDS: dict[FileKind, tuple[str, ...]] = {
     FileKind.INDIVIDUAL: ("MOBILE_NUMBER", "ALT_MOBILE_NUMBER"),
     FileKind.COMMERCIAL: ("CONTACT_NUMBER",),
 }
+
+
+@dataclass(frozen=True)
+class MatchQuestion:
+    """An identifier matched, but the identity does not agree well enough to link blindly."""
+
+    candidate: CustomerKey
+    comparison: Comparison
+    identifier_field: str
+
+
+# How a reviewer settled a match question: link to this customer id, or create a new customer.
+Resolution = tuple[str, int | None]
+SAME, DIFFERENT = "SAME_CUSTOMER", "DIFFERENT_CUSTOMER"
 
 
 def _same(a: CustomerKey | None, b: CustomerKey | None) -> bool:
@@ -142,26 +163,75 @@ class Referencer:
         }
         self.branches = dict(self.institution.branches.values_list("branch_code", "id"))
 
+        # Identity of customers an identifier could match, for the similarity check.
+        candidates = [k for k in self.identifiers.values() if isinstance(k, int)]
+        self.identity: dict[CustomerKey, tuple[Any, ...]] = {}
+        if kind is FileKind.INDIVIDUAL:
+            for c, first, last, born in IndividualProfile.objects.filter(
+                customer_id__in=candidates
+            ).values_list("customer_id", "first_name", "last_name", "date_of_birth"):
+                self.identity[c] = (first, last, born)
+        else:
+            for c, name, registered in BusinessProfile.objects.filter(
+                customer_id__in=candidates
+            ).values_list("customer_id", "registered_name", "registration_date"):
+                self.identity[c] = (name, registered)
+
+    def _record_identity(self, values: dict[str, str]) -> tuple[Any, ...]:
+        if self.kind is FileKind.INDIVIDUAL:
+            return (values["FIRST_NAME"], values["SURNAME"], parse_date(values["DATE_OF_BIRTH"]))
+        return (values["REGISTERED_NAME"], parse_date(values["REGISTRATION_DATE"]))
+
+    def _identity_of(self, key: CustomerKey) -> tuple[Any, ...]:
+        return key.identity if isinstance(key, NewCustomer) else self.identity[key]
+
+    def compare(self, values: dict[str, str], key: CustomerKey) -> Comparison:
+        record, customer = self._record_identity(values), self._identity_of(key)
+        if self.kind is FileKind.INDIVIDUAL:
+            return compare_individuals(record, customer)
+        return compare_businesses(record, customer)
+
     # --- customers ---------------------------------------------------------------
 
-    def customer_for(self, values: dict[str, str]) -> tuple[CustomerKey, list[Issue]]:
+    def customer_for(
+        self, values: dict[str, str], resolution: Resolution | None = None
+    ) -> tuple[CustomerKey | MatchQuestion, list[Issue]]:
+        """The bureau customer for a record, or a question for a reviewer.
+
+        ``resolution`` settles a question asked earlier: link to a given
+        customer, or treat the record as a different customer.
+        """
         issues: list[Issue] = []
         linked = self.links.get(values["CUSTOMER_NUMBER"])
         found: CustomerKey | None = None
+        found_field = ""
         for name, id_type in _ID_FIELDS[self.kind]:
             owner = self.identifiers.get((id_type, values[name])) if values[name] else None
             if owner is None:
                 continue
             if found is None:
-                found = owner
+                found, found_field = owner, name
             elif not _same(found, owner):
                 issues.append(Issue("R001", name, values[name], "WARNING"))
 
-        if linked is not None:
+        customer: CustomerKey
+        # Once the provider's customer number is linked, it decides (as everywhere else);
+        # a reviewer's resolution settles only a number the bureau has not linked yet,
+        # e.g. the second loan of a borrower whose first case was decided earlier.
+        if linked is None and resolution is not None and resolution[0] == SAME and resolution[1]:
+            customer = resolution[1]
+            self._link(values["CUSTOMER_NUMBER"], customer)
+        elif linked is None and resolution is not None and resolution[0] == DIFFERENT:
+            customer = self._new_customer(values)
+            self._link(values["CUSTOMER_NUMBER"], customer)
+        elif linked is not None:
             customer = linked
             if found is not None and not _same(found, linked):
                 issues.append(Issue("R001", _ID_FIELDS[self.kind][0][0], "", "WARNING"))
         elif found is not None:
+            comparison = self.compare(values, found)
+            if not comparison.auto_link:
+                return MatchQuestion(found, comparison, found_field), []
             customer = found
             self._link(values["CUSTOMER_NUMBER"], customer)
         else:
@@ -221,7 +291,7 @@ class Referencer:
                     registration_date=parse_date(values["REGISTRATION_DATE"]),
                 )
             )
-        return NewCustomer(customer)
+        return NewCustomer(customer, self._record_identity(values))
 
     def _link(self, number: str, customer: CustomerKey) -> None:
         link = ProviderCustomerLink(

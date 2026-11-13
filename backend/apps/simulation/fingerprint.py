@@ -26,8 +26,10 @@ from apps.bureau.core.models import (
     ProviderCustomerLink,
 )
 from apps.bureau.core.models import Customer as BureauCustomer
-from apps.bureau.quality.models import TransformationLog, ValidationIssue
+from apps.bureau.quality.models import ReviewCase, TransformationLog, ValidationIssue
 from apps.bureau.submissions.models import ProcessingRun, StagingRecord, Submission, SubmissionFile
+from apps.org.models import Employee
+from apps.workitems.models import WorkItem
 
 from .models import Game, PlayerAction, ScheduledEvent, TickLog
 
@@ -202,6 +204,38 @@ def fingerprint(game: Game) -> str:
             "outstanding_balance", "arrears_amount", "days_past_due", "instalment_amount",
             "amount_paid", "facility_status", "asset_classification", "is_written_off",
             "is_current", "source_file__file_name", "source_row_number",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "cases",
+        ReviewCase.objects.filter(organization_id=org)
+        .order_by("case_number")
+        .values_list(
+            "case_number", "case_type", "record__file__file_name", "record__source_row_number",
+            "candidate_customer__customer_reference", "score", "evidence", "proposal", "status",
+            "opened_at", "decision", "decided_by", "decided_at",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "work_items",
+        WorkItem.objects.filter(organization_id=org)
+        .order_by("item_number")
+        .values_list(
+            "item_number", "item_type", "difficulty", "created_tick", "status",
+            "assignee__employee_number", "started_tick", "minutes_remaining", "correct_decision",
+            "resolved_tick", "resolved_by", "decision", "is_correct", "confidence", "explanation",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "employees",
+        Employee.objects.filter(organization_id=org)
+        .order_by("employee_number")
+        .values_list(
+            "employee_number", "first_name", "last_name", "job_title", "skills", "experience",
+            "morale", "work_day", "done_today",
         ),
     )  # fmt: skip
     return h.hexdigest()
