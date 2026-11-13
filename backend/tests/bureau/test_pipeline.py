@@ -83,9 +83,13 @@ def _months(world: World) -> tuple[Any, Any]:
     return previous, end
 
 
-def _run(game: Game, code: str, period: Any, profile: DataQualityProfile) -> ProcessingRun:
+def _run(
+    game: Game, code: str, period: Any, profile: DataQualityProfile, drift_from: Any = None
+) -> ProcessingRun:
     lender = Lender.objects.get(world=game.world, code=code)
-    world_sub = generate_submission(game.world, lender, period, profile).submission
+    world_sub = generate_submission(
+        game.world, lender, period, profile, drift_from=drift_from
+    ).submission
     return process_submission(deliver(game, world_sub))
 
 
@@ -229,7 +233,9 @@ def _record_for(run: ProcessingRun, defect: FileDefect) -> StagingRecord:
 
 def test_a_file_whose_columns_drifted_is_rejected_whole(game: Game) -> None:
     first, _ = _months(game.world)
-    run = _run(game, "ATB", first, replace(CLEAN, template_drift=1.0))
+    run = _run(
+        game, "ATB", first, replace(CLEAN, template_drift=1.0), drift_from=game.world.history_start
+    )
     assert run.records_received == 0
     files = Submission.objects.get(pk=run.submission_id).files.all()
     assert files and all(f.file_status == FileStatus.REJECTED for f in files)

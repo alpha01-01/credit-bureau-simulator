@@ -42,6 +42,7 @@ __all__ = [
     "generate_submission",
     "month_end",
     "month_index",
+    "play_start",
     "submission_dir",
 ]
 
@@ -84,20 +85,31 @@ def schedule(seed: int, lender_code: str, period: date, profile: DataQualityProf
     return Schedule(due, arrival)
 
 
+def play_start(world: World) -> date:
+    """The first month of play: the month after the generated history ends."""
+    nxt = world.history_end + timedelta(days=1)
+    return month_end(nxt.year, nxt.month)
+
+
 def layout_for(
     seed: int,
     lender_code: str,
     kind: FileKind,
-    history_start: date,
+    drift_from: date,
     period: date,
     profile: DataQualityProfile,
 ) -> Layout:
     """The provider's column layout this month.
 
-    Each month there is a ``template_drift`` chance that the provider changes
-    its extract; once changed, the new layout persists in later months.
+    Providers use the standard layout before ``drift_from`` (by default the
+    start of play: the bureau has long since agreed layouts with its providers).
+    From then on, each month there is a ``template_drift`` chance that the
+    provider changes its extract without notice; once changed, the new layout
+    persists in later months.
     """
-    months = max(months_between(history_start, period), 0) + 1
+    if period < drift_from:
+        return Layout.standard(kind)
+    months = months_between(drift_from, period) + 1
     hazard = stream(seed, f"template-drift:{lender_code}:{kind.value}").random(months)
     if profile.template_drift > 0 and (hazard < profile.template_drift).any():
         return drifted_layout(kind, stream(seed, f"template-layout:{lender_code}:{kind.value}"))
@@ -131,8 +143,13 @@ def generate_submission(
     period: date,
     profile: DataQualityProfile | None = None,
     replace: bool = False,
+    drift_from: date | None = None,
 ) -> SubmissionResult:
-    """Produce, store and record one provider's submission for one month."""
+    """Produce, store and record one provider's submission for one month.
+
+    ``drift_from`` is the first month template drift can occur; it defaults to
+    the start of play. Scenarios and tests may move it earlier.
+    """
     if not world.history_start <= period <= world.history_end:
         raise ValueError(
             f"{period} is outside the world's history ({world.history_start} to {world.history_end})"
@@ -156,7 +173,9 @@ def generate_submission(
         records = load_truth(world.pk, lender.pk, lender.code, period, kind)
         if not records:
             continue
-        layout = layout_for(world.seed, lender.code, kind, world.history_start, period, profile)
+        layout = layout_for(
+            world.seed, lender.code, kind, drift_from or play_start(world), period, profile
+        )
         rng = stream(world.seed, f"provider-rows:{lender.code}:{kind.value}", month_index(period))
         rendered[kind] = render(kind, period, records, profile, rng, layout)
 

@@ -46,6 +46,7 @@ from apps.world.provider_files import (
     generate_submission,
     layout_for,
     month_end,
+    play_start,
     schedule,
     submission_dir,
 )
@@ -195,7 +196,7 @@ def test_every_difference_from_the_truth_is_in_the_defect_ledger(
     lender = _lender(world)
     period = world.history_end
     profile = replace(HEAVY, file_format=file_format)
-    result = generate_submission(world, lender, period, profile)
+    result = generate_submission(world, lender, period, profile, drift_from=world.history_start)
     seen: Counter[str] = Counter()
 
     for stored in result.submission.files.all():
@@ -300,9 +301,11 @@ def test_same_world_and_month_give_identical_files_and_ledger(world: World) -> N
         )  # fmt: skip
         return files, defects
 
-    generate_submission(world, lender, world.history_end, HEAVY)
+    generate_submission(world, lender, world.history_end, HEAVY, drift_from=world.history_start)
     first = fingerprint()
-    generate_submission(world, lender, world.history_end, HEAVY, replace=True)
+    generate_submission(
+        world, lender, world.history_end, HEAVY, replace=True, drift_from=world.history_start
+    )
     assert fingerprint() == first
 
 
@@ -347,6 +350,22 @@ def test_template_drift_persists_once_it_happens() -> None:
     first = changed[0]
     assert changed == list(range(first, 36))
     assert len(set(layouts[first:])) == 1
+
+
+def test_no_template_drift_before_play_starts(world: World, tmp_path: Path) -> None:
+    """Layouts were agreed long ago; drift is something that happens during play."""
+    lender = _lender(world)
+    always = replace(CLEAN, template_drift=1.0)
+    result = generate_submission(world, lender, world.history_end, always)
+    for stored in result.submission.files.all():
+        names, _ = read_file(stored, tmp_path)
+        assert names == list(header(FileKind(stored.kind)))
+    assert not FileDefect.objects.filter(defect_type="TEMPLATE_DRIFT").exists()
+    start = play_start(world)
+    assert start > world.history_end
+    kind = FileKind.INDIVIDUAL
+    assert layout_for(1, "XYZ", kind, start, world.history_end, always) == Layout.standard(kind)
+    assert layout_for(1, "XYZ", kind, start, start, always) != Layout.standard(kind)
 
 
 # --- Template and code lists ----------------------------------------------------
