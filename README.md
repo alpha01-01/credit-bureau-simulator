@@ -107,6 +107,10 @@ backend/.venv/Scripts/python backend/manage.py run_clock
 
 Records the pipeline cannot settle on its own become work items: uncertain customer matches (an identifier matches but the name or date of birth does not) and unloadable records with a plausible correction. The Data Operations team works through them while the clock runs; you can decide items yourself through `/api/v1/games/<id>/work-items/`. Every decision is applied to the bureau as given, right or wrong.
 
+## Enquiries
+
+Each month the world's borrowers apply for credit. When the lender subscribes to the bureau it decides, application by application, whether to check the bureau first, depending on price and on how useful the bureau has been to it so far. Each enquiry is logged with its purpose and consent reference, billed as usage, and answered with a credit report when the subject is found. `/api/v1/games/<id>/enquiries/` lists them.
+
 ## Checks
 
 Run everything (formatting, lint, module boundaries, types, migrations, tests) before merging:

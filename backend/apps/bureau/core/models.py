@@ -211,3 +211,44 @@ class AccountObservation(models.Model):
 
     def __str__(self) -> str:
         return f"{self.credit_account_id} @ {self.reporting_date}"
+
+
+class EnquiryOutcome(models.TextChoices):
+    HIT = "HIT", "Subject found"
+    NO_HIT = "NO_HIT", "No record found"
+
+
+class Enquiry(models.Model):
+    """A subscriber's search for a subject, and the report returned (Document 07, D4)."""
+
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="enquiries"
+    )
+    enquiry_reference = models.CharField(max_length=30)
+    subscriber = models.ForeignKey(
+        "commercial.Subscriber", on_delete=models.PROTECT, related_name="enquiries"
+    )
+    product_code = models.CharField(max_length=30)
+    purpose = models.CharField(max_length=30)
+    consent_reference = models.CharField(max_length=60)
+    identifier_type = models.CharField(max_length=30, choices=IdentifierType.choices)
+    identifier_value = models.CharField(max_length=100)
+    subject_name = models.CharField(max_length=200, help_text="As given by the subscriber")
+    enquired_at = models.DateTimeField()
+    outcome = models.CharField(max_length=10, choices=EnquiryOutcome.choices)
+    customer = models.ForeignKey(
+        Customer, on_delete=models.PROTECT, null=True, blank=True, related_name="enquiries"
+    )
+    accounts_reported = models.IntegerField(default=0)
+    report = models.JSONField(default=dict, help_text="The report as delivered")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "enquiry_reference"], name="enquiry_unique_ref"
+            )
+        ]
+        indexes = [models.Index(fields=["customer", "enquired_at"])]
+
+    def __str__(self) -> str:
+        return self.enquiry_reference

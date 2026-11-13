@@ -23,17 +23,27 @@ from apps.bureau.core.models import (
     Customer,
     CustomerContact,
     CustomerIdentifier,
+    Enquiry,
     IndividualProfile,
     ProviderCustomerLink,
 )
 from apps.bureau.providers.models import Institution, InstitutionBranch
 from apps.bureau.quality.models import ReviewCase, TransformationLog, ValidationIssue
 from apps.bureau.submissions.models import ProcessingRun, StagingRecord, Submission, SubmissionFile
+from apps.commercial.models import Contract, Product, Subscriber, UsageRecord
 from apps.org.models import Employee, Organization
 from apps.workitems.models import WorkItem
 from apps.world.generation.persist import delete_world
 
-from .models import Delivery, Game, PlayerAction, ScheduledEvent, TickLog
+from .models import (
+    Delivery,
+    EnquiryJudgement,
+    Game,
+    PlayerAction,
+    ScheduledEvent,
+    SubscriberView,
+    TickLog,
+)
 
 
 def _table(model: type[Model]) -> str:
@@ -48,6 +58,16 @@ _CUSTOMERS = f"SELECT id FROM {_table(Customer)} WHERE organization_id = %(org)s
 _INSTITUTIONS = f"SELECT id FROM {_table(Institution)} WHERE organization_id = %(org)s"
 
 _ORDER: tuple[tuple[type[Model], str], ...] = (
+    (EnquiryJudgement, "game_id = %(game)s"),
+    (SubscriberView, "game_id = %(game)s"),
+    (UsageRecord, "organization_id = %(org)s"),
+    (Enquiry, "organization_id = %(org)s"),
+    (
+        Contract,
+        f"subscriber_id IN (SELECT id FROM {_table(Subscriber)} WHERE organization_id = %(org)s)",
+    ),
+    (Subscriber, "organization_id = %(org)s"),
+    (Product, "organization_id = %(org)s"),
     (WorkItem, "organization_id = %(org)s"),
     (ReviewCase, "organization_id = %(org)s"),
     (TransformationLog, f"record_id IN ({_RECORDS})"),

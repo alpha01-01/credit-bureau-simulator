@@ -22,16 +22,25 @@ from apps.bureau.core.models import (
     CreditAccount,
     CustomerContact,
     CustomerIdentifier,
+    Enquiry,
     IndividualProfile,
     ProviderCustomerLink,
 )
 from apps.bureau.core.models import Customer as BureauCustomer
 from apps.bureau.quality.models import ReviewCase, TransformationLog, ValidationIssue
 from apps.bureau.submissions.models import ProcessingRun, StagingRecord, Submission, SubmissionFile
+from apps.commercial.models import UsageRecord
 from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 
-from .models import Game, PlayerAction, ScheduledEvent, TickLog
+from .models import (
+    EnquiryJudgement,
+    Game,
+    PlayerAction,
+    ScheduledEvent,
+    SubscriberView,
+    TickLog,
+)
 
 
 def _section(h: Any, name: str, rows: Iterable[Iterable[Any]]) -> int:
@@ -236,6 +245,46 @@ def fingerprint(game: Game) -> str:
         .values_list(
             "employee_number", "first_name", "last_name", "job_title", "skills", "experience",
             "morale", "work_day", "done_today",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "enquiries",
+        Enquiry.objects.filter(organization_id=org)
+        .order_by("enquiry_reference")
+        .values_list(
+            "enquiry_reference", "subscriber__subscriber_code", "product_code", "purpose",
+            "consent_reference", "identifier_type", "identifier_value", "subject_name",
+            "enquired_at", "outcome", "customer__customer_reference", "accounts_reported", "report",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "usage",
+        UsageRecord.objects.filter(organization_id=org)
+        .order_by("enquiry__enquiry_reference")
+        .values_list(
+            "enquiry__enquiry_reference", "subscriber__subscriber_code", "product__product_code",
+            "quantity", "unit_price", "usage_at", "invoiced",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "subscriber_views",
+        SubscriberView.objects.filter(game=game)
+        .order_by("subscriber_code")
+        .values_list(
+            "subscriber_code", "perceived_value", "opportunities", "enquiries", "hits",
+            "wrong_person",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "enquiry_judgements",
+        EnquiryJudgement.objects.filter(game=game)
+        .order_by("enquiry__enquiry_reference")
+        .values_list(
+            "enquiry__enquiry_reference", "should_hit", "hit", "correct_person", "outcome",
         ),
     )  # fmt: skip
     return h.hexdigest()

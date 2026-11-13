@@ -10,7 +10,13 @@ import uuid
 
 from django.db import models, transaction
 
-COUNTERS = ("last_customer_seq", "last_submission_seq", "last_case_seq", "last_employee_seq")
+COUNTERS = (
+    "last_customer_seq",
+    "last_submission_seq",
+    "last_case_seq",
+    "last_employee_seq",
+    "last_enquiry_seq",
+)
 
 
 class Organization(models.Model):
@@ -27,6 +33,7 @@ class Organization(models.Model):
     last_submission_seq = models.BigIntegerField(default=0)
     last_case_seq = models.BigIntegerField(default=0)
     last_employee_seq = models.BigIntegerField(default=0)
+    last_enquiry_seq = models.BigIntegerField(default=0)
 
     def __str__(self) -> str:
         return self.name

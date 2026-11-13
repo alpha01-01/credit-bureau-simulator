@@ -1,0 +1,194 @@
+"""Enquiries and the basic credit report (roadmap S6).
+
+A subscriber searches by the subject's identifier. On a hit the bureau
+returns a report built from what it holds at that moment: the subject's
+details, every account with its latest observation and recent payment
+history, and how many times the subject was searched in the last year.
+
+ASSUMPTION A-026: the report layout ("SIMB-R0") is a placeholder until a
+real report layout (reference R9) is available.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+
+from django.db import transaction
+
+from apps.bureau.core.models import (
+    AccountObservation,
+    CreditAccount,
+    Customer,
+    CustomerIdentifier,
+    Enquiry,
+    EnquiryOutcome,
+)
+from apps.org.models import Organization
+from apps.standards.enquiry import PURPOSES
+
+REPORT_LAYOUT = "SIMB-R0"
+HISTORY_MONTHS = 12
+
+
+class EnquiryError(Exception):
+    pass
+
+
+def enquire(
+    organization: Organization,
+    subscriber: Any,
+    product_code: str,
+    purpose: str,
+    consent_reference: str,
+    identifier_type: str,
+    identifier_value: str,
+    subject_name: str,
+    at: datetime,
+) -> Enquiry:
+    """Search for a subject and log the enquiry, with the report delivered on a hit."""
+    if purpose not in PURPOSES:
+        raise EnquiryError(f"{purpose!r} is not a permissible purpose")
+    if not consent_reference:
+        raise EnquiryError("An enquiry needs the subject's consent reference")
+    with transaction.atomic():
+        identifier = (
+            CustomerIdentifier.objects.filter(
+                organization=organization,
+                identifier_type=identifier_type,
+                identifier_value=identifier_value,
+            )
+            .select_related("customer")
+            .first()
+        )
+        customer = identifier.customer if identifier else None
+        report = build_report(customer, at) if customer else {}
+        seq = organization.allocate("last_enquiry_seq")
+        return Enquiry.objects.create(
+            organization=organization,
+            enquiry_reference=f"EQ{seq:010d}",
+            subscriber=subscriber,
+            product_code=product_code,
+            purpose=purpose,
+            consent_reference=consent_reference,
+            identifier_type=identifier_type,
+            identifier_value=identifier_value,
+            subject_name=subject_name[:200],
+            enquired_at=at,
+            outcome=EnquiryOutcome.HIT if customer else EnquiryOutcome.NO_HIT,
+            customer=customer,
+            accounts_reported=len(report.get("accounts", [])),
+            report=report,
+        )
+
+
+def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
+    as_of = at.date()
+    accounts = list(
+        CreditAccount.objects.filter(customer=customer)
+        .select_related("institution")
+        .order_by("institution__institution_code", "facility_account_number")
+    )
+    since = (as_of.replace(day=1) - timedelta(days=HISTORY_MONTHS * 31)).replace(day=1)
+    history: dict[int, list[AccountObservation]] = defaultdict(list)
+    for obs in AccountObservation.objects.filter(
+        credit_account__in=accounts, is_current=True, reporting_date__lte=as_of,
+        reporting_date__gte=since,
+    ).order_by("reporting_date"):  # fmt: skip
+        history[obs.credit_account_id].append(obs)
+
+    rows: list[dict[str, Any]] = []
+    states: list[tuple[str, Decimal | None, int | None]] = []  # status, balance, days past due
+    for account in accounts:
+        observations = history.get(account.pk, [])
+        latest = observations[-1] if observations else None
+        status = latest.facility_status if latest else account.account_status
+        states.append(
+            (
+                status,
+                latest.outstanding_balance if latest else None,
+                latest.days_past_due if latest else None,
+            )
+        )
+        rows.append(
+            {
+                "lender": account.institution.institution_name,
+                "account": _mask(account.facility_account_number),
+                "facility_type": account.facility_type,
+                "opened": _iso(account.disbursement_date),
+                "original_amount": str(account.original_amount),
+                "status": status,
+                "balance": str(latest.outstanding_balance) if latest else None,
+                "arrears": str(latest.arrears_amount) if latest else None,
+                "days_past_due": latest.days_past_due if latest else None,
+                "last_reported": _iso(latest.reporting_date) if latest else None,
+                "worst_days_past_due_12m": max(
+                    (o.days_past_due for o in observations), default=None
+                ),
+                "history": [
+                    {"month": f"{o.reporting_date:%Y-%m}", "days_past_due": o.days_past_due}
+                    for o in observations
+                ],
+            }
+        )
+
+    open_states = [st for st in states if st[0] == "AC"]
+    total = sum((st[1] for st in open_states if st[1] is not None), Decimal("0"))
+    previous_enquiries = Enquiry.objects.filter(
+        customer=customer, enquired_at__gte=at - timedelta(days=365), enquired_at__lt=at
+    ).count()
+    return {
+        "layout": REPORT_LAYOUT,
+        "as_of": as_of.isoformat(),
+        "subject": _subject(customer),
+        "summary": {
+            "accounts": len(rows),
+            "open_accounts": len(open_states),
+            "total_outstanding": str(total),
+            "accounts_in_arrears": sum(1 for st in open_states if (st[2] or 0) > 0),
+            "written_off": sum(1 for st in states if st[0] == "WO"),
+            "enquiries_last_12_months": previous_enquiries,
+        },
+        "accounts": rows,
+    }
+
+
+def _subject(customer: Customer) -> dict[str, Any]:
+    identifiers = [
+        {"type": i.identifier_type, "value": i.identifier_value}
+        for i in customer.identifiers.order_by("identifier_type", "identifier_value")
+    ]
+    subject: dict[str, Any] = {
+        "reference": customer.customer_reference,
+        "type": customer.customer_type,
+        "identifiers": identifiers,
+    }
+    individual = getattr(customer, "individual", None)
+    business = getattr(customer, "business", None)
+    if individual is not None:
+        subject |= {
+            "name": " ".join(
+                p
+                for p in (individual.first_name, individual.middle_name, individual.last_name)
+                if p
+            ),
+            "date_of_birth": _iso(individual.date_of_birth),
+            "gender": individual.gender_code,
+        }
+    elif business is not None:
+        subject |= {
+            "name": business.registered_name,
+            "registration_date": _iso(business.registration_date),
+            "sector": business.sector_code,
+        }
+    return subject
+
+
+def _mask(number: str) -> str:
+    return "*" * max(len(number) - 4, 0) + number[-4:]
+
+
+def _iso(value: date | None) -> str | None:
+    return value.isoformat() if value else None

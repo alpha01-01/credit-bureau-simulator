@@ -16,4 +16,8 @@ urlpatterns = [
         name="work-item-resolve",
     ),
     path("games/<int:game_id>/employees/", api.employees, name="employees"),
+    path("games/<int:game_id>/enquiries/", api.enquiries, name="enquiries"),
+    path(
+        "games/<int:game_id>/enquiries/<str:reference>/", api.enquiry_report, name="enquiry-report"
+    ),
 ]

@@ -24,12 +24,15 @@ from apps.bureau.submissions.pipeline import process_submission
 from apps.standards.calendar import next_working_day
 from apps.workitems.work import has_work, work_tick
 from apps.world.generation.advance import extend_world
+from apps.world.generation.applications import ensure_applications
 from apps.world.generation.rng import stream
 from apps.world.models import Lender, ProviderSubmission
 from apps.world.provider_files import generate_submission
+from apps.world.provider_files import month_end as period_end
 
 from .bridge import deliver
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
+from .enquiries import handle_application, schedule_applications
 from .judgement import rng_for, sync_work_items
 from .models import EventStatus, EventType, Game, ScheduledEvent, TickLog
 
@@ -131,7 +134,7 @@ def run_tick(game_id: int, tick: int) -> bool:
             game=game, status=EventStatus.PENDING, due_tick__lte=tick
         ).order_by("due_tick", "sequence")
         for event in due:
-            _handle(game, event)
+            _handle(game, event, cal.tick_start(tick))
             event.status = EventStatus.DONE
             event.processed_tick = tick
             event.save(update_fields=["status", "processed_tick"])
@@ -168,16 +171,20 @@ def _next_sequence(game: Game) -> int:
 
 
 def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
-    """At the start of a month, schedule when each provider's files for last month arrive."""
+    """At the start of a month: the world's month, last month's files, this month's applications.
+
+    The world lives through the coming month now (its truth stays hidden until
+    providers report it next month). The new month is a pure function of the
+    seed, so whichever game gets here first stores it and every game sees the
+    same month; the event is recorded by every game alike.
+    """
     today = cal.tick_start(tick).date()
     period = previous_month_end(today)
+    this_month = period_end(today.year, today.month)
     sequence = _next_sequence(game)
     world = game.world
-    if period > date.fromisoformat(world.config["history_end"]):
-        # A month of play has passed: the world lives through it. The new month is a
-        # pure function of the seed, so whichever game gets here first stores it and
-        # every game sees the same month; the event is recorded by every game alike.
-        while world.history_end < period:
+    if this_month > date.fromisoformat(world.config["history_end"]):
+        while world.history_end < this_month:
             extend_world(world.pk)
             world.refresh_from_db()
         ScheduledEvent.objects.create(
@@ -185,11 +192,15 @@ def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
             event_type=EventType.WORLD_ADVANCED,
             due_tick=tick,
             sequence=sequence,
-            payload={"period": period.isoformat()},
+            payload={"period": this_month.isoformat()},
         )
         sequence += 1
+        ensure_applications(world, this_month)
+        sequence = schedule_applications(game, cal, tick, this_month, sequence)
 
-    for institution in game.organization.institutions.order_by("institution_code"):
+    for institution in game.organization.institutions.filter(is_active=True).order_by(
+        "institution_code"
+    ):
         code = institution.institution_code
         lender = Lender.objects.get(world=world, code=code)
         world_sub = ProviderSubmission.objects.filter(lender=lender, period=period).first()
@@ -212,7 +223,10 @@ def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
         sequence += 1
 
 
-def _handle(game: Game, event: ScheduledEvent) -> None:
+def _handle(game: Game, event: ScheduledEvent, at: datetime) -> None:
+    if event.event_type == EventType.CREDIT_APPLICATION:
+        handle_application(game, event.payload, at)
+        return
     if event.event_type == EventType.PROVIDER_FILES_ARRIVE:
         world_sub = ProviderSubmission.objects.get(
             lender__world=game.world,
