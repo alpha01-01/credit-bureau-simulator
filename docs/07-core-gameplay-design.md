@@ -713,6 +713,7 @@ The slice is complete when:
 | D14 | **Regulatory content** | Explicit, cited by Act and section (Section 11.4). The owner reviews all regulatory content. |
 | D15 | **Title** | Working title **SimB**. A final title will be chosen before any public release. |
 | D16 | **Playtesting** | The project team are the playtesters for the first slice. External players join afterwards. |
+| D17 | **Template drift starts at play start** | At the start of the Established scenario every provider uses the agreed template layout. Unannounced layout changes (template drift) happen only during play, as events the player notices and handles. (2026-11-13) |
 
 ## 15.1 Market context to reflect
 

@@ -14,6 +14,7 @@ from functools import cache
 import numpy as np
 import pytest
 
+from apps.standards.submission_template import luhn_check_digit
 from apps.world.generation import GeneratedWorld, build_world
 from apps.world.generation.config import SCALES, EconomyModel, WorldConfig
 from apps.world.generation.engine import (
@@ -24,7 +25,7 @@ from apps.world.generation.engine import (
     scheduled_balance,
     simulate,
 )
-from apps.world.generation.identity import MOBILE_PREFIXES, luhn_check_digit
+from apps.world.generation.identity import MOBILE_PREFIXES
 from apps.world.generation.population import generate_branches, generate_businesses, generate_people
 from apps.world.generation.stats import compute_stats
 

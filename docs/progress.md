@@ -6,8 +6,8 @@ Status values: Not started, In progress, In review, Blocked, Done. See Document 
 | --- | --- | --- | --- | --- |
 | Phase 0 — Foundations | Done | 2026-11-12 | 2026-11-12 | Tagged `phase-0` |
 | S1 — World generator v0 | Done | 2026-11-12 | 2026-11-13 | Default world: 40k people, 4k businesses, 12 lenders, ~72–77k active loans, 2.7M loan-months; 78s to generate and save (target ≤ 90s on the dev laptop); 12-month default rate 8–10%. Later optimisation: faster `world_loan` load; world size (~380 MB per default world). Merged as PR #1, tagged `s1` |
-| S2 — Provider files | In review | 2026-11-13 | | Placeholder template SIMB-T0 and code lists (A-012, A-013) until R1, R2 arrive. 5 reporting providers with GOOD / AVERAGE / DIGITAL / POOR profiles; 14 defect types recorded in the defect ledger; CSV and XLSX; ~1–4s per provider-month at default scale. CI added (GitHub Actions) |
-| S3 — Pipeline v0 | Not started | | | Needs R1–R3 |
+| S2 — Provider files | Done | 2026-11-13 | 2026-11-13 | Placeholder template SIMB-T0 and code lists (A-012, A-013) until R1, R2 arrive. 5 reporting providers with GOOD / AVERAGE / DIGITAL / POOR profiles; 14 defect types recorded in the defect ledger; CSV and XLSX; ~1–4s per provider-month at default scale. CI added (GitHub Actions; not yet running: account-level Actions issue). Merged as PR #2, tagged `s2` |
+| S3 — Pipeline v0 | In review | 2026-11-13 | | Register, file checks (template, naming, repeat), staging, phone cleansing, duplicates, field validation, exact-identifier referencing, loading with lineage; rules A-017, referencing A-018. Default world: ~28k records/month, 1–11s per provider. Template drift now starts at play start (D17), so every provider begins with the agreed layout |
 | S4 — Clock and tick engine | Not started | | | Needs R5 |
 | S5 — Work items and employees v0 | Not started | | | Needs R4 |
 | S6 — Enquiries and demand v0 | Not started | | | Needs R8, R9 |

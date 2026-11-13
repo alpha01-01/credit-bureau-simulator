@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from apps.standards.submission_template import luhn_check_digit
+
 # Day names (Akan) by gender; used as first or middle names.
 AKAN_DAY_MALE = ("Kwadwo", "Kwabena", "Kwaku", "Yaw", "Kofi", "Kwame", "Kwasi")
 AKAN_DAY_FEMALE = ("Adwoa", "Abena", "Akua", "Yaa", "Afua", "Ama", "Akosua")
@@ -68,19 +70,6 @@ MOBILE_PREFIXES: dict[str, float] = {
     "020": 0.12, "050": 0.10,  # Telecel
     "027": 0.07, "057": 0.05, "026": 0.03, "056": 0.03,  # AT
 }  # fmt: skip
-
-
-def luhn_check_digit(digits: str) -> int:
-    """Luhn mod-10 check digit for a string of digits (ASSUMPTION A-002)."""
-    total = 0
-    for i, ch in enumerate(reversed(digits)):
-        d = int(ch)
-        if i % 2 == 0:
-            d *= 2
-            if d > 9:
-                d -= 9
-        total += d
-    return (10 - total % 10) % 10
 
 
 def ghana_card_numbers(rng: np.random.Generator, n: int) -> list[str]:

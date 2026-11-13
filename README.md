@@ -83,6 +83,16 @@ backend/.venv/Scripts/python backend/manage.py generate_provider_files --world 1
 
 By default this writes the five reporting providers' files for the world's last month to `storage/provider_files/`. `--period 2026-11` and `--lender HZF` pick months and lenders (both repeatable), `--all-periods` does the whole history, `--profile CLEAN` switches off every defect, and `--replace` regenerates. Every injected defect, with the correct value, is recorded in the defect ledger (`world_filedefect`), which only the game uses to score decisions; the bureau sees only the files.
 
+## Running a month through the bureau
+
+The bureau receives each provider's files and processes them: template and file checks, staging, cleansing, duplicate detection, validation, customer and account matching, and loading:
+
+```bash
+backend/.venv/Scripts/python backend/manage.py process_month --world 1 --period 2026-11
+```
+
+The first run creates a game (a bureau organisation) for the world and onboards the five reporting providers. Provider files are generated if needed. Each provider's line shows records received, accepted, unloadable and duplicate, and the issues found.
+
 ## Checks
 
 Run everything (formatting, lint, module boundaries, types, migrations, tests) before merging:

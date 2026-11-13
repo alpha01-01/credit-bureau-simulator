@@ -14,6 +14,7 @@ Conventions (ASSUMPTION A-012):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -181,3 +182,33 @@ def asset_classification(days_past_due: int) -> str:
 
 def format_date(value: date) -> str:
     return value.strftime(DATE_FORMAT)
+
+
+# --- Identifier formats ---------------------------------------------------------
+
+GHANA_CARD_PATTERN = re.compile(r"GHA-(\d{9})-(\d)")
+
+
+def luhn_check_digit(digits: str) -> int:
+    """Luhn mod-10 check digit (ASSUMPTION A-002: used by the Ghana Card number)."""
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2 == 0:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return (10 - total % 10) % 10
+
+
+def is_valid_ghana_card(value: str) -> bool:
+    match = GHANA_CARD_PATTERN.fullmatch(value)
+    if match is None:
+        return False
+    return luhn_check_digit(match.group(1)) == int(match.group(2))
+
+
+FILE_NAME_PATTERN = re.compile(
+    r"(?P<provider>[A-Z0-9]+)_(?P<kind>IND|COM)_(?P<period>\d{6})\.(?P<ext>csv|xlsx)"
+)
