@@ -73,6 +73,16 @@ backend/.venv/Scripts/python backend/manage.py generate_world --seed 42 --scale 
 
 `--scale small` or `tiny` makes a quick world for experiments; `--dry-run` prints calibration statistics without saving. The same seed always produces the same world.
 
+## Generating provider files
+
+Each month the reporting providers send their books to the bureau, with the errors real lenders make. To produce those files for a stored world:
+
+```bash
+backend/.venv/Scripts/python backend/manage.py generate_provider_files --world 1
+```
+
+By default this writes the five reporting providers' files for the world's last month to `storage/provider_files/`. `--period 2026-11` and `--lender HZF` pick months and lenders (both repeatable), `--all-periods` does the whole history, `--profile CLEAN` switches off every defect, and `--replace` regenerates. Every injected defect, with the correct value, is recorded in the defect ledger (`world_filedefect`), which only the game uses to score decisions; the bureau sees only the files.
+
 ## Checks
 
 Run everything (formatting, lint, module boundaries, types, migrations, tests) before merging:
