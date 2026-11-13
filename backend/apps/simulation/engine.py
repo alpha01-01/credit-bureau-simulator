@@ -22,6 +22,7 @@ from django.db.models import Max
 from apps.bureau.submissions.models import Submission, SubmissionStatus
 from apps.bureau.submissions.pipeline import process_submission
 from apps.standards.calendar import next_working_day
+from apps.workitems.work import has_work, work_tick
 from apps.world.generation.advance import extend_world
 from apps.world.generation.rng import stream
 from apps.world.models import Lender, ProviderSubmission
@@ -29,6 +30,7 @@ from apps.world.provider_files import generate_submission
 
 from .bridge import deliver
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
+from .judgement import rng_for, sync_work_items
 from .models import EventStatus, EventType, Game, ScheduledEvent, TickLog
 
 
@@ -88,6 +90,8 @@ def next_busy_tick(game: Game) -> int:
         organization_id=game.organization_id, submission_status=SubmissionStatus.RECEIVED
     ).exists():
         candidates.append(end_of_day_tick(current))
+    if has_work(game.organization):
+        candidates.append(current + 1)  # staff are working through the queue
     return min(candidates)
 
 
@@ -133,8 +137,20 @@ def run_tick(game_id: int, tick: int) -> bool:
             event.save(update_fields=["status", "processed_tick"])
             processed += 1
 
+        if has_work(game.organization):
+            processed += work_tick(
+                game.organization,
+                tick,
+                (tick - 1) // TICKS_PER_DAY,
+                cal.tick_end(tick),
+                rng_for(game),
+            )
+
         if cal.is_last_tick_of_day(tick):
             processed += _overnight_batch(game, cal.tick_end(tick))
+
+        # Review cases opened this tick (by the batch or by decisions) become work items.
+        sync_work_items(game, tick)
 
         TickLog.objects.create(
             game=game, tick=tick, sim_time=cal.tick_start(tick), events_processed=processed

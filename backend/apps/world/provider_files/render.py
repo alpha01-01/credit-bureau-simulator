@@ -198,12 +198,18 @@ def _apply_row_defects(
         for name in STALE_FIELDS:
             change(name, record.previous[name], "STALE_VALUE")
 
-    if (
-        rng.random() < profile.inconsistent_status
-        and row.values["ACCOUNT_STATUS"] == "AC"
-        and float(row.values["CURRENT_BALANCE"]) > 0
-    ):
-        change("ACCOUNT_STATUS", "PD", "INCONSISTENT_STATUS")
+    if rng.random() < profile.inconsistent_status:
+        status = row.values["ACCOUNT_STATUS"]
+        if status == "AC" and float(row.values["CURRENT_BALANCE"]) > 0:
+            # A live account reported as closed.
+            change("ACCOUNT_STATUS", "PD", "INCONSISTENT_STATUS")
+        elif (
+            status in ("PD", "ES")
+            and record.previous is not None
+            and float(record.previous["CURRENT_BALANCE"]) > 0
+        ):
+            # A genuinely closed account whose balance was never zeroed.
+            change("CURRENT_BALANCE", record.previous["CURRENT_BALANCE"], "INCONSISTENT_STATUS")
 
     if rng.random() < profile.wrong_identifier and len(identifiers) > 1:
         other = identifiers[int(rng.integers(len(identifiers)))]

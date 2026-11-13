@@ -53,6 +53,9 @@ RULES: dict[str, str] = {
     "L001": "An observation for this account and date already exists",
     # Cleansing
     "C001": "Phone number normalised to 10-digit format",
+    # Review
+    "M001": "Corrected by a reviewer",
+    "Q001": "Returned to the provider by a reviewer",
 }
 
 AMOUNT = re.compile(r"\d+\.\d{2}")
@@ -161,3 +164,43 @@ def validate(
     if disbursed and matures and matures < disbursed:
         issues.append(Issue("F012", "MATURITY_DATE", values["MATURITY_DATE"]))
     return issues
+
+
+# --- Proposed corrections for triage (ASSUMPTION A-022) ----------------------------
+
+_AMOUNT_NOISE = re.compile(r"^(GHS|GH¢|¢)\s*", re.IGNORECASE)
+CORRECTABLE = frozenset({"F002", "F004", "F011"})
+
+
+def propose_corrections(
+    values: dict[str, str], issues: list[Issue], period: date
+) -> dict[str, str]:
+    """Corrections a reviewer could apply, for records whose only errors are correctable.
+
+    Returns {} when any error has no plausible correction (the record can only
+    go back to the provider).
+    """
+    errors = [i for i in issues if i.severity == "ERROR"]
+    if not errors or any(i.rule_code not in CORRECTABLE for i in errors):
+        return {}
+    proposal: dict[str, str] = {}
+    for issue in errors:
+        value = values.get(issue.field, "")
+        fixed: str | None = None
+        if issue.rule_code == "F002":  # month-first date with a day over 12
+            parts = value.split("/")
+            if len(parts) == 3:
+                candidate = f"{parts[1]}/{parts[0]}/{parts[2]}"
+                parsed = parse_date(candidate)
+                if parsed is not None and parsed <= period:
+                    fixed = candidate
+        elif issue.rule_code == "F004":  # currency symbol or thousands separators
+            cleaned = _AMOUNT_NOISE.sub("", value).replace(",", "").strip()
+            if re.fullmatch(r"\d+(\.\d{1,2})?", cleaned):
+                fixed = f"{Decimal(cleaned):.2f}"
+        elif issue.rule_code == "F011":  # closed status but a balance outstanding
+            fixed = "AC"
+        if fixed is None:
+            return {}
+        proposal[issue.field] = fixed
+    return proposal

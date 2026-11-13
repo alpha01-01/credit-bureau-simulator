@@ -22,6 +22,7 @@ from apps.world.models import Branch, Lender, ProviderSubmission, World
 from apps.world.provider_files import play_start
 from apps.world.provider_files.profiles import REPORTING_PROVIDERS
 
+from .judgement import hire_starting_team
 from .models import Delivery, Game
 
 # Files are delivered at the start of the working day (Ghana is on UTC all year).
@@ -46,6 +47,7 @@ def start_game(world: World, owner: Any = None, bureau_name: str = "SimB Credit 
     )
     for code in REPORTING_PROVIDERS:
         onboard(game, Lender.objects.get(world=world, code=code), world.history_start)
+    hire_starting_team(game, world.history_start)
     return game
 
 
