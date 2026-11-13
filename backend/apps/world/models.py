@@ -375,3 +375,40 @@ class FileDefect(models.Model):
 
     def __str__(self) -> str:
         return f"{self.defect_type} {self.field} @ {self.row_number}"
+
+
+class LoanApplication(models.Model):
+    """A credit application made to a world lender (Document 07, Section 6.4).
+
+    Every loan began as an approved application; declined applications are
+    generated alongside them. These are the moments a lender may check the
+    bureau. Created for months of play, not for the generated history.
+    """
+
+    world = models.ForeignKey(World, on_delete=models.CASCADE, related_name="applications")
+    lender = models.ForeignKey(Lender, on_delete=models.CASCADE, related_name="applications")
+    period = models.DateField(help_text="Month-end of the month the application was made")
+    seq = models.IntegerField(help_text="Order within the lender and month")
+    application_date = models.DateField()
+    person = models.ForeignKey(
+        Person, on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    business = models.ForeignKey(
+        Business, on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    product = models.CharField(max_length=30)
+    approved = models.BooleanField()
+    loan = models.ForeignKey(
+        Loan, on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lender", "period", "seq"], name="world_application_unique_seq"
+            )
+        ]
+        indexes = [models.Index(fields=["world", "period"])]
+
+    def __str__(self) -> str:
+        return f"{self.lender_id} {self.period:%Y-%m} #{self.seq}"

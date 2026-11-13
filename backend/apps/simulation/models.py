@@ -68,6 +68,7 @@ class TickLog(models.Model):
 class EventType(models.TextChoices):
     PROVIDER_FILES_ARRIVE = "PROVIDER_FILES_ARRIVE", "Provider files arrive"
     WORLD_ADVANCED = "WORLD_ADVANCED", "The world lived through another month"
+    CREDIT_APPLICATION = "CREDIT_APPLICATION", "A borrower applies to a lender"
 
 
 class EventStatus(models.TextChoices):
@@ -131,3 +132,44 @@ class Delivery(models.Model):
 
     def __str__(self) -> str:
         return f"{self.world_file_id} -> {self.bureau_file_id}"
+
+
+class SubscriberView(models.Model):
+    """How a subscriber (a world lender) currently values the bureau. Hidden from the bureau."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="subscriber_views")
+    subscriber_code = models.CharField(max_length=30)
+    perceived_value = models.FloatField(default=0.6)
+    opportunities = models.IntegerField(default=0, help_text="Applications seen")
+    enquiries = models.IntegerField(default=0)
+    hits = models.IntegerField(default=0)
+    wrong_person = models.IntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["game", "subscriber_code"], name="view_unique_subscriber"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.subscriber_code}: {self.perceived_value:.2f}"
+
+
+class EnquiryJudgement(models.Model):
+    """What an enquiry was really worth, judged against the world (S6 measurement)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="enquiry_judgements")
+    enquiry = models.OneToOneField(
+        "bureau_core.Enquiry", on_delete=models.CASCADE, related_name="+"
+    )
+    application = models.ForeignKey(
+        "world.LoanApplication", on_delete=models.CASCADE, related_name="+"
+    )
+    should_hit = models.BooleanField(help_text="The applicant has credit with a reporting provider")
+    hit = models.BooleanField()
+    correct_person = models.BooleanField(null=True, blank=True)
+    outcome = models.CharField(max_length=20)
+
+    def __str__(self) -> str:
+        return f"{self.enquiry_id}: {self.outcome}"

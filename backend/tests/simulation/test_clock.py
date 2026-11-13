@@ -167,11 +167,13 @@ def test_files_arrive_on_their_day_and_are_processed_overnight(world: World) -> 
 
 
 def test_the_world_lives_through_each_month_of_play(world: World) -> None:
-    game = _play_month(start_game(world))  # into February: January has to happen first
-    advanced = ScheduledEvent.objects.get(game=game, event_type=EventType.WORLD_ADVANCED)
-    assert advanced.payload["period"] == "2027-01-31"
+    # Each month of play, the world lives through that month at its start (hidden until
+    # providers report it the following month).
+    game = _play_month(start_game(world))  # January, then into February
+    advanced = ScheduledEvent.objects.filter(game=game, event_type=EventType.WORLD_ADVANCED)
+    assert sorted(e.payload["period"] for e in advanced) == ["2027-01-31", "2027-02-28"]
     world.refresh_from_db()
-    assert world.history_end == date(2027, 1, 31)
+    assert world.history_end == date(2027, 2, 28)
 
     # February: providers report January, on top of the December data loaded in January.
     game = _play_month(game)

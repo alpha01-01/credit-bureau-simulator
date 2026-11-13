@@ -24,6 +24,11 @@ VENV_BIN = BACKEND / ".venv" / ("Scripts" if os.name == "nt" else "bin")
 NPM = shutil.which("npm.cmd" if os.name == "nt" else "npm") or "npm"
 
 
+# NumPy's OpenBLAS reserves a buffer per thread; on a busy laptop that can fail.
+# The project does no multi-threaded linear algebra, so one thread is enough.
+ENV = {**os.environ, "OPENBLAS_NUM_THREADS": os.environ.get("OPENBLAS_NUM_THREADS", "1")}
+
+
 def venv(tool: str) -> str:
     return str(VENV_BIN / tool)
 
@@ -53,7 +58,9 @@ def main() -> int:
         if args.fast and not fast:
             continue
         started = time.monotonic()
-        result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=False)  # noqa: S603
+        result = subprocess.run(  # noqa: S603
+            command, cwd=cwd, capture_output=True, text=True, check=False, env=ENV
+        )
         elapsed = time.monotonic() - started
         if result.returncode == 0:
             print(f"  PASS  {name}  ({elapsed:.1f}s)")  # noqa: T201

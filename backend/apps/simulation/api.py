@@ -19,6 +19,7 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.bureau.core.models import Enquiry
 from apps.bureau.quality.models import ALLOWED_DECISIONS
 from apps.bureau.submissions.review import ReviewError
 from apps.org.models import Employee
@@ -182,3 +183,42 @@ def employees(request: Request, game_id: int) -> Response:
             )
         ]
     )
+
+
+# --- Enquiries --------------------------------------------------------------------------
+#
+#   GET /api/v1/games/<id>/enquiries/            latest enquiries
+#   GET /api/v1/games/<id>/enquiries/<reference>/  the report as delivered
+
+
+@api_view(["GET"])
+def enquiries(request: Request, game_id: int) -> Response:
+    game = _game(request, game_id)
+    rows = (
+        Enquiry.objects.filter(organization=game.organization)
+        .select_related("subscriber", "customer")
+        .order_by("-enquired_at", "-enquiry_reference")[:500]
+    )
+    return Response(
+        [
+            {
+                "reference": e.enquiry_reference,
+                "subscriber": e.subscriber.subscriber_code,
+                "purpose": e.purpose,
+                "enquired_at": e.enquired_at.isoformat(),
+                "outcome": e.outcome,
+                "customer": e.customer.customer_reference if e.customer else None,
+                "accounts_reported": e.accounts_reported,
+            }
+            for e in rows
+        ]
+    )
+
+
+@api_view(["GET"])
+def enquiry_report(request: Request, game_id: int, reference: str) -> Response:
+    game = _game(request, game_id)
+    enquiry = get_object_or_404(
+        Enquiry, organization=game.organization, enquiry_reference=reference
+    )
+    return Response({"reference": enquiry.enquiry_reference, "report": enquiry.report})
