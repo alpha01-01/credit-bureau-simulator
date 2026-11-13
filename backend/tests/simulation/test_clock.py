@@ -27,7 +27,14 @@ from apps.simulation.clock import TICKS_PER_DAY, Calendar
 from apps.simulation.engine import ClockError, advance, next_event_tick, run_tick
 from apps.simulation.fingerprint import fingerprint
 from apps.simulation.lifecycle import delete_game, delete_world_with_games
-from apps.simulation.models import EventType, Game, GameStatus, ScheduledEvent, TickLog
+from apps.simulation.models import (
+    EventStatus,
+    EventType,
+    Game,
+    GameStatus,
+    ScheduledEvent,
+    TickLog,
+)
 from apps.standards.calendar import easter_sunday, is_working_day, public_holidays
 from apps.world.generation import build_world
 from apps.world.generation.persist import write_world
@@ -134,13 +141,16 @@ def test_ticks_are_idempotent_and_in_order(world: World) -> None:
 
 def test_files_arrive_on_their_day_and_are_processed_overnight(world: World) -> None:
     game = _play_month(start_game(world))
-    arrivals = ScheduledEvent.objects.filter(game=game, event_type=EventType.PROVIDER_FILES_ARRIVE)
+    arrivals = ScheduledEvent.objects.filter(
+        game=game, event_type=EventType.PROVIDER_FILES_ARRIVE, status=EventStatus.DONE
+    )
     assert arrivals.exists()
     cal = Calendar(game.clock_start)
     for event in arrivals:
         submission = Submission.objects.get(
             organization=game.organization,
             institution__institution_code=event.payload["lender"],
+            reporting_period=event.payload["period"],
         )
         arrival = datetime.fromisoformat(event.payload["arrival"])
         assert submission.received_at == arrival
@@ -156,12 +166,21 @@ def test_files_arrive_on_their_day_and_are_processed_overnight(world: World) -> 
     ).exists()
 
 
-def test_months_without_world_data_are_recorded(world: World) -> None:
-    game = _play_month(start_game(world))  # into February: the world has no January data yet
-    unavailable = ScheduledEvent.objects.get(
-        game=game, event_type=EventType.REPORTING_DATA_UNAVAILABLE
+def test_the_world_lives_through_each_month_of_play(world: World) -> None:
+    game = _play_month(start_game(world))  # into February: January has to happen first
+    advanced = ScheduledEvent.objects.get(game=game, event_type=EventType.WORLD_ADVANCED)
+    assert advanced.payload["period"] == "2027-01-31"
+    world.refresh_from_db()
+    assert world.history_end == date(2027, 1, 31)
+
+    # February: providers report January, on top of the December data loaded in January.
+    game = _play_month(game)
+    dates = set(
+        AccountObservation.objects.filter(
+            credit_account__organization=game.organization
+        ).values_list("reporting_date", flat=True)
     )
-    assert unavailable.payload["period"] == "2027-01-31"
+    assert {date(2026, 12, 31), date(2027, 1, 31)} <= dates
 
 
 def test_next_event_includes_the_first_tick(world: World) -> None:

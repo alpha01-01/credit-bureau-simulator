@@ -274,7 +274,15 @@ class WorldConfig:
     lenders: tuple[LenderProfile, ...] = LENDERS
     behaviour: BehaviourModel = field(default_factory=BehaviourModel)
     economy: EconomyModel = field(default_factory=EconomyModel)
+    # Months simulated after history_end, added one at a time during play.
+    # history_end stays the world's original anchor (ages, growth path), so
+    # extending a world never changes what came before.
+    extra_months: int = 0
 
     @property
     def total_months(self) -> int:
         return self.scale.burn_in_months + self.scale.history_months
+
+    @property
+    def simulated_months(self) -> int:
+        return self.total_months + self.extra_months

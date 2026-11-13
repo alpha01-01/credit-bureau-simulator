@@ -183,7 +183,9 @@ class Engine:
 
         end_month = np.datetime64(config.history_end, "M")
         total = config.total_months
-        self.months = end_month - np.arange(total - 1, -1, -1).astype("timedelta64[M]")
+        first_month = end_month - np.timedelta64(total - 1, "M")
+        self.months = first_month + np.arange(config.simulated_months).astype("timedelta64[M]")
+        self._anchor_t = total - 1  # index of the original history_end month
         self.history_start = config.scale.burn_in_months
         self.stress = self._economy()
 
@@ -465,7 +467,7 @@ class Engine:
     def _originate(self, t: int) -> None:
         month = self.months[t]
         year = int(str(month)[:4])
-        months_to_end = len(self.months) - 1 - t
+        months_to_end = self._anchor_t - t  # negative after the original history: growth continues
         econ = self.config.economy
         growth = (1.0 + econ.annual_lending_growth) ** (-months_to_end / 12.0)
         cycle = np.exp(-econ.lending_stress_elasticity * self.stress[t])
