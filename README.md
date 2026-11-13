@@ -93,6 +93,16 @@ backend/.venv/Scripts/python backend/manage.py process_month --world 1 --period 
 
 The first run creates a game (a bureau organisation) for the world and onboards the five reporting providers. Provider files are generated if needed. Each provider's line shows records received, accepted, unloadable and duplicate, and the issues found.
 
+## Playing time forward
+
+A game is a bureau running in a world. The clock advances in 15-minute ticks over Ghana working days (08:00–17:00; nights, weekends and public holidays are skipped). Provider files arrive on their scheduled days and are processed in the overnight batch.
+
+```bash
+backend/.venv/Scripts/python backend/manage.py run_clock
+```
+
+`run_clock` advances running games in real time (at 1x a game hour takes 20 seconds). The API at `/api/v1/games/<id>/clock/` reports the clock and accepts `pause/`, `resume/`, `speed/` and `advance/` (by hour, day or to the next event). `delete_game --game N` removes a game and its bureau; `delete_game --world N` removes a world with all its games.
+
 ## Checks
 
 Run everything (formatting, lint, module boundaries, types, migrations, tests) before merging:

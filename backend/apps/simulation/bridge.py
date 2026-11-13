@@ -6,8 +6,10 @@ would: the provider's public details at onboarding, and file bytes on arrival.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, date, datetime, time
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
 from django.db import transaction
@@ -17,6 +19,7 @@ from apps.bureau.submissions.intake import receive_file
 from apps.bureau.submissions.models import Submission
 from apps.org.models import Organization
 from apps.world.models import Branch, Lender, ProviderSubmission, World
+from apps.world.provider_files import play_start
 from apps.world.provider_files.profiles import REPORTING_PROVIDERS
 
 from .models import Delivery, Game
@@ -26,12 +29,21 @@ DELIVERY_TIME = time(9, 0)
 
 
 @transaction.atomic
-def start_game(world: World, bureau_name: str = "SimB Credit Bureau") -> Game:
-    """Create a bureau for a world and onboard the reporting providers."""
+def start_game(world: World, owner: Any = None, bureau_name: str = "SimB Credit Bureau") -> Game:
+    """Create a bureau for a world, onboard the reporting providers, and set the clock.
+
+    Play starts on the first day of the month after the world's history.
+    """
     organization = Organization.objects.create(
-        name=bureau_name, organization_code=f"BUREAU-W{world.pk}-{Game.objects.count() + 1}"
+        name=bureau_name, organization_code=f"BUREAU-{uuid.uuid4().hex[:10].upper()}"
     )
-    game = Game.objects.create(world=world, organization=organization)
+    start = play_start(world)
+    game = Game.objects.create(
+        world=world,
+        organization=organization,
+        owner=owner,
+        clock_start=start.replace(day=1),
+    )
     for code in REPORTING_PROVIDERS:
         onboard(game, Lender.objects.get(world=world, code=code), world.history_start)
     return game
@@ -55,12 +67,19 @@ def onboard(game: Game, lender: Lender, onboarding_date: date) -> Institution:
     return institution
 
 
-def deliver(game: Game, world_submission: ProviderSubmission) -> Submission:
-    """Hand a provider's files to the bureau, as received on the arrival date."""
+def deliver(
+    game: Game, world_submission: ProviderSubmission, received_at: datetime | None = None
+) -> Submission:
+    """Hand a provider's files to the bureau, received at ``received_at``.
+
+    Without a time (outside the clock, e.g. the process_month command), files
+    arrive at 09:00 on the provider's arrival date.
+    """
     institution = Institution.objects.get(
         organization=game.organization, institution_code=world_submission.lender.code
     )
-    received_at = datetime.combine(world_submission.arrival_date, DELIVERY_TIME, tzinfo=UTC)
+    if received_at is None:
+        received_at = datetime.combine(world_submission.arrival_date, DELIVERY_TIME, tzinfo=UTC)
     bureau_submission: Submission | None = None
     with transaction.atomic():
         for world_file in world_submission.files.order_by("kind"):
