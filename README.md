@@ -63,6 +63,16 @@ npm --prefix frontend run dev
 
 Open http://localhost:5173. The Vite dev server proxies `/api` to Django on port 8000.
 
+## Generating a world
+
+The simulated economy (people, businesses, lenders, loans and 36 months of repayment history) is generated from a seed:
+
+```bash
+backend/.venv/Scripts/python backend/manage.py generate_world --seed 42 --scale default
+```
+
+`--scale small` or `tiny` makes a quick world for experiments; `--dry-run` prints calibration statistics without saving. The same seed always produces the same world.
+
 ## Checks
 
 Run everything (formatting, lint, module boundaries, types, migrations, tests) before merging:
