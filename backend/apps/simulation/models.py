@@ -67,10 +67,7 @@ class TickLog(models.Model):
 
 class EventType(models.TextChoices):
     PROVIDER_FILES_ARRIVE = "PROVIDER_FILES_ARRIVE", "Provider files arrive"
-    REPORTING_DATA_UNAVAILABLE = (
-        "REPORTING_DATA_UNAVAILABLE",
-        "Providers have no data for the month (world not advanced)",
-    )
+    WORLD_ADVANCED = "WORLD_ADVANCED", "The world lived through another month"
 
 
 class EventStatus(models.TextChoices):

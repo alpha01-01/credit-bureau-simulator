@@ -95,7 +95,7 @@ The first run creates a game (a bureau organisation) for the world and onboards 
 
 ## Playing time forward
 
-A game is a bureau running in a world. The clock advances in 15-minute ticks over Ghana working days (08:00–17:00; nights, weekends and public holidays are skipped). Provider files arrive on their scheduled days and are processed in the overnight batch.
+A game is a bureau running in a world. The clock advances in 15-minute ticks over Ghana working days (08:00–17:00; nights, weekends and public holidays are skipped). Provider files arrive on their scheduled days and are processed in the overnight batch. At the start of each month the world lives through the month that has just ended, so providers always have a new month to report.
 
 ```bash
 backend/.venv/Scripts/python backend/manage.py run_clock

@@ -86,8 +86,12 @@ def schedule(seed: int, lender_code: str, period: date, profile: DataQualityProf
 
 
 def play_start(world: World) -> date:
-    """The first month of play: the month after the generated history ends."""
-    nxt = world.history_end + timedelta(days=1)
+    """The first month of play: the month after the originally generated history.
+
+    Fixed for the life of the world: advancing the world during play does not move it.
+    """
+    generated_end = date.fromisoformat(world.config["history_end"])
+    nxt = generated_end + timedelta(days=1)
     return month_end(nxt.year, nxt.month)
 
 

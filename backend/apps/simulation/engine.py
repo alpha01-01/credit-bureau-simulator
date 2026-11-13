@@ -13,7 +13,7 @@ and the same action log reproduce the same game.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 
 from django.db import transaction
@@ -22,6 +22,7 @@ from django.db.models import Max
 from apps.bureau.submissions.models import Submission, SubmissionStatus
 from apps.bureau.submissions.pipeline import process_submission
 from apps.standards.calendar import next_working_day
+from apps.world.generation.advance import extend_world
 from apps.world.generation.rng import stream
 from apps.world.models import Lender, ProviderSubmission
 from apps.world.provider_files import generate_submission
@@ -156,15 +157,21 @@ def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
     period = previous_month_end(today)
     sequence = _next_sequence(game)
     world = game.world
-    if period > world.history_end:
+    if period > date.fromisoformat(world.config["history_end"]):
+        # A month of play has passed: the world lives through it. The new month is a
+        # pure function of the seed, so whichever game gets here first stores it and
+        # every game sees the same month; the event is recorded by every game alike.
+        while world.history_end < period:
+            extend_world(world.pk)
+            world.refresh_from_db()
         ScheduledEvent.objects.create(
             game=game,
-            event_type=EventType.REPORTING_DATA_UNAVAILABLE,
+            event_type=EventType.WORLD_ADVANCED,
             due_tick=tick,
             sequence=sequence,
             payload={"period": period.isoformat()},
         )
-        return
+        sequence += 1
 
     for institution in game.organization.institutions.order_by("institution_code"):
         code = institution.institution_code
@@ -197,7 +204,7 @@ def _handle(game: Game, event: ScheduledEvent) -> None:
             period=event.payload["period"],
         )
         deliver(game, world_sub, datetime.fromisoformat(event.payload["arrival"]))
-    # REPORTING_DATA_UNAVAILABLE is a record only: nothing to do.
+    # WORLD_ADVANCED is a record only: the work was done when it was scheduled.
 
 
 def _overnight_batch(game: Game, at: datetime) -> int:

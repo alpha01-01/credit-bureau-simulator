@@ -36,12 +36,17 @@ class GeneratedWorld:
 
 
 def build_world(
-    seed: int, scale: str = "default", history_end: date | None = None
+    seed: int, scale: str = "default", history_end: date | None = None, extra_months: int = 0
 ) -> GeneratedWorld:
-    """Generate a world in memory. Pure: no database access."""
+    """Generate a world in memory. Pure: no database access.
+
+    ``extra_months`` simulates that many months beyond ``history_end`` (used to
+    advance a stored world during play); everything up to ``history_end`` is
+    identical to a world generated without them.
+    """
     if scale not in SCALES:
         raise ValueError(f"Unknown scale {scale!r}; choose from {', '.join(SCALES)}")
-    config = WorldConfig(seed=seed, scale=SCALES[scale])
+    config = WorldConfig(seed=seed, scale=SCALES[scale], extra_months=extra_months)
     if history_end is not None:
         config = replace(config, history_end=history_end)
     people = generate_people(config)
