@@ -65,3 +65,19 @@ forbidden_modules = [
     "apps.workitems",
     "apps.simulation",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Shared standards (template, code lists) depend on nothing else"
+type = "forbidden"
+source_modules = ["apps.standards"]
+forbidden_modules = [
+    "apps.accounts",
+    "apps.org",
+    "apps.world",
+    "apps.simulation",
+    "apps.workitems",
+    "apps.bureau",
+    "apps.commercial",
+    "apps.finance",
+    "apps.audit",
+]

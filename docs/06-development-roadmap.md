@@ -282,6 +282,8 @@ Bureau_Sim/
 │   │   ├── org/                organisation, departments, employees
 │   │   ├── world/              GROUND TRUTH — borrowers, loans, economy,
 │   │   │                       provider data-quality profiles, defect ledger
+│   │   ├── standards/          published rules shared by all parties: submission
+│   │   │                       template, code lists (imports nothing else)
 │   │   ├── simulation/         game, clock, ticks, events, scenarios, missions
 │   │   ├── workitems/          work-item framework, AI resolution
 │   │   ├── bureau/             the bureau's own systems:

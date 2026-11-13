@@ -10,13 +10,16 @@ written; loans that ended during burn-in never become visible to anyone.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import numpy as np
-from django.db import connection
+from django.conf import settings
+from django.db import connection, transaction
 
 from .config import PRODUCTS, WorldConfig
 from .engine import PERSON, PRODUCT_CODES, STATUS_NAMES, SimulationResult
@@ -53,7 +56,9 @@ def _reserve_ids(cursor: Any, table: str, count: int) -> list[int]:
     return [row[0] for row in cursor.fetchall()]
 
 
-def _copy(cursor: Any, table: str, columns: Sequence[str], rows: Iterable[Sequence[Any]]) -> None:
+def copy_rows(
+    cursor: Any, table: str, columns: Sequence[str], rows: Iterable[Sequence[Any]]
+) -> None:
     sql = f"COPY {table} ({', '.join(columns)}) FROM STDIN"
     with cursor.copy(sql) as copy:
         for row in rows:
@@ -110,7 +115,7 @@ def write_world(
         cursor = cursor.cursor  # the underlying psycopg cursor, for COPY
 
         # Economy
-        _copy(
+        copy_rows(
             cursor,
             "world_economymonth",
             ("world_id", "period", "stress_index"),
@@ -122,7 +127,7 @@ def write_world(
 
         # Lenders and branches
         lender_ids = _reserve_ids(cursor, "world_lender", len(config.lenders))
-        _copy(
+        copy_rows(
             cursor,
             "world_lender",
             ("id", "world_id", "seq_no", "code", "name", "lender_type", "founded", "profile"),
@@ -141,7 +146,7 @@ def write_world(
             ),
         )
         branch_ids = _reserve_ids(cursor, "world_branch", len(branches))
-        _copy(
+        copy_rows(
             cursor,
             "world_branch",
             ("id", "lender_id", "code", "name", "region", "town"),
@@ -162,7 +167,7 @@ def write_world(
         person_ids = _reserve_ids(cursor, "world_person", people.n)
         incomes = _money(people.income)
         births = people.birth_date.tolist()
-        _copy(
+        copy_rows(
             cursor,
             "world_person",
             (
@@ -186,7 +191,7 @@ def write_world(
         # Businesses
         business_ids = _reserve_ids(cursor, "world_business", businesses.n)
         revenues = _money(businesses.revenue)
-        _copy(
+        copy_rows(
             cursor,
             "world_business",
             (
@@ -214,7 +219,7 @@ def write_world(
         used_customers = np.unique(book["customer"][loan_idx])
         customer_ids_list = _reserve_ids(cursor, "world_lendercustomer", len(used_customers))
         customer_id = dict(zip(used_customers.tolist(), customer_ids_list, strict=True))
-        _copy(
+        copy_rows(
             cursor,
             "world_lendercustomer",
             ("id", "world_id", "lender_id", "person_id", "business_id", "customer_number"),
@@ -261,7 +266,7 @@ def write_world(
         customers = book["customer"][loan_idx]
         branch = book["branch"][loan_idx]
         lender_seq = book["lender_seq"][loan_idx]
-        _copy(
+        copy_rows(
             cursor,
             "world_loan",
             (
@@ -358,6 +363,23 @@ def delete_world(world_id: int) -> None:
     """
     partition = loan_month_partition(world_id)
     with connection.cursor() as cursor:
+        # Provider submissions first: they reference loans.
+        cursor.execute(
+            "DELETE FROM world_filedefect WHERE submission_id IN "
+            "(SELECT id FROM world_providersubmission WHERE world_id = %s)",
+            [world_id],
+        )
+        cursor.execute(
+            "DELETE FROM world_providerfilerow WHERE file_id IN (SELECT f.id FROM world_providerfile f "
+            "JOIN world_providersubmission s ON s.id = f.submission_id WHERE s.world_id = %s)",
+            [world_id],
+        )
+        cursor.execute(
+            "DELETE FROM world_providerfile WHERE submission_id IN "
+            "(SELECT id FROM world_providersubmission WHERE world_id = %s)",
+            [world_id],
+        )
+        cursor.execute("DELETE FROM world_providersubmission WHERE world_id = %s", [world_id])
         cursor.execute(f"DROP TABLE IF EXISTS {partition}")
         for table, column in (
             ("world_loan", "world_id"),
@@ -373,6 +395,10 @@ def delete_world(world_id: int) -> None:
         for table in ("world_lender", "world_economymonth", "world_world"):
             column = "id" if table == "world_world" else "world_id"
             cursor.execute(f"DELETE FROM {table} WHERE {column} = %s", [world_id])  # noqa: S608
+
+    # The world's provider files on disk go too, once the deletion is committed.
+    files = Path(settings.STORAGE_ROOT) / "provider_files" / f"world_{int(world_id)}"
+    transaction.on_commit(lambda: shutil.rmtree(files, ignore_errors=True))
 
 
 def _generator_version() -> str:
