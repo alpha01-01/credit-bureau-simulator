@@ -81,3 +81,9 @@ forbidden_modules = [
     "apps.finance",
     "apps.audit",
 ]
+
+[[tool.importlinter.contracts]]
+name = "The bureau is driven by the simulation, never the reverse"
+type = "forbidden"
+source_modules = ["apps.bureau", "apps.org"]
+forbidden_modules = ["apps.simulation", "apps.workitems"]
