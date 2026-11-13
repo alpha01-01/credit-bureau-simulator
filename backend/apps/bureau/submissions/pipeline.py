@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 
 from django.db import transaction
@@ -67,7 +68,9 @@ class _Row:
     account: CreditAccount | None = None
 
 
-def process_submission(submission: Submission) -> ProcessingRun:
+def process_submission(submission: Submission, at: datetime | None = None) -> ProcessingRun:
+    """Process a submission. ``at`` is the (game) time of the run; default: now."""
+    at = at or timezone.now()
     with transaction.atomic():
         submission = (
             Submission.objects.select_for_update()
@@ -78,7 +81,7 @@ def process_submission(submission: Submission) -> ProcessingRun:
         run = ProcessingRun.objects.create(
             submission=submission,
             run_number=number,
-            started_at=timezone.now(),
+            started_at=at,
             processing_version=PROCESSING_VERSION,
         )
         file_issues: list[ValidationIssue] = []
@@ -101,7 +104,7 @@ def process_submission(submission: Submission) -> ProcessingRun:
         run.customers_created = len(pending.customers)
         run.accounts_created = len(pending.accounts)
         run.observations_created = run.records_accepted
-        run.completed_at = timezone.now()
+        run.completed_at = at
         run.processing_status = RunStatus.COMPLETED
         run.save()
 

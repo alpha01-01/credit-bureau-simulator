@@ -7,6 +7,7 @@ which bureau file so decisions can later be scored against the truth.
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import models
 
 from apps.bureau.submissions.models import Submission, SubmissionFile
@@ -14,13 +15,104 @@ from apps.org.models import Organization
 from apps.world.models import ProviderFile, ProviderSubmission, World
 
 
+class GameStatus(models.TextChoices):
+    PAUSED = "PAUSED", "Paused"
+    RUNNING = "RUNNING", "Running"
+
+
+SPEEDS = (1, 2, 4, 8)
+
+
 class Game(models.Model):
+    """A bureau playing in a world, and its clock (Document 07, Section 5).
+
+    Time advances in ticks of 15 working minutes. Tick 1 is 08:00-08:15 on the
+    first working day of ``clock_start``'s month; nights, weekends and public
+    holidays have no ticks. ``current_tick`` is the last tick completed.
+    """
+
     world = models.ForeignKey(World, on_delete=models.CASCADE, related_name="+")
     organization = models.OneToOneField(Organization, on_delete=models.CASCADE, related_name="+")
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="games",
+    )
+    clock_start = models.DateField(help_text="First calendar day of play")
+    current_tick = models.BigIntegerField(default=0)
+    status = models.CharField(max_length=10, choices=GameStatus.choices, default=GameStatus.PAUSED)
+    speed = models.PositiveSmallIntegerField(default=1, help_text="1x, 2x, 4x or 8x")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
         return f"Game {self.pk} ({self.organization})"
+
+
+class TickLog(models.Model):
+    """One row per completed tick: what makes ticks idempotent."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="ticks")
+    tick = models.BigIntegerField()
+    sim_time = models.DateTimeField(help_text="Start of the tick, game time")
+    events_processed = models.IntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["game", "tick"], name="tick_unique")]
+
+    def __str__(self) -> str:
+        return f"{self.game_id}:{self.tick}"
+
+
+class EventType(models.TextChoices):
+    PROVIDER_FILES_ARRIVE = "PROVIDER_FILES_ARRIVE", "Provider files arrive"
+    REPORTING_DATA_UNAVAILABLE = (
+        "REPORTING_DATA_UNAVAILABLE",
+        "Providers have no data for the month (world not advanced)",
+    )
+
+
+class EventStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    DONE = "DONE", "Done"
+
+
+class ScheduledEvent(models.Model):
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="events")
+    event_type = models.CharField(max_length=40, choices=EventType.choices)
+    due_tick = models.BigIntegerField()
+    sequence = models.IntegerField(help_text="Order among events due in the same tick")
+    payload = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=10, choices=EventStatus.choices, default=EventStatus.PENDING
+    )
+    processed_tick = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["game", "status", "due_tick"])]
+
+    def __str__(self) -> str:
+        return f"{self.event_type} @ {self.due_tick}"
+
+
+class PlayerAction(models.Model):
+    """The action log: replaying it on the same world reproduces the game."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="actions")
+    sequence = models.IntegerField()
+    tick = models.BigIntegerField(help_text="Clock position when the action was taken")
+    action_type = models.CharField(max_length=40)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "sequence"], name="action_unique_sequence")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.game_id}#{self.sequence} {self.action_type}"
 
 
 class Delivery(models.Model):

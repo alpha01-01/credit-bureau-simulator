@@ -36,6 +36,7 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 | R14 | **Typical operating costs**: rent (Accra office), IT infrastructure, software licences | Finance, startup scenario | Needed |
 | R15 | **Bank of Ghana credit reporting annual reports** (market statistics: enquiries, records, participants) | Calibrating world scale and demand | Public |
 | R16 | **Scorecard practice**: score ranges, risk bands, typical variables | Analytics, scoring product | Needed |
+| R17 | **Ghana public holidays**: the current statutory list (Public Holidays and Commemorative Days Act, as amended), the weekend observance rule, and how Eid dates are announced | Working-day calendar, SLA days | Needed (public) |
 
 ## Index
 
