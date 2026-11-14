@@ -8,22 +8,22 @@ Files are read back from disk, as the bureau will read them.
 from __future__ import annotations
 
 import csv
-import io
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
 import pytest
-from openpyxl import load_workbook
 
 from apps.standards.calendar import next_working_day
 from apps.standards.submission_template import (
     CODE_LISTS,
+    DELIMITER,
     FIELDS,
+    FILE_NAME_PATTERN,
     SUBMISSION_DUE_DAY,
     FileKind,
     asset_classification,
@@ -31,7 +31,7 @@ from apps.standards.submission_template import (
     header,
 )
 from apps.world.generation import build_world
-from apps.world.generation.config import EMPLOYMENT_TYPES, REGIONS, SECTORS
+from apps.world.generation.config import EMPLOYMENT_TYPES, LENDER_SRN, SECTORS
 from apps.world.generation.persist import delete_world, write_world
 from apps.world.models import (
     FileDefect,
@@ -51,6 +51,7 @@ from apps.world.provider_files import (
     schedule,
     submission_dir,
 )
+from apps.world.provider_files.details import EMPLOYMENT_CODE, SECTOR_CODES
 from apps.world.provider_files.profiles import CLEAN, POOR, DataQualityProfile
 from apps.world.provider_files.render import Layout
 from apps.world.provider_files.truth import load_truth
@@ -108,16 +109,14 @@ def _lender(world: World) -> Lender:
 def read_file(stored: ProviderFile, root: Path) -> tuple[list[str], list[list[str]]]:
     """Read a provider file back from storage, as text."""
     path = root / stored.storage_path
-    if stored.file_format == "CSV":
-        with path.open(encoding="utf-8", newline="") as handle:
-            lines = list(csv.reader(handle))
-        return lines[0], lines[1:]
-    workbook = load_workbook(io.BytesIO(path.read_bytes()), read_only=True)
-    rows = [
-        ["" if v is None else str(v) for v in row]
-        for row in workbook["Data"].iter_rows(values_only=True)
-    ]
-    return rows[0], rows[1:]
+    assert stored.file_format == "CSV"
+    with path.open(encoding="utf-8", newline="") as handle:
+        lines = list(csv.reader(handle, delimiter=DELIMITER))
+    return lines[0], lines[1:]
+
+
+def whole(value: Decimal) -> str:
+    return str(int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
 
 
 # --- A clean profile reproduces the truth exactly --------------------------------
@@ -129,7 +128,14 @@ def test_clean_file_matches_the_truth_exactly(world: World, tmp_path: Path) -> N
     result = generate_submission(world, lender, period, CLEAN)
 
     files = {f.kind: f for f in result.submission.files.all()}
-    assert set(files) == {"IND", "COM"}
+    assert set(files) == {"CONC", "BUSC"}
+    for stored in files.values():
+        # Named as the standard requires: SRN, reporting date, creation date, version, kind.
+        match = FILE_NAME_PATTERN.fullmatch(stored.file_name)
+        assert match is not None
+        assert match["srn"] == LENDER_SRN[lender.code]
+        assert match["period"] == format_date(period)
+        assert match["kind"] == stored.kind
     assert not FileDefect.objects.filter(submission=result.submission).exists()
     assert not result.schedule.is_late
 
@@ -159,44 +165,50 @@ def _assert_matches_world(
         pk=loan_id
     )
     month = LoanMonth.objects.get(loan=loan, period=period)
-    assert values["REPORTING_DATE"] == format_date(period)
-    assert values["ACCOUNT_NUMBER"] == loan.account_number
-    assert values["CUSTOMER_NUMBER"] == loan.customer.customer_number
-    assert values["BRANCH_CODE"] == loan.branch.code
-    assert Decimal(values["ORIGINAL_AMOUNT"]) == loan.principal
-    assert Decimal(values["INSTALMENT_AMOUNT"]) == loan.installment
-    assert values["DISBURSEMENT_DATE"] == format_date(loan.disbursement_date)
-    assert Decimal(values["CURRENT_BALANCE"]) == month.outstanding_balance
-    assert Decimal(values["ARREARS_AMOUNT"]) == month.arrears_amount
-    assert int(values["DAYS_PAST_DUE"]) == month.days_past_due
-    assert Decimal(values["AMOUNT_PAID"]) == month.amount_paid
-    assert values["ASSET_CLASSIFICATION"] == asset_classification(month.days_past_due)
+    assert values["Data"] == "D"
+    assert values["CorrectionIndicator"] == "0"
+    assert values["FacilityAccNum"] == loan.account_number
+    assert values["CustomerID"] == loan.customer.customer_number
+    assert values["BranchCode"] == loan.branch.code
+    assert values["FacilityAmount"] == whole(loan.principal)
+    assert values["SchdInstalAmount"] == whole(loan.installment)
+    assert values["DisbursementDate"] == format_date(loan.disbursement_date)
+    assert values["CurBal"] == whole(month.outstanding_balance)
+    assert values["NDIA"] == str(month.days_past_due)
+    assert values["AssetClassification"] == asset_classification(month.days_past_due)
+    if values["FacilityStatusCode"] in ("C", "T"):
+        assert values["CurBal"] == values["AmountInArrears"] == "0"
+        assert values["ClosedDate"] == format_date(period)
+    else:
+        assert values["AmountInArrears"] == whole(month.arrears_amount)
     if kind is FileKind.INDIVIDUAL:
         person = loan.customer.person
         assert person is not None
-        assert values["GHANA_CARD_NUMBER"] == person.ghana_card
-        assert values["SURNAME"] == person.last_name
-        assert values["FIRST_NAME"] == person.first_name
-        assert values["DATE_OF_BIRTH"] == format_date(person.date_of_birth)
-        assert values["MOBILE_NUMBER"] == person.phone_primary
+        assert values["NatIDNum"] == person.ghana_card
+        assert values["Surname"] == person.last_name
+        assert values["FirstName"] == person.first_name
+        assert values["DOB"] == format_date(person.date_of_birth)
+        assert values["MobileTel1"] == person.phone_primary
+        assert values["EmpType"] == EMPLOYMENT_CODE[person.employment_type]
     else:
         business = loan.customer.business
         assert business is not None
-        assert values["REGISTERED_NAME"] == business.registered_name
-        assert values["TIN"] == business.tin
-        assert values["REGISTRATION_NUMBER"] == business.registration_number
+        assert values["BusinessName"] == business.registered_name
+        assert values["TINum"] == business.tin
+        assert values["BusRegNum"] == business.registration_number
+        assert values["SubSecIndCode"] == SECTOR_CODES[business.sector][1]
 
 
 # --- Every defect is in the ledger ----------------------------------------------
 
 
-@pytest.mark.parametrize("file_format", ["CSV", "XLSX"])
+@pytest.mark.parametrize("phones_as_numbers", [False, True])
 def test_every_difference_from_the_truth_is_in_the_defect_ledger(
-    world: World, tmp_path: Path, file_format: str
+    world: World, tmp_path: Path, phones_as_numbers: bool
 ) -> None:
     lender = _lender(world)
     period = world.history_end
-    profile = replace(HEAVY, file_format=file_format)
+    profile = replace(HEAVY, phones_as_numbers=phones_as_numbers)
     result = generate_submission(world, lender, period, profile, drift_from=world.history_start)
     seen: Counter[str] = Counter()
 
@@ -378,9 +390,12 @@ def test_no_template_drift_before_play_starts(world: World, tmp_path: Path) -> N
 
 
 def test_code_lists_cover_every_value_the_world_produces() -> None:
-    assert set(REGIONS) <= set(CODE_LISTS["REGION"])
-    assert set(SECTORS) <= set(CODE_LISTS["SECTOR"])
-    assert {e.code for e in EMPLOYMENT_TYPES} <= set(CODE_LISTS["EMPLOYMENT_TYPE"])
+    assert set(SECTORS) <= set(SECTOR_CODES)
+    for sector, sub_sector in SECTOR_CODES.values():
+        assert sector in CODE_LISTS["SectorIndCode"]
+        assert sub_sector in CODE_LISTS["SubSecIndCode"]
+    assert {e.code for e in EMPLOYMENT_TYPES} <= set(EMPLOYMENT_CODE)
+    assert set(EMPLOYMENT_CODE.values()) <= set(CODE_LISTS["EmpType"])
     for fields in FIELDS.values():
         for f in fields:
             assert f.code_list is None or f.code_list in CODE_LISTS
@@ -388,8 +403,8 @@ def test_code_lists_cover_every_value_the_world_produces() -> None:
 
 @pytest.mark.parametrize(
     ("dpd", "expected"),
-    [(0, "CUR"), (29, "CUR"), (30, "OLEM"), (89, "OLEM"), (90, "SUB"), (179, "SUB"),
-     (180, "DBT"), (359, "DBT"), (360, "LOSS")],
+    [(0, "A"), (30, "A"), (31, "B"), (90, "B"), (91, "C"), (180, "C"), (181, "D"),
+     (360, "D"), (361, "E")],
 )  # fmt: skip
 def test_asset_classification_bands(dpd: int, expected: str) -> None:
     assert asset_classification(dpd) == expected
@@ -414,17 +429,13 @@ def test_deleting_a_world_removes_submissions_and_files(
     assert not directory.exists()
 
 
-def test_xlsx_carries_no_save_time() -> None:
-    """openpyxl stamps the current time into XLSX files; it must be replaced."""
-    import zipfile
-
+def test_files_are_pipe_delimited_csv_with_a_header() -> None:
     from apps.world.provider_files.files import to_bytes
     from apps.world.provider_files.render import RenderedFile
 
     kind = FileKind.INDIVIDUAL
-    rendered = RenderedFile(kind, Layout.standard(kind), [["x"] * len(header(kind))], [1], [], ())
-    data = to_bytes(rendered, "XLSX", month_end(2026, 12))
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        core = archive.read("docProps/core.xml").decode()
-        assert all(info.date_time == (2026, 12, 31, 0, 0, 0) for info in archive.infolist())
-    assert core.count("2026-12-31T00:00:00Z") == 2
+    row = ["a|b" if i == 0 else "x" for i in range(len(header(kind)))]
+    rendered = RenderedFile(kind, Layout.standard(kind), [row], [1], [], ())
+    lines = to_bytes(rendered).decode("utf-8").split("\r\n")
+    assert lines[0] == DELIMITER.join(header(kind))
+    assert lines[1].startswith('"a|b"|x|')  # a delimiter inside a value is quoted

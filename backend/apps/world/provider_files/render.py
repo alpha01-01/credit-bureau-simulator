@@ -19,35 +19,37 @@ from .profiles import COMMERCIAL_BLANKABLE, INDIVIDUAL_BLANKABLE, DataQualityPro
 from .truth import STALE_FIELDS, TruthRecord
 
 PHONE_FIELDS = {
-    FileKind.INDIVIDUAL: ("MOBILE_NUMBER", "ALT_MOBILE_NUMBER"),
-    FileKind.COMMERCIAL: ("CONTACT_NUMBER",),
+    FileKind.INDIVIDUAL: ("MobileTel1", "MobileTel2"),
+    FileKind.COMMERCIAL: ("OfficeTel1",),
 }
-IDENTIFIER_FIELD = {FileKind.INDIVIDUAL: "GHANA_CARD_NUMBER", FileKind.COMMERCIAL: "TIN"}
+IDENTIFIER_FIELD = {FileKind.INDIVIDUAL: "NatIDNum", FileKind.COMMERCIAL: "TINum"}
 NAME_FIELDS = {
-    FileKind.INDIVIDUAL: ("SURNAME", "FIRST_NAME"),
-    FileKind.COMMERCIAL: ("REGISTERED_NAME",),
+    FileKind.INDIVIDUAL: ("Surname", "FirstName"),
+    FileKind.COMMERCIAL: ("BusinessName",),
 }
 DATE_FIELDS = {
-    FileKind.INDIVIDUAL: ("DATE_OF_BIRTH", "DISBURSEMENT_DATE"),
-    FileKind.COMMERCIAL: ("REGISTRATION_DATE", "DISBURSEMENT_DATE"),
+    FileKind.INDIVIDUAL: ("DOB", "DisbursementDate"),
+    FileKind.COMMERCIAL: ("RegistrationDate", "DisbursementDate"),
 }
-AMOUNT_FIELDS = ("ORIGINAL_AMOUNT", "INSTALMENT_AMOUNT", "CURRENT_BALANCE", "ARREARS_AMOUNT")
+AMOUNT_FIELDS = ("FacilityAmount", "SchdInstalAmount", "CurBal", "AmountInArrears")
 
-# Plausible alternative column names used when a provider changes its extract.
+# Alternative column names seen when a provider changes its extract, including
+# real variants in use (e.g. "CreditFacilityAccNum", "Tinum").
 HEADER_SYNONYMS: dict[str, tuple[str, ...]] = {
-    "GHANA_CARD_NUMBER": ("NATIONAL_ID", "GHANA_CARD_NO"),
-    "MOBILE_NUMBER": ("PHONE", "MOBILE_NO"),
-    "CURRENT_BALANCE": ("OUTSTANDING_BALANCE", "BALANCE"),
-    "DAYS_PAST_DUE": ("DPD", "DAYS_IN_ARREARS"),
-    "DATE_OF_BIRTH": ("DOB", "BIRTH_DATE"),
-    "ARREARS_AMOUNT": ("AMOUNT_IN_ARREARS", "ARREARS"),
-    "ORIGINAL_AMOUNT": ("LOAN_AMOUNT", "AMOUNT_DISBURSED"),
-    "ACCOUNT_NUMBER": ("ACCOUNT_NO", "LOAN_ACCOUNT_NO"),
-    "CUSTOMER_NUMBER": ("CUSTOMER_ID", "CIF_NUMBER"),
-    "SURNAME": ("LAST_NAME",),
-    "REGISTRATION_NUMBER": ("REG_NO",),
-    "CONTACT_NUMBER": ("PHONE_NUMBER",),
-    "TIN": ("TAX_ID",),
+    "FacilityAccNum": ("CreditFacilityAccNum", "Facilityaccnum"),
+    "NatIDNum": ("NationalID", "GhanaCardNo"),
+    "DOB": ("DateOfBirth", "DateOfBrith"),
+    "MobileTel1": ("MobileNo", "Mobile1"),
+    "CurBal": ("CurrentBalance", "Curbal"),
+    "NDIA": ("DaysInArrears", "Ndia"),
+    "AmountInArrears": ("ArrearsAmount", "Amountinarrears"),
+    "FacilityAmount": ("LoanAmount", "Facilityamount"),
+    "CustomerID": ("CustomerNo", "CustID"),
+    "Surname": ("LastName",),
+    "BusRegNum": ("Busregnum", "RegNo"),
+    "TINum": ("Tinum", "TiNum"),
+    "OfficeTel1": ("Officetel1",),
+    "BusinessName": ("Businessname",),
 }
 
 
@@ -106,7 +108,7 @@ class RenderedFile:
     rows: list[list[str]]  # in layout order
     loan_ids: list[int]  # true loan for each row
     defects: list[Defect]  # row and file defects, row numbers resolved
-    phone_columns: tuple[int, ...]  # positions of phone fields (for XLSX typing)
+    phone_columns: tuple[int, ...]  # positions of phone fields
 
 
 def drifted_layout(kind: FileKind, rng: np.random.Generator) -> Layout:
@@ -199,17 +201,17 @@ def _apply_row_defects(
             change(name, record.previous[name], "STALE_VALUE")
 
     if rng.random() < profile.inconsistent_status:
-        status = row.values["ACCOUNT_STATUS"]
-        if status == "AC" and float(row.values["CURRENT_BALANCE"]) > 0:
+        status = row.values["FacilityStatusCode"]
+        if status == "A" and int(row.values["CurBal"]) > 0:
             # A live account reported as closed.
-            change("ACCOUNT_STATUS", "PD", "INCONSISTENT_STATUS")
+            change("FacilityStatusCode", "C", "INCONSISTENT_STATUS")
         elif (
-            status in ("PD", "ES")
+            status in ("C", "T")
             and record.previous is not None
-            and float(record.previous["CURRENT_BALANCE"]) > 0
+            and int(record.previous["CurBal"] or 0) > 0
         ):
             # A genuinely closed account whose balance was never zeroed.
-            change("CURRENT_BALANCE", record.previous["CURRENT_BALANCE"], "INCONSISTENT_STATUS")
+            change("CurBal", record.previous["CurBal"], "INCONSISTENT_STATUS")
 
     if rng.random() < profile.wrong_identifier and len(identifiers) > 1:
         other = identifiers[int(rng.integers(len(identifiers)))]
@@ -227,10 +229,10 @@ def _apply_row_defects(
         change(name, _typo(row.values[name], rng), "NAME_TYPO")
 
     if kind is FileKind.INDIVIDUAL and rng.random() < profile.name_swap:
-        surname, first = row.values["SURNAME"], row.values["FIRST_NAME"]
-        if not touched & {"SURNAME", "FIRST_NAME"} and surname and first and surname != first:
-            change("SURNAME", first, "NAME_SWAP")
-            change("FIRST_NAME", surname, "NAME_SWAP")
+        surname, first = row.values["Surname"], row.values["FirstName"]
+        if not touched & {"Surname", "FirstName"} and surname and first and surname != first:
+            change("Surname", first, "NAME_SWAP")
+            change("FirstName", surname, "NAME_SWAP")
 
     phones = PHONE_FIELDS[kind]
     if rng.random() < profile.phone_format:
@@ -241,20 +243,23 @@ def _apply_row_defects(
     if rng.random() < profile.date_format:
         dates = DATE_FIELDS[kind]
         name = dates[int(rng.integers(len(dates)))]
-        if row.values[name]:
-            day, month, year = row.values[name].split("/")
-            change(name, f"{month}/{day}/{year}", "DATE_FORMAT")
+        value = row.values[name]
+        if value:
+            year, month, day = value[:4], value[4:6], value[6:]
+            # The two real mistakes: day and month swapped, or a local DD/MM/YYYY date.
+            variants = (f"{year}{day}{month}", f"{day}/{month}/{year}")
+            change(name, variants[int(rng.integers(2))], "DATE_FORMAT")
 
     if rng.random() < profile.future_date:
         future = period + timedelta(days=int(rng.integers(1, 400)))
-        change("DISBURSEMENT_DATE", format_date(future), "FUTURE_DATE")
+        change("DisbursementDate", format_date(future), "FUTURE_DATE")
 
     if rng.random() < profile.amount_format:
         name = AMOUNT_FIELDS[int(rng.integers(len(AMOUNT_FIELDS)))]
         change(name, _amount_variant(row.values[name], rng), "AMOUNT_FORMAT")
 
     # Excel strips the leading zero from phone numbers stored as numbers.
-    if profile.file_format == "XLSX" and profile.xlsx_numeric_phones:
+    if profile.phones_as_numbers:
         for name in phones:
             value = row.values[name]
             if value.startswith("0") and value.isdigit():
@@ -310,9 +315,7 @@ def _phone_variant(number: str, rng: np.random.Generator) -> str:
 
 
 def _amount_variant(amount: str, rng: np.random.Generator) -> str:
-    whole, cents = amount.split(".")
-    grouped = f"{int(whole):,}"
-    variants = [f"{grouped}.{cents}", f"GHS {amount}", f"GHS{grouped}.{cents}"]
-    if cents.endswith("0"):
-        variants.append(whole if cents == "00" else f"{whole}.{cents[0]}")
+    """Amounts the standard forbids: separators, a currency, or decimals."""
+    grouped = f"{int(amount):,}"
+    variants = (grouped, f"GHS {amount}", f"{amount}.00")
     return variants[int(rng.integers(len(variants)))]

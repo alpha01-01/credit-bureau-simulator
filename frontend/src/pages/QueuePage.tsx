@@ -166,31 +166,74 @@ function Field({
   )
 }
 
+/** A template date (YYYYMMDD) or an ISO date as DD/MM/YYYY; anything else unchanged. */
+function day(value: string | null | undefined) {
+  const m = value?.match(/^(\d{4})-?(\d{2})-?(\d{2})$/)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : value
+}
+
 function MatchEvidence({ item }: { item: WorkItemDetail }) {
   const r = item.record
-  const individual = 'FIRST_NAME' in r
+  const individual = 'FirstName' in r
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card title="Submitted record">
         <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
           {individual ? (
             <>
-              <Field label="Name" value={`${r.FIRST_NAME} ${r.MIDDLE_NAMES} ${r.SURNAME}`} />
-              <Field label="Date of birth" value={r.DATE_OF_BIRTH} />
-              <Field label="Gender" value={r.GENDER} />
-              <Field label="Ghana Card" value={r.GHANA_CARD_NUMBER} highlight />
-              <Field label="Mobile" value={r.MOBILE_NUMBER} />
+              <Field
+                label="Name"
+                value={[r.FirstName, r.MiddleNames, r.Surname].filter(Boolean).join(' ')}
+              />
+              <Field label="Date of birth" value={day(r.DOB)} />
+              <Field label="Gender" value={r.Gender} />
+              <Field
+                label="Ghana Card"
+                value={r.NatIDNum}
+                highlight={item.evidence.identifier_field === 'NatIDNum'}
+              />
+              {r.VotersIDNum && (
+                <Field
+                  label="Voter's ID"
+                  value={r.VotersIDNum}
+                  highlight={item.evidence.identifier_field === 'VotersIDNum'}
+                />
+              )}
+              {r.PassportNum && (
+                <Field
+                  label="Passport"
+                  value={r.PassportNum}
+                  highlight={item.evidence.identifier_field === 'PassportNum'}
+                />
+              )}
+              {r.SSNum && (
+                <Field
+                  label="SSNIT"
+                  value={r.SSNum}
+                  highlight={item.evidence.identifier_field === 'SSNum'}
+                />
+              )}
+              <Field label="Mobile" value={r.MobileTel1} />
+              <Field label="Employer" value={r.EmpName} />
             </>
           ) : (
             <>
-              <Field label="Name" value={r.REGISTERED_NAME} />
-              <Field label="Registration no." value={r.REGISTRATION_NUMBER} highlight />
-              <Field label="TIN" value={r.TIN} />
-              <Field label="Registered" value={r.REGISTRATION_DATE} />
+              <Field label="Name" value={r.BusinessName} />
+              <Field
+                label="Registration no."
+                value={r.BusRegNum}
+                highlight={item.evidence.identifier_field === 'BusRegNum'}
+              />
+              <Field
+                label="TIN"
+                value={r.TINum}
+                highlight={item.evidence.identifier_field === 'TINum'}
+              />
+              <Field label="Registered" value={day(r.RegistrationDate)} />
             </>
           )}
-          <Field label="Provider" value={`${r.PROVIDER_CODE} customer ${r.CUSTOMER_NUMBER}`} />
-          <Field label="Account" value={r.ACCOUNT_NUMBER} />
+          <Field label="Provider" value={`${item.provider.name}, customer ${r.CustomerID}`} />
+          <Field label="Account" value={r.FacilityAccNum} />
         </dl>
       </Card>
       <Card title="Bureau customer holding that identifier">
@@ -199,9 +242,9 @@ function MatchEvidence({ item }: { item: WorkItemDetail }) {
             <Field label="Reference" value={item.candidate.reference} />
             <Field label="Name" value={item.candidate.name} />
             {item.candidate.registration_date ? (
-              <Field label="Registered" value={item.candidate.registration_date} />
+              <Field label="Registered" value={day(item.candidate.registration_date)} />
             ) : (
-              <Field label="Date of birth" value={item.candidate.date_of_birth} />
+              <Field label="Date of birth" value={day(item.candidate.date_of_birth)} />
             )}
           </dl>
         ) : (
@@ -217,26 +260,60 @@ function MatchEvidence({ item }: { item: WorkItemDetail }) {
 }
 
 function TriageEvidence({ item }: { item: WorkItemDetail }) {
+  const r = item.record
+  const prev = item.on_file
   return (
-    <Card title="Why the record was not loaded">
-      <Table head={['Rule', 'Field', 'Submitted', 'Proposed correction']}>
-        {item.evidence.errors?.map((e) => (
-          <tr key={`${e.rule}-${e.field}`}>
-            <Td>{e.rule}</Td>
-            <Td>{e.field}</Td>
-            <Td>
-              <code>{e.value || item.record[e.field]}</code>
-            </Td>
-            <Td>
-              <code>{item.proposal[e.field] ?? '—'}</code>
-            </Td>
-          </tr>
-        ))}
-      </Table>
-      <p className="mt-2 text-xs text-slate-500">
-        Account {item.record.ACCOUNT_NUMBER}: balance {item.record.CURRENT_BALANCE}, status{' '}
-        {item.record.ACCOUNT_STATUS}, {item.record.DAYS_PAST_DUE} days past due.
-      </p>
-    </Card>
+    <div className="grid gap-4">
+      <Card title="Why the record was not loaded">
+        <Table head={['Rule', 'Field', 'Submitted', 'Proposed correction']}>
+          {item.evidence.errors?.map((e) => (
+            <tr key={`${e.rule}-${e.field}`}>
+              <Td>{e.rule}</Td>
+              <Td>{e.field}</Td>
+              <Td>
+                <code>{e.value || r[e.field]}</code>
+              </Td>
+              <Td>
+                <code>{e.field in item.proposal ? item.proposal[e.field] || '(blank)' : '—'}</code>
+              </Td>
+            </tr>
+          ))}
+        </Table>
+      </Card>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card title={`Submitted by ${item.provider.name}`}>
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+            <Field label="Account" value={r.FacilityAccNum} />
+            <Field label="Status" value={r.FacilityStatusCode} highlight />
+            <Field label="Balance" value={r.CurBal} />
+            <Field label="Arrears" value={`${r.AmountInArrears || '0'} (${r.NDIA || '0'} days)`} />
+            <Field label="Disbursed" value={`${day(r.DisbursementDate)}, ${r.DisbursementAmt}`} />
+            <Field label="Matures" value={day(r.MaturityDate)} />
+            <Field label="Instalment" value={r.SchdInstalAmount} />
+            <Field
+              label="Last payment"
+              value={r.LastPaymentDate ? `${r.LastPaymentAmount} on ${day(r.LastPaymentDate)}` : ''}
+            />
+            <Field
+              label="Closed"
+              value={r.ClosedDate ? `${day(r.ClosedDate)} (reason ${r.ClosureReason || '?'})` : ''}
+            />
+          </dl>
+        </Card>
+        <Card title="Bureau's last position">
+          {prev ? (
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+              <Field label="As at" value={day(prev.reporting_date)} />
+              <Field label="Status" value={prev.status} />
+              <Field label="Balance" value={prev.balance} />
+              <Field label="Arrears" value={`${prev.arrears} (${prev.days_past_due} days)`} />
+              <Field label="Disbursed" value={day(prev.disbursement_date)} />
+            </dl>
+          ) : (
+            <Empty>The bureau holds no earlier position for this account.</Empty>
+          )}
+        </Card>
+      </div>
+    </div>
   )
 }

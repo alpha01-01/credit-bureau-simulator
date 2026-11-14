@@ -1,68 +1,96 @@
-"""Validation and cleansing rules for submission records.
+"""Cleansing and validation of submitted records (industry standard, D18).
 
-ASSUMPTION A-017: rule set, codes and severities are placeholders until the
-real validation rules and error codes (reference R3) are available. Rules are
-deliberately strict about format: a value the template does not allow is an
-error unless a cleansing rule corrects it first. Pipeline v0 has exactly one
-cleansing rule, C001 (phone normalisation).
+Follows the Data Standards Committee format (docs/references/data-formats.md):
+field types, lengths, catalogue codes, mandatory and conditional fields, and
+the financial-logic checks. Cleansing comes first, as in the owner's cleanser:
+values that are recognisably right but badly formatted are corrected and
+logged, so only genuine problems reach a person.
+
+How strictly a record is rejected is a bureau policy (D18):
+
+  STANDARD  any mandatory or applicable conditional field missing or invalid
+            rejects the record, as the standard says;
+  CORE      only the core fields (the cleanser's CLEAN gate) reject; other
+            missing values are warnings and other invalid values are blanked.
+
+Financial-logic errors (closed with a balance, maturity before disbursement)
+and a missing identifier (owner's rule, from 2020) reject under both policies.
+
+ASSUMPTION A-017: rule codes and messages are the game's own; the bureau's
+real error codes (reference R3) are still needed.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import Decimal
 
 from apps.standards.submission_template import (
     CLOSED_STATUS_CODES,
     CODE_LISTS,
+    CORE_FIELDS,
     DATE_FORMAT,
+    FIELD_BY_NAME,
     FIELDS,
+    ID_REQUIRED_FROM,
+    INDIVIDUAL_ID_FIELDS,
     FileKind,
     is_valid_ghana_card,
 )
 
+STANDARD, CORE = "STANDARD", "CORE"
+POLICIES = {
+    STANDARD: "Reject when any mandatory or required conditional field is missing or invalid",
+    CORE: "Reject only when the core fields fail; clean or blank the rest",
+}
+
 RULES: dict[str, str] = {
     # File level
-    "T001": "File columns do not match the submission template",
+    "T001": "File columns do not match the template",
     "T002": "File name does not follow the naming convention",
     "T003": "File is identical to a file already received",
     "T004": "File could not be read",
     # Field level
     "F001": "Mandatory field is blank",
-    "F002": "Date is not a valid DD/MM/YYYY date",
+    "F002": "Date is not a valid YYYYMMDD date",
     "F003": "Date is after the reporting date",
-    "F004": "Amount is not a number with two decimals",
+    "F004": "Amount is not a whole number",
     "F005": "Value is not a whole number",
-    "F006": "Code is not in the code list",
+    "F006": "Code is not in the catalogue",
     "F007": "Phone number is not a valid 10-digit mobile number",
     "F008": "Ghana Card number is not valid",
-    "F009": "Provider code does not match the submitting institution",
-    "F010": "Reporting date does not match the submission period",
+    "F009": "Value is longer than the field allows",
     "F011": "Account is reported closed but has a balance outstanding",
     "F012": "Maturity date is before the disbursement date",
+    "F013": "No valid identifier for a facility disbursed from 2020",
+    "F014": "Required conditional field is blank",
     # Duplicates
-    "D001": "Exact duplicate of an earlier row in the file",
-    "D002": "Account number repeated in the file with different values",
-    # Referencing (warnings: the record is loaded, the conflict is kept for review)
+    "D001": "Duplicate of another row in the file (the lower balance is kept)",
+    "D002": "Account number repeated in the file for a different customer",
+    # Referencing
     "R001": "Identifier conflicts with the bureau's records for this customer",
     "R002": "Account is already held by a different bureau customer",
     "R003": "Branch code is not known for this institution",
+    "R004": "Disbursement date differs from the account on file",
     # Loading
     "L001": "An observation for this account and date already exists",
     # Cleansing
     "C001": "Phone number normalised to 10-digit format",
+    "C002": "Date normalised to YYYYMMDD",
+    "C003": "Amount normalised to a whole number",
+    "C004": "Code normalised",
+    "C005": "Invalid optional value blanked (core-fields policy)",
     # Review
     "M001": "Corrected by a reviewer",
     "Q001": "Returned to the provider by a reviewer",
 }
 
-AMOUNT = re.compile(r"\d+\.\d{2}")
-INTEGER = re.compile(r"\d+")
-DATE = re.compile(r"\d{2}/\d{2}/\d{4}")
+WHOLE = re.compile(r"\d+")
+DATE = re.compile(r"\d{8}")
 MOBILE = re.compile(r"0\d{9}")
 _PHONE_NOISE = re.compile(r"[\s\-().]")
+_AMOUNT_NOISE = re.compile(r"^(GHS|GH¢|¢)\s*", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -86,6 +114,9 @@ def parse_date(value: str) -> date | None:
         return None
 
 
+# --- Cleansing ------------------------------------------------------------------------
+
+
 def normalise_phone(value: str) -> str:
     """C001: bring a Ghanaian mobile number to the 10-digit 0XXXXXXXXX form, if possible."""
     digits = _PHONE_NOISE.sub("", value)
@@ -98,109 +129,211 @@ def normalise_phone(value: str) -> str:
     return digits if MOBILE.fullmatch(digits) else value
 
 
+def normalise_date(value: str) -> str:
+    """C002: dates whose meaning is certain become YYYYMMDD.
+
+    Covers DD/MM/YYYY (and DD-MM-YYYY), YYYY-MM-DD, and YYYYDDMM when the
+    "month" is over 12. A day and month swapped where both are 12 or less
+    cannot be detected, and is left as submitted.
+    """
+    text = value.strip()
+    if m := re.fullmatch(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})", text):
+        candidate = f"{m[3]}{int(m[2]):02d}{int(m[1]):02d}"
+    elif m := re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", text):
+        candidate = f"{m[1]}{m[2]}{m[3]}"
+    elif DATE.fullmatch(text) and parse_date(text) is None:
+        swapped = f"{text[:4]}{text[6:]}{text[4:6]}"
+        candidate = swapped
+    else:
+        return value
+    return candidate if parse_date(candidate) is not None else value
+
+
+def normalise_amount(value: str) -> str:
+    """C003: separators, currency and decimals removed; rounded to whole units."""
+    cleaned = _AMOUNT_NOISE.sub("", value.strip()).replace(",", "")
+    if re.fullmatch(r"\d+(\.\d+)?", cleaned):
+        whole, _, fraction = cleaned.partition(".")
+        rounded = int(whole) + (1 if fraction and int(fraction[0]) >= 5 else 0)
+        return str(rounded)
+    return value
+
+
 def cleanse(
     kind: FileKind, values: dict[str, str]
 ) -> tuple[dict[str, str], list[tuple[str, str, str, str]]]:
     """Apply cleansing rules. Returns the cleansed values and (field, rule, before, after) logs."""
     out = dict(values)
     logs = []
+
+    def fix(name: str, rule: str, after: str) -> None:
+        if after != out[name]:
+            logs.append((name, rule, out[name], after))
+            out[name] = after
+
     for f in FIELDS[kind]:
-        if f.kind == "phone" and out[f.name]:
-            after = normalise_phone(out[f.name])
-            if after != out[f.name]:
-                logs.append((f.name, "C001", out[f.name], after))
-                out[f.name] = after
+        value = out.get(f.name, "")
+        if not value:
+            continue
+        if value != value.strip():
+            out[f.name] = value = value.strip()
+        if f.kind == "phone":
+            fix(f.name, "C001", normalise_phone(value))
+        elif f.kind == "date":
+            fix(f.name, "C002", normalise_date(value))
+        elif f.kind == "numeric":
+            fix(f.name, "C003", normalise_amount(value))
+        elif f.kind == "code" and value.upper() != value:
+            fix(f.name, "C004", value.upper())
     return out, logs
 
 
+# --- Validation ------------------------------------------------------------------------
+
+
+@dataclass
+class Validation:
+    issues: list[Issue] = field(default_factory=list)
+    blanked: dict[str, str] = field(default_factory=dict)  # field -> invalid value removed
+
+    @property
+    def rejected(self) -> bool:
+        return any(i.severity == "ERROR" for i in self.issues)
+
+
+def _format_issue(
+    name: str, kind: str, length: int, value: str, code_list: str | None
+) -> str | None:
+    if len(value) > length:
+        return "F009"
+    if kind == "date":
+        return None if parse_date(value) else "F002"
+    if kind == "numeric":
+        return None if WHOLE.fullmatch(value) else "F004"
+    if kind == "code":
+        return None if code_list and value in CODE_LISTS[code_list] else "F006"
+    if kind == "phone":
+        return None if MOBILE.fullmatch(value) else "F007"
+    if name == "NatIDNum" or name == "G1NatID":
+        return None if is_valid_ghana_card(value) else "F008"
+    return None
+
+
 def validate(
-    kind: FileKind, values: dict[str, str], institution_code: str, period: date
-) -> list[Issue]:
-    """Field and cross-field validation of one cleansed record."""
-    issues: list[Issue] = []
+    kind: FileKind, values: dict[str, str], period: date, policy: str = STANDARD
+) -> Validation:
+    """Field, conditional and financial-logic checks of one cleansed record."""
+    result = Validation()
+    core = CORE_FIELDS[kind]
+    strict = policy == STANDARD
+
+    def problem(code: str, name: str, value: str = "", always: bool = False) -> None:
+        fatal = always or strict or name in core
+        result.issues.append(Issue(code, name, value, "ERROR" if fatal else "WARNING"))
+
+    # Types, lengths and catalogues.
     for f in FIELDS[kind]:
-        value = values[f.name]
+        value = values.get(f.name, "")
         if not value:
             if f.mandatory:
-                issues.append(Issue("F001", f.name))
+                problem("F001", f.name)
             continue
-        severity = "ERROR" if f.mandatory else "WARNING"
-        match f.kind:
-            case "date":
-                parsed = parse_date(value)
-                if parsed is None:
-                    issues.append(Issue("F002", f.name, value, severity))
-                elif parsed > period and f.name != "MATURITY_DATE":
-                    issues.append(Issue("F003", f.name, value, severity))
-            case "amount":
-                if not AMOUNT.fullmatch(value):
-                    issues.append(Issue("F004", f.name, value, severity))
-            case "integer":
-                if not INTEGER.fullmatch(value):
-                    issues.append(Issue("F005", f.name, value, severity))
-            case "code":
-                if f.code_list and value not in CODE_LISTS[f.code_list]:
-                    issues.append(Issue("F006", f.name, value, severity))
-            case "phone":
-                if not MOBILE.fullmatch(value):
-                    issues.append(Issue("F007", f.name, value, severity))
-            case _:
-                if f.name == "GHANA_CARD_NUMBER" and not is_valid_ghana_card(value):
-                    issues.append(Issue("F008", f.name, value, severity))
+        code = _format_issue(f.name, f.kind, f.length, value, f.code_list)
+        if code is None:
+            continue
+        if strict or f.name in core:
+            problem(code, f.name, value)
+        else:
+            result.issues.append(Issue(code, f.name, value, "WARNING"))
+            result.blanked[f.name] = value
 
-    if values["PROVIDER_CODE"] and values["PROVIDER_CODE"] != institution_code:
-        issues.append(Issue("F009", "PROVIDER_CODE", values["PROVIDER_CODE"]))
-    reporting = parse_date(values["REPORTING_DATE"])
-    if reporting is not None and reporting != period:
-        issues.append(Issue("F010", "REPORTING_DATE", values["REPORTING_DATE"]))
-    if (
-        values["ACCOUNT_STATUS"] in CLOSED_STATUS_CODES
-        and AMOUNT.fullmatch(values["CURRENT_BALANCE"])
-        and Decimal(values["CURRENT_BALANCE"]) > 0
-    ):
-        issues.append(Issue("F011", "ACCOUNT_STATUS", values["ACCOUNT_STATUS"]))
-    disbursed = parse_date(values["DISBURSEMENT_DATE"])
-    matures = parse_date(values["MATURITY_DATE"])
+    def present(name: str) -> bool:
+        return bool(values.get(name)) and name not in result.blanked
+
+    def require(name: str, when: bool) -> None:
+        if when and not present(name):
+            problem("F014", name)
+
+    # Identity: at least one valid ID, mandatory from 2020 (owner's rule).
+    disbursed = parse_date(values.get("DisbursementDate", ""))
+    if kind is FileKind.INDIVIDUAL:
+        has_id = any(present(n) and not _bad_id(n, values[n]) for n in INDIVIDUAL_ID_FIELDS)
+        if not has_id and disbursed is not None and disbursed >= ID_REQUIRED_FROM:
+            problem("F013", "NatIDNum", always=True)
+        require("EmpName", values.get("CreditFacilityType") == "115")
+    elif not (present("BusRegNum") or present("TINum")):
+        problem("F013", "BusRegNum", always=True)
+
+    # Conditional fields.
+    status = values.get("FacilityStatusCode", "")
+    require("ClosedDate", status in CLOSED_STATUS_CODES)
+    require("ClosureReason", status in CLOSED_STATUS_CODES)
+    require("WrittenOffAmt", status == "W")
+    require("ReasonForWrittenOff", status == "W")
+    secured = values.get("CreditCollateralInd") == "101"
+    for name in ("SecurityType", "NatureOfCharge", "SecurityValue"):
+        require(name, secured)
+    guarantor = values.get("NatureOfGuarantor")
+    require("NameOfComGuarantor", guarantor == "102")
+    require("BusRegOfGuarantor", guarantor == "102")
+    for name in ("G1Surname", "G1FirstName", "G1Gender", "G1DOB"):
+        require(name, guarantor == "101")
+    require("LastPaymentDate", present("LastPaymentAmount"))
+    require("LastPaymentAmount", present("LastPaymentDate"))
+
+    # Financial logic: rejects under every policy (the standard's own examples).
+    balance = values.get("CurBal", "")
+    if status in CLOSED_STATUS_CODES and WHOLE.fullmatch(balance) and int(balance) > 0:
+        problem("F011", "FacilityStatusCode", status, always=True)
+    matures = parse_date(values.get("MaturityDate", ""))
     if disbursed and matures and matures < disbursed:
-        issues.append(Issue("F012", "MATURITY_DATE", values["MATURITY_DATE"]))
-    return issues
+        problem("F012", "MaturityDate", values["MaturityDate"], always=True)
+    for name in ("DisbursementDate", "DOB", "RegistrationDate", "LastPaymentDate"):
+        when = parse_date(values.get(name, ""))
+        if when is not None and when > period:
+            problem("F003", name, values[name], always=name == "DisbursementDate")
+    return result
 
 
-# --- Proposed corrections for triage (ASSUMPTION A-022) ----------------------------
+def _bad_id(name: str, value: str) -> bool:
+    return name == "NatIDNum" and not is_valid_ghana_card(value)
 
-_AMOUNT_NOISE = re.compile(r"^(GHS|GH¢|¢)\s*", re.IGNORECASE)
-CORRECTABLE = frozenset({"F002", "F004", "F011"})
+
+def field_spec(kind: FileKind, name: str) -> object:
+    return FIELD_BY_NAME[kind][name]
+
+
+# --- Proposed corrections for triage (ASSUMPTION A-022) ----------------------------------
+
+CORRECTABLE = frozenset({"F011"})
+CLOSURE_FIELDS = frozenset({"ClosedDate", "ClosureReason"})
 
 
 def propose_corrections(
     values: dict[str, str], issues: list[Issue], period: date
 ) -> dict[str, str]:
-    """Corrections a reviewer could apply, for records whose only errors are correctable.
+    """Corrections a reviewer could apply, when every error is of a correctable kind.
 
-    Returns {} when any error has no plausible correction (the record can only
-    go back to the provider).
+    Format problems are fixed by cleansing before anyone sees them. What is left
+    for a person is judgement: an account reported closed with a balance could
+    be a live account (make it active) or a closed one whose balance was never
+    zeroed (send it back).
     """
     errors = [i for i in issues if i.severity == "ERROR"]
-    if not errors or any(i.rule_code not in CORRECTABLE for i in errors):
+    reopened = any(i.rule_code == "F011" for i in errors)
+
+    def covered(issue: Issue) -> bool:
+        # Making the account active also removes the need for closure details.
+        return issue.rule_code in CORRECTABLE or (
+            reopened and issue.rule_code == "F014" and issue.field in CLOSURE_FIELDS
+        )
+
+    if not errors or not all(covered(i) for i in errors):
         return {}
     proposal: dict[str, str] = {}
     for issue in errors:
-        value = values.get(issue.field, "")
-        fixed: str | None = None
-        if issue.rule_code == "F002":  # month-first date with a day over 12
-            parts = value.split("/")
-            if len(parts) == 3:
-                candidate = f"{parts[1]}/{parts[0]}/{parts[2]}"
-                parsed = parse_date(candidate)
-                if parsed is not None and parsed <= period:
-                    fixed = candidate
-        elif issue.rule_code == "F004":  # currency symbol or thousands separators
-            cleaned = _AMOUNT_NOISE.sub("", value).replace(",", "").strip()
-            if re.fullmatch(r"\d+(\.\d{1,2})?", cleaned):
-                fixed = f"{Decimal(cleaned):.2f}"
-        elif issue.rule_code == "F011":  # closed status but a balance outstanding
-            fixed = "AC"
-        if fixed is None:
-            return {}
-        proposal[issue.field] = fixed
+        if issue.rule_code == "F011":
+            proposal["FacilityStatusCode"] = "A"
+            proposal["ClosedDate"] = ""
+            proposal["ClosureReason"] = ""
     return proposal

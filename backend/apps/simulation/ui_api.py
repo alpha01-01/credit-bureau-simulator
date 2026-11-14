@@ -45,6 +45,7 @@ from apps.finance.events import outstanding
 from apps.finance.ledger import BANK, REVENUE
 from apps.finance.models import Invoice, JournalEntry
 from apps.standards.calendar import is_working_day
+from apps.standards.submission_template import OPEN_STATUS_CODES
 from apps.workitems.models import ItemStatus, WorkItem
 from apps.world.models import World
 
@@ -229,7 +230,9 @@ def dashboard(request: Request, game_id: int) -> Response:
                 _metric(
                     "accounts",
                     "Open accounts",
-                    CreditAccount.objects.filter(organization=org, account_status="AC").count(),
+                    CreditAccount.objects.filter(
+                        organization=org, account_status__in=OPEN_STATUS_CODES
+                    ).count(),
                     "accounts",
                     "customers",
                 ),

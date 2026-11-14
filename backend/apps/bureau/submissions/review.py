@@ -90,16 +90,13 @@ def _correct_and_load(record: StagingRecord, proposal: dict[str, str], at: datet
     TransformationLog.objects.bulk_create(logs)
     record.cleansed = values
     submission = record.run.submission
-    errors = [
-        i
-        for i in validate(
-            FileKind(record.file.file_kind),
-            values,
-            submission.institution.institution_code,
-            submission.reporting_period,
-        )
-        if i.severity == "ERROR"
-    ]
+    checked = validate(
+        FileKind(record.file.file_kind),
+        values,
+        submission.reporting_period,
+        submission.organization.rejection_policy,
+    )
+    errors = [i for i in checked.issues if i.severity == "ERROR"]
     if errors:
         record.record_status = RecordStatus.UNLOADABLE
         record.save(update_fields=["cleansed", "record_status"])

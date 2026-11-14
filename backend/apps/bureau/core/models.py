@@ -75,6 +75,10 @@ class BusinessProfile(models.Model):
 
 class IdentifierType(models.TextChoices):
     GHANA_CARD = "GHANA_CARD", "Ghana Card"
+    VOTER_ID = "VOTER_ID", "Voter's ID"
+    DRIVER_LICENCE = "DRIVER_LICENCE", "Driver's licence"
+    PASSPORT = "PASSPORT", "Passport"
+    SSNIT = "SSNIT", "Social security number"
     BUSINESS_REGISTRATION = "BUSINESS_REGISTRATION", "Business registration number"
     TIN = "TIN", "Taxpayer identification number"
 

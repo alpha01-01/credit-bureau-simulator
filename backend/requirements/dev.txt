@@ -11,4 +11,3 @@ mypy==1.19.1
 django-stubs[compatible-mypy]==5.2.9
 djangorestframework-stubs[compatible-mypy]==3.16.9
 import-linter==2.16
-types-openpyxl==3.1.5.20261017

@@ -281,17 +281,15 @@ def test_identity_comparison() -> None:
 
 def test_corrections_are_proposed_only_when_every_error_is_fixable() -> None:
     period = date(2026, 12, 31)
-    values = {
-        "DATE_OF_BIRTH": "12/31/1990",
-        "ORIGINAL_AMOUNT": "GHS 1,250.5",
-        "ACCOUNT_STATUS": "PD",
-    }
+    values = {"FacilityStatusCode": "C", "CurBal": "500", "ClosedDate": "", "ClosureReason": ""}
     issues = [
-        Issue("F002", "DATE_OF_BIRTH", "12/31/1990"),
-        Issue("F004", "ORIGINAL_AMOUNT", "GHS 1,250.5"),
-        Issue("F011", "ACCOUNT_STATUS", "PD"),
+        Issue("F011", "FacilityStatusCode", "C"),
+        Issue("F014", "ClosedDate"),
+        Issue("F014", "ClosureReason"),
     ]
     assert propose_corrections(values, issues, period) == {
-        "DATE_OF_BIRTH": "31/12/1990", "ORIGINAL_AMOUNT": "1250.50", "ACCOUNT_STATUS": "AC",
+        "FacilityStatusCode": "A", "ClosedDate": "", "ClosureReason": "",
     }  # fmt: skip
-    assert propose_corrections(values, [*issues, Issue("F001", "GHANA_CARD_NUMBER")], period) == {}
+    assert propose_corrections(values, [*issues, Issue("F001", "NatIDNum")], period) == {}
+    # Closure details missing without the balance problem are the provider's to supply.
+    assert propose_corrections(values, issues[1:], period) == {}

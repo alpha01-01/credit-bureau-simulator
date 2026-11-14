@@ -15,6 +15,7 @@ from django.db import transaction
 
 from apps.bureau.core.models import BusinessProfile, IndividualProfile
 from apps.bureau.quality.models import ALLOWED_DECISIONS, CaseType, ReviewCase
+from apps.bureau.quality.rules import parse_date
 from apps.bureau.submissions.review import apply_decision
 from apps.org.models import Employee, Organization
 
@@ -144,6 +145,12 @@ def resolve_by_player(item: WorkItem, decision: str, tick: int, at: datetime) ->
         return item
 
 
+def _readable(value: str) -> str:
+    """A YYYYMMDD date as DD/MM/YYYY; anything else as it is."""
+    when = parse_date(value)
+    return f"{when:%d/%m/%Y}" if when else (value or "unknown")
+
+
 def explain(case: ReviewCase, result: Judgement) -> str:
     """The reasoning an employee records with a decision (Document 05: explainability)."""
     record = case.record.cleansed
@@ -159,7 +166,10 @@ def explain(case: ReviewCase, result: Judgement) -> str:
         if profile is not None:
             born = f"{profile.date_of_birth:%d/%m/%Y}" if profile.date_of_birth else "unknown"
             known = f"{profile.first_name} {profile.last_name}, born {born}"
-            submitted = f"{record.get('FIRST_NAME', '')} {record.get('SURNAME', '')}, born {record.get('DATE_OF_BIRTH', '')}"
+            submitted = (
+                f"{record.get('FirstName', '')} {record.get('Surname', '')}, "
+                f"born {_readable(record.get('DOB', ''))}"
+            )
         else:
             business = (
                 BusinessProfile.objects.filter(customer_id=case.candidate_customer_id).first()
@@ -174,7 +184,10 @@ def explain(case: ReviewCase, result: Judgement) -> str:
             known = (
                 f"{business.registered_name}, registered {registered}" if business else "unknown"
             )
-            submitted = f"{record.get('REGISTERED_NAME', '')}, registered {record.get('REGISTRATION_DATE', '')}"
+            submitted = (
+                f"{record.get('BusinessName', '')}, "
+                f"registered {_readable(record.get('RegistrationDate', ''))}"
+            )
         reasons = "; ".join(case.evidence.get("reasons", []))
         return (
             f"Identifier {identifier} is held by {held_by} ({known}). The record is for "
@@ -183,5 +196,5 @@ def explain(case: ReviewCase, result: Judgement) -> str:
     errors = ", ".join(
         f"{e['rule']} {e['field']} '{e['value']}'" for e in case.evidence.get("errors", [])
     )
-    fixes = ", ".join(f"{k} -> {v}" for k, v in case.proposal.items())
+    fixes = ", ".join(f"{k} -> {v or '(blank)'}" for k, v in case.proposal.items())
     return f"Errors: {errors}. Proposed: {fixes}. {verdict}"

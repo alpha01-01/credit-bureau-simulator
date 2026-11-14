@@ -15,12 +15,15 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import transaction
-from openpyxl import load_workbook
 
 from apps.bureau.providers.models import Institution
 from apps.org.models import Organization
 from apps.standards.calendar import next_working_day
-from apps.standards.submission_template import FILE_NAME_PATTERN, SUBMISSION_DUE_DAY
+from apps.standards.submission_template import (
+    DELIMITER,
+    FILE_NAME_PATTERN,
+    SUBMISSION_DUE_DAY,
+)
 
 from .models import FileStatus, Submission, SubmissionFile, SubmissionStatus
 
@@ -84,8 +87,8 @@ def receive_file(
         status, reason = FileStatus.RECEIVED, ""
         if (
             match is None
-            or match["provider"] != institution.institution_code
-            or match["period"] != f"{period:%Y%m}"
+            or match["srn"] != institution.srn
+            or match["period"] != f"{period:%Y%m%d}"
         ):
             status, reason = FileStatus.REJECTED, "T002"
         elif SubmissionFile.objects.filter(
@@ -97,7 +100,7 @@ def receive_file(
             submission=submission,
             file_name=file_name,
             file_kind=match["kind"] if match else "",
-            file_format=(match["ext"].upper() if match else Path(file_name).suffix[1:].upper()),
+            file_format=Path(file_name).suffix[1:].upper(),
             file_size_bytes=len(data),
             file_hash=digest,
             storage_path=path.relative_to(Path(settings.STORAGE_ROOT)).as_posix(),
@@ -110,26 +113,12 @@ def receive_file(
 def read_rows(stored: SubmissionFile) -> tuple[list[str], list[list[str]]]:
     """Read a stored file as text: header and data rows. Raises ValueError if unreadable."""
     path = Path(settings.STORAGE_ROOT) / stored.storage_path
-    if stored.file_format == "CSV":
-        text = path.read_bytes().decode("utf-8-sig")
-        lines = list(csv.reader(io.StringIO(text, newline="")))
-    elif stored.file_format == "XLSX":
-        workbook = load_workbook(io.BytesIO(path.read_bytes()), read_only=True, data_only=True)
-        lines = [
-            [_cell(v) for v in row] for row in workbook.worksheets[0].iter_rows(values_only=True)
-        ]
-    else:
+    if stored.file_format != "CSV":
         raise ValueError(f"Unsupported format {stored.file_format}")
+    text = path.read_bytes().decode("utf-8-sig")
+    lines = list(csv.reader(io.StringIO(text, newline=""), delimiter=DELIMITER))
     if not lines:
         raise ValueError("Empty file")
     width = len(lines[0])
     rows = [(row + [""] * width)[:width] for row in lines[1:] if any(cell.strip() for cell in row)]
     return [h.strip() for h in lines[0]], rows
-
-
-def _cell(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    return str(value)

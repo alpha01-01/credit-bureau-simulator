@@ -62,7 +62,7 @@ class FileStatus(models.TextChoices):
 class SubmissionFile(models.Model):
     submission = models.ForeignKey(Submission, on_delete=models.CASCADE, related_name="files")
     file_name = models.CharField(max_length=150)
-    file_kind = models.CharField(max_length=3, help_text="IND or COM, from the file name")
+    file_kind = models.CharField(max_length=4, help_text="CONC or BUSC, from the file name")
     file_format = models.CharField(max_length=10)
     file_size_bytes = models.BigIntegerField()
     file_hash = models.CharField(max_length=64, help_text="SHA-256 of the file as received")

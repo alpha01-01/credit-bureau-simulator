@@ -296,7 +296,7 @@ class ProviderFile(models.Model):
     submission = models.ForeignKey(
         ProviderSubmission, on_delete=models.CASCADE, related_name="files"
     )
-    kind = models.CharField(max_length=3, help_text="IND or COM")
+    kind = models.CharField(max_length=4, help_text="CONC or BUSC (standard file identifier)")
     file_name = models.CharField(max_length=100)
     file_format = models.CharField(max_length=10)
     storage_path = models.CharField(max_length=300, help_text="Relative to STORAGE_ROOT")
