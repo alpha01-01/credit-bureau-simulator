@@ -21,6 +21,7 @@ from pathlib import Path
 from django.conf import settings
 from django.db import connection, transaction
 
+from apps.standards.calendar import next_working_day
 from apps.standards.submission_template import (
     SUBMISSION_DUE_DAY,
     TEMPLATE_VERSION,
@@ -74,7 +75,7 @@ def schedule(seed: int, lender_code: str, period: date, profile: DataQualityProf
     """When the provider sends this month's files (ASSUMPTION A-014 for the deadline)."""
     rng = stream(seed, f"submission-arrival:{lender_code}", month_index(period))
     next_month = period + timedelta(days=1)
-    due = next_month.replace(day=SUBMISSION_DUE_DAY)
+    due = next_working_day(next_month.replace(day=SUBMISSION_DUE_DAY))
     if rng.random() < profile.late_rate and profile.late_days_max > 0:
         arrival = due + timedelta(days=int(rng.integers(1, profile.late_days_max + 1)))
     else:

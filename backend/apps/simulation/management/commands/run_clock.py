@@ -29,7 +29,7 @@ class Command(BaseCommand):
         due: dict[int, float] = {}
         ticks = 0
         while options["max_ticks"] is None or ticks < options["max_ticks"]:
-            games = Game.objects.filter(status=GameStatus.RUNNING)
+            games = Game.objects.filter(status=GameStatus.RUNNING, setup_status="READY")
             if options["game"]:
                 games = games.filter(pk=options["game"])
             now = time.monotonic()

@@ -13,36 +13,17 @@ function renderApp() {
   )
 }
 
-describe('App systems check', () => {
+describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the database reported by the API', async () => {
+  it('asks a visitor to sign in', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            status: 'ok',
-            service: 'simb-api',
-            database: { vendor: 'postgresql', server_version: '18.1' },
-          }),
-          { status: 200 },
-        ),
-      ),
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ authenticated: false }))),
     )
-
     renderApp()
-
-    expect(await screen.findByText('postgresql 18.1')).toBeInTheDocument()
-  })
-
-  it('explains how to start the backend when the API is down', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 502 })))
-
-    renderApp()
-
-    expect(await screen.findByText(/The API is unreachable/)).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
   })
 })

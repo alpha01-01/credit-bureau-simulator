@@ -44,6 +44,10 @@ class Game(models.Model):
     current_tick = models.BigIntegerField(default=0)
     status = models.CharField(max_length=10, choices=GameStatus.choices, default=GameStatus.PAUSED)
     speed = models.PositiveSmallIntegerField(default=1, help_text="1x, 2x, 4x or 8x")
+    setup_status = models.CharField(
+        max_length=10, default="READY", help_text="PREPARING while history is pre-loaded"
+    )
+    setup_message = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:

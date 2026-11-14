@@ -1,8 +1,23 @@
 from django.urls import path
 
-from . import api
+from . import api, ui_api
 
 urlpatterns = [
+    path("worlds/", ui_api.worlds, name="worlds"),
+    path("games/", ui_api.games, name="games"),
+    path("games/<int:game_id>/", ui_api.game_detail, name="game"),
+    path("games/<int:game_id>/dashboard/", ui_api.dashboard, name="dashboard"),
+    path("games/<int:game_id>/briefing/", ui_api.briefing, name="briefing"),
+    path("games/<int:game_id>/submissions/", ui_api.submissions, name="submissions"),
+    path(
+        "games/<int:game_id>/submissions/<str:reference>/",
+        ui_api.submission_detail,
+        name="submission",
+    ),
+    path("games/<int:game_id>/customers/", ui_api.customers, name="customers"),
+    path("games/<int:game_id>/customers/<str:reference>/", ui_api.customer_detail, name="customer"),
+    path("games/<int:game_id>/ledger/", ui_api.ledger, name="ledger"),
+    path("games/<int:game_id>/invoices/", ui_api.invoices, name="invoices"),
     path("games/<int:game_id>/clock/", api.clock_state, name="clock-state"),
     path("games/<int:game_id>/clock/pause/", api.clock_pause, name="clock-pause"),
     path("games/<int:game_id>/clock/resume/", api.clock_resume, name="clock-resume"),

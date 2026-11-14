@@ -93,6 +93,26 @@ backend/.venv/Scripts/python backend/manage.py process_month --world 1 --period 
 
 The first run creates a game (a bureau organisation) for the world and onboards the five reporting providers. Provider files are generated if needed. Each provider's line shows records received, accepted, unloadable and duplicate, and the issues found.
 
+## Playing in the browser
+
+1. Create your local player once (username and password come from `.env`, see `.env.example`):
+
+   ```bash
+   backend/.venv/Scripts/python backend/manage.py create_dev_player
+   ```
+
+2. Start the backend and the frontend (see "Running the app" above), open http://localhost:5173 and sign in.
+3. Start a game from a world. An Established bureau (12 months of history) takes several minutes to prepare on the default world; the screen shows progress.
+4. Use the clock bar to advance by an hour, to the end of the day or to the next event. For real-time play, also run `backend/manage.py run_clock`.
+
+Browser end-to-end tests drive the installed Microsoft Edge (no browser download):
+
+```bash
+npm --prefix frontend run e2e
+```
+
+They expect the backend on port 8000, at least one world, and `SIMB_DEV_PLAYER_USERNAME` / `SIMB_DEV_PLAYER_PASSWORD` in the environment.
+
 ## Starting a game
 
 ```bash

@@ -1,57 +1,98 @@
-import { useHealth } from '../api/health'
+import { Link, Navigate, Outlet, RouterProvider, createBrowserRouter } from 'react-router'
 
-export function App() {
+import { useLogout, useSession } from '../api/session'
+import { Failed, Loading } from '../components/ui'
+import { BriefingPage } from '../pages/BriefingPage'
+import { CustomerPage, CustomersPage } from '../pages/CustomersPage'
+import { DashboardPage } from '../pages/DashboardPage'
+import { EnquiriesPage } from '../pages/EnquiriesPage'
+import { FinanceLayout, InvoicesPage, LedgerPage, StatementsPage } from '../pages/FinancePage'
+import { GamesPage } from '../pages/GamesPage'
+import { LoginPage } from '../pages/LoginPage'
+import { QueuePage, WorkItemPage } from '../pages/QueuePage'
+import { SubmissionPage, SubmissionsPage } from '../pages/SubmissionsPage'
+import { GameLayout } from './GameLayout'
+
+function Shell() {
+  const session = useSession()
+  const logout = useLogout()
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <span className="text-lg font-semibold tracking-tight">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+          <Link to="/" className="text-lg font-semibold tracking-tight">
             Sim<span className="text-brand">B</span>
-          </span>
-          <span className="text-sm text-slate-500">Credit bureau simulator</span>
+          </Link>
+          {session.data?.authenticated && (
+            <span className="flex items-center gap-3 text-sm text-slate-500">
+              {session.data.username}
+              <button
+                type="button"
+                onClick={() => logout.mutate()}
+                className="text-slate-600 hover:underline"
+              >
+                Sign out
+              </button>
+            </span>
+          )}
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <SystemsCheck />
+      <main className="mx-auto max-w-7xl px-4 py-6">
+        <Outlet />
       </main>
     </div>
   )
 }
 
-function SystemsCheck() {
-  const health = useHealth()
+function RequireSignIn() {
+  const session = useSession()
+  if (session.isPending) return <Loading what="your session" />
+  if (session.isError) return <Failed error={session.error} />
+  if (!session.data.authenticated) return <Navigate to="/login" replace />
+  return <Outlet />
+}
 
-  return (
-    <section
-      aria-labelledby="systems-heading"
-      className="rounded-lg border border-slate-200 bg-white p-6"
-    >
-      <h1 id="systems-heading" className="text-base font-semibold">
-        Systems check
-      </h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Frontend → API → PostgreSQL. The game itself arrives with the walking skeleton.
-      </p>
+const routes = [
+  {
+    element: <Shell />,
+    children: [
+      { path: '/login', element: <LoginPage /> },
+      {
+        element: <RequireSignIn />,
+        children: [
+          { path: '/', element: <GamesPage /> },
+          {
+            path: '/games/:gameId',
+            element: <GameLayout />,
+            children: [
+              { index: true, element: <BriefingPage /> },
+              { path: 'dashboard', element: <DashboardPage /> },
+              { path: 'submissions', element: <SubmissionsPage /> },
+              { path: 'submissions/:reference', element: <SubmissionPage /> },
+              { path: 'queue', element: <QueuePage /> },
+              { path: 'queue/:number', element: <WorkItemPage /> },
+              { path: 'customers', element: <CustomersPage /> },
+              { path: 'customers/:reference', element: <CustomerPage /> },
+              { path: 'enquiries', element: <EnquiriesPage /> },
+              {
+                path: 'finance',
+                element: <FinanceLayout />,
+                children: [
+                  { index: true, element: <StatementsPage /> },
+                  { path: 'ledger', element: <LedgerPage /> },
+                  { path: 'invoices', element: <InvoicesPage /> },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+]
 
-      <div className="mt-4" role="status">
-        {health.isPending && <p className="text-sm text-slate-500">Contacting the API…</p>}
-        {health.isError && (
-          <p className="text-sm text-red-700">
-            The API is unreachable. Start the backend with{' '}
-            <code className="rounded bg-slate-100 px-1">python manage.py runserver</code>.
-          </p>
-        )}
-        {health.isSuccess && (
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
-            <dt className="text-slate-500">API</dt>
-            <dd className="font-medium text-brand">{health.data.status}</dd>
-            <dt className="text-slate-500">Database</dt>
-            <dd>
-              {health.data.database.vendor} {health.data.database.server_version}
-            </dd>
-          </dl>
-        )}
-      </div>
-    </section>
-  )
+const router = createBrowserRouter(routes)
+
+export function App() {
+  return <RouterProvider router={router} />
 }

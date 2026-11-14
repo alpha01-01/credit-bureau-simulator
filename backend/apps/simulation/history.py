@@ -10,6 +10,7 @@ believable past, including a few of its predecessors' mistakes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 
 from apps.bureau.submissions.pipeline import process_submission
@@ -46,10 +47,17 @@ def history_periods(game: Game, months: int) -> list[date]:
     return sorted(periods)
 
 
-def preload_history(game: Game, months: int = DEFAULT_HISTORY_MONTHS) -> int:
+def preload_history(
+    game: Game,
+    months: int = DEFAULT_HISTORY_MONTHS,
+    progress: Callable[[str], None] | None = None,
+) -> int:
     """Load the last ``months`` months of provider files into the bureau. Returns runs made."""
     runs = 0
-    for period in history_periods(game, months):
+    periods = history_periods(game, months)
+    for n, period in enumerate(periods, start=1):
+        if progress is not None:
+            progress(f"Loading history: {period:%B %Y} ({n} of {len(periods)})")
         for institution in game.organization.institutions.filter(is_active=True).order_by(
             "institution_code"
         ):
