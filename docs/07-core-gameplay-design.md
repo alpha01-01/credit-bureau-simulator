@@ -713,6 +713,9 @@ The slice is complete when:
 | D14 | **Regulatory content** | Explicit, cited by Act and section (Section 11.4). The owner reviews all regulatory content. |
 | D15 | **Title** | Working title **SimB**. A final title will be chosen before any public release. |
 | D16 | **Playtesting** | The project team are the playtesters for the first slice. External players join afterwards. |
+| D18 | **Real templates, simplified** | Submission templates follow the real layout and column names, cut down to the necessary columns: individual credit 178 → 62, business credit 158 → 52, with one guarantor instead of four (`references/template-simplification-proposal.md`). Data stays synthetic. (2026-11-14) |
+| D19 | **Rules can change during a game** | Templates, code lists, validation rules, prices and similar rules are versioned with an effective date, as they change in the real world. A change applies from its date onwards and never alters what was already loaded, billed or decided. (2026-11-14) |
+| D20 | **Dud cheques and court judgements** | Included as data the bureau collects, on their own templates for now; they may later be folded into the individual and business templates. (2026-11-14) |
 | D17 | **Template drift starts at play start** | At the start of the Established scenario every provider uses the agreed template layout. Unannounced layout changes (template drift) happen only during play, as events the player notices and handles. (2026-11-13) |
 
 ## 15.1 Market context to reflect

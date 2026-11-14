@@ -15,7 +15,7 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 
 | # | Material | Used for | Status |
 | --- | --- | --- | --- |
-| R1 | **Data submission template(s)** for consumer and commercial credit data: field names, order, types, lengths, mandatory/optional, allowed values | Provider files, template validation, staging tables | Needed |
+| R1 | **Data submission template(s)** for consumer and commercial credit data: field names, order, types, lengths, mandatory/optional, allowed values | Provider files, template validation, staging tables | **Received** (`templates.md`); simplified version approved (`template-simplification-proposal.md`). Types and lengths still needed |
 | R2 | **Code lists**: account status, facility types, payment status, currency, identifier types, gender/marital codes, sector codes, regions | Validation rules, world generator | Needed |
 | R3 | **Validation and rejection rules / error codes** a bureau applies (what makes a record unloadable, warning vs reject) | Pipeline, unloadable records, provider feedback reports | Needed |
 | R4 | **Matching practice**: which identifiers and fields are used to link customers and accounts, and how uncertain matches are handled | Referencing engine, match-review work items | Needed |
@@ -43,4 +43,5 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 
 | # | File | Source | Version / date | Public or owner-written |
 | --- | --- | --- | --- | --- |
-| | | | | |
+| R1 | `templates.md` | Owner: column lists of the six templates in use | November 2026 | Owner-supplied |
+| R1 | `template-simplification-proposal.md` | Written for this project; approved by the owner | 14 November 2026 | Owner-written |
