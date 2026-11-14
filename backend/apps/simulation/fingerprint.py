@@ -19,9 +19,11 @@ from typing import Any
 from apps.bureau.core.models import (
     AccountObservation,
     BusinessProfile,
+    CourtJudgment,
     CreditAccount,
     CustomerContact,
     CustomerIdentifier,
+    DishonouredCheque,
     Enquiry,
     IndividualProfile,
     ProviderCustomerLink,
@@ -219,6 +221,28 @@ def fingerprint(game: Game) -> str:
             "outstanding_balance", "arrears_amount", "days_past_due", "instalment_amount",
             "amount_paid", "facility_status", "asset_classification", "is_written_off",
             "is_current", "source_file__file_name", "source_row_number",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "cheques",
+        DishonouredCheque.objects.filter(organization_id=org)
+        .order_by(inst, "account_number", "cheque_number")
+        .values_list(
+            inst, "account_number", "cheque_number", ref, "date_issued", "date_bounced",
+            "reason_code", "currency_code", "amount", "source_file__file_name",
+            "source_row_number",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "judgments",
+        CourtJudgment.objects.filter(organization_id=org)
+        .order_by(inst, "case_number")
+        .values_list(
+            inst, "case_number", ref, "court_name", "court_type", "filing_date", "case_type",
+            "case_reason", "currency_code", "amount", "source_file__file_name",
+            "source_row_number",
         ),
     )  # fmt: skip
     _section(

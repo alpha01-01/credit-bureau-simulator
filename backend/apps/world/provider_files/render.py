@@ -14,25 +14,56 @@ from datetime import date, timedelta
 import numpy as np
 
 from apps.standards.rulebook import DATA_STANDARDS, DataStandard
-from apps.standards.submission_template import FileKind, format_date
+from apps.standards.submission_template import (
+    CONSUMER_KINDS,
+    CREDIT_KINDS,
+    FileKind,
+    format_date,
+)
 
 from .profiles import COMMERCIAL_BLANKABLE, INDIVIDUAL_BLANKABLE, DataQualityProfile
 from .truth import STALE_FIELDS, TruthRecord
 
+_PERSON_PHONES = ("MobileTel1", "MobileTel2")
+_PERSON_NAMES = ("Surname", "FirstName")
 PHONE_FIELDS = {
-    FileKind.INDIVIDUAL: ("MobileTel1", "MobileTel2"),
+    FileKind.INDIVIDUAL: _PERSON_PHONES,
     FileKind.COMMERCIAL: ("OfficeTel1",),
+    FileKind.CHEQUE: _PERSON_PHONES,
+    FileKind.JUDGMENT: _PERSON_PHONES,
 }
-IDENTIFIER_FIELD = {FileKind.INDIVIDUAL: "NatIDNum", FileKind.COMMERCIAL: "TINum"}
+IDENTIFIER_FIELD = {
+    FileKind.INDIVIDUAL: "NatIDNum",
+    FileKind.COMMERCIAL: "TINum",
+    FileKind.CHEQUE: "NatIDNum",
+    FileKind.JUDGMENT: "NatIDNum",
+}
 NAME_FIELDS = {
-    FileKind.INDIVIDUAL: ("Surname", "FirstName"),
+    FileKind.INDIVIDUAL: _PERSON_NAMES,
     FileKind.COMMERCIAL: ("BusinessName",),
+    FileKind.CHEQUE: _PERSON_NAMES,
+    FileKind.JUDGMENT: _PERSON_NAMES,
+}
+# The record's own date: a mistyped one is a FUTURE_DATE defect.
+EVENT_DATE = {
+    FileKind.INDIVIDUAL: "DisbursementDate",
+    FileKind.COMMERCIAL: "DisbursementDate",
+    FileKind.CHEQUE: "DateBounced",
+    FileKind.JUDGMENT: "FilingDate",
 }
 DATE_FIELDS = {
     FileKind.INDIVIDUAL: ("DOB", "DisbursementDate"),
     FileKind.COMMERCIAL: ("RegistrationDate", "DisbursementDate"),
+    FileKind.CHEQUE: ("DOB", "DateBounced"),
+    FileKind.JUDGMENT: ("DOB", "FilingDate"),
 }
-AMOUNT_FIELDS = ("FacilityAmount", "SchdInstalAmount", "CurBal", "AmountInArrears")
+_CREDIT_AMOUNTS = ("FacilityAmount", "SchdInstalAmount", "CurBal", "AmountInArrears")
+AMOUNT_FIELDS = {
+    FileKind.INDIVIDUAL: _CREDIT_AMOUNTS,
+    FileKind.COMMERCIAL: _CREDIT_AMOUNTS,
+    FileKind.CHEQUE: ("ChequeAmount",),
+    FileKind.JUDGMENT: ("Amount",),
+}
 
 # Alternative column names seen when a provider changes its extract, including
 # real variants in use (e.g. "CreditFacilityAccNum", "Tinum").
@@ -139,7 +170,7 @@ def render(
 ) -> RenderedFile:
     layout = layout or Layout.standard(kind, DATA_STANDARDS.at(period))
     blank_weights = profile.blank_weights or (
-        INDIVIDUAL_BLANKABLE if kind is FileKind.INDIVIDUAL else COMMERCIAL_BLANKABLE
+        INDIVIDUAL_BLANKABLE if kind in CONSUMER_KINDS else COMMERCIAL_BLANKABLE
     )
     identifiers = [r.values[IDENTIFIER_FIELD[kind]] for r in records]
 
@@ -204,7 +235,8 @@ def _apply_row_defects(
             if name in record.previous:
                 change(name, record.previous[name], "STALE_VALUE")
 
-    if rng.random() < profile.inconsistent_status:
+    # (The draw is made for every kind, so credit files are the same with or without events.)
+    if rng.random() < profile.inconsistent_status and kind in CREDIT_KINDS:
         status = row.values["FacilityStatusCode"]
         if status == "A" and int(row.values["CurBal"]) > 0:
             # A live account reported as closed.
@@ -232,7 +264,7 @@ def _apply_row_defects(
         name = candidates[int(rng.integers(len(candidates)))]
         change(name, _typo(row.values[name], rng), "NAME_TYPO")
 
-    if kind is FileKind.INDIVIDUAL and rng.random() < profile.name_swap:
+    if kind in CONSUMER_KINDS and rng.random() < profile.name_swap:
         surname, first = row.values["Surname"], row.values["FirstName"]
         if not touched & {"Surname", "FirstName"} and surname and first and surname != first:
             change("Surname", first, "NAME_SWAP")
@@ -256,10 +288,11 @@ def _apply_row_defects(
 
     if rng.random() < profile.future_date:
         future = period + timedelta(days=int(rng.integers(1, 400)))
-        change("DisbursementDate", format_date(future), "FUTURE_DATE")
+        change(EVENT_DATE[kind], format_date(future), "FUTURE_DATE")
 
     if rng.random() < profile.amount_format:
-        name = AMOUNT_FIELDS[int(rng.integers(len(AMOUNT_FIELDS)))]
+        amounts = AMOUNT_FIELDS[kind]
+        name = amounts[int(rng.integers(len(amounts)))]
         change(name, _amount_variant(row.values[name], rng), "AMOUNT_FORMAT")
 
     # Excel strips the leading zero from phone numbers stored as numbers.

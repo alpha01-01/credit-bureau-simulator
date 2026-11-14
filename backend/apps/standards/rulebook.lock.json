@@ -1,14 +1,62 @@
 {
   "data_standard": {
     "1.1": {
-      "digest": "e20abfb42d4437e8adcc99a16615e0d7333540165aa29eefe87af7fd9a683749",
-      "effective": "2020-01-01"
+      "effective": "2020-01-01",
+      "parts": {
+        "code_lists:AssetClassification": "7d0cd9c3832387a7e681121c990b417c59f5d1ae156be4d9e595ea40e4c4227a",
+        "code_lists:BusType": "08896c23872fc516b3bbadc4b49a23e5865494c406a829116e85abdba4b43a7a",
+        "code_lists:CaseReason": "a824c36767266401780005379b5a5894e765cdea107e0df8ed9b2640d07c8a24",
+        "code_lists:CaseType": "213014c49c1cf089b613f7a6ade5e0cd40f9591d9c6a0b44e129f22217b978c0",
+        "code_lists:ClosureReason": "8c96ef75ac34edbf6e6b57254667640cdb10daef1863a5725e43db0b910e5d59",
+        "code_lists:CorrectionIndicator": "68a72191027f912b4d31fb84edba34784d427550415ac886912ff73d852a6c5a",
+        "code_lists:Country": "b461b62b594a23a50e61b4badfbd65fc98b090253978efb5328906e2c9518800",
+        "code_lists:CreditCollateralInd": "970e380ef215890fec9b2bf92f80dae48aca14dbaf6d60dcf95e43d9e25cfeb9",
+        "code_lists:CreditFacilityType": "6a934706375b70558d8e7de237d8f7d709af880478e6f1284dcdcc8c62714605",
+        "code_lists:CurBalIndicator": "fa8181f12f532fdaec136ec0d06704595c1208bc56fc78e70d6ddbe4a89e696b",
+        "code_lists:Currency": "9d1476871cda7a9c31d1d82992dd657fbf61c3f3e93376bcc6d80651209595d2",
+        "code_lists:Data": "269fac766d98751bd7e2a9d27af074aeccce226467e2f96fdd0d34687d900802",
+        "code_lists:EmpType": "bbd28036671f46438d3e1163a37e308c688319d2a7984a00514e7b505cb63d75",
+        "code_lists:FacilityStatusCode": "ee754233c203d225bdec77091eef1647bd7ec1d16f3574e53dc769b2ace1101a",
+        "code_lists:Gender": "7085d4acbd7a8ec89cc9d667159a7d8877ded8a23ea224fa6ed36c49c0ee7acc",
+        "code_lists:JointOrSoleAcc": "299a015e60eba75d04a054e6ddc1e83f495ff40fafdf6da03418f539532978ab",
+        "code_lists:LegalFlag": "a016dae7c0650c0eefeca0c2d17250b934a393781e0f7e9d333a20d755b2e4d2",
+        "code_lists:MaritalStatus": "3365b0e52097f75ef63a3964b9524eb78786632f2396c089ad04d348730533d7",
+        "code_lists:NatureOfCharge": "077ed30bb45c05d24d50a7230a5ee3e52a3e38c91333d2f9ff529077c24c81ef",
+        "code_lists:NatureOfGuarantor": "0867cf220022f0f4d82279e80656d60851e8931322b9af9d3fe7e23766456def",
+        "code_lists:OwnerOrTenant": "54ef29cf4517beeba76fd4b23b0162f694ea01737c4127ecb20fa75cd020a2a6",
+        "code_lists:PurposeOfFacility": "267bff7121da20c7767af61f02798509e423d7761ee78013375ce3edeb9412b0",
+        "code_lists:ReasonForRestructure": "5695e9e6cc34a67580c27b0444dc9b28b68fdc9db20df9aef61235c8d2f23dcd",
+        "code_lists:ReasonForWrittenOff": "497a6e96f6c16e0dacc76ca3bdfeb4b283aa9370ad472ba9ee7f7acd45a99305",
+        "code_lists:ReasonReturned": "a8b5935bec9712de319d5503e0a13b4cf3cac6dc5dcea5aff73302bfa4dd3376",
+        "code_lists:RepaymentFreq": "57bf761154da10bd5d0999ce39ab3b4806cd43ee1836e2465bf6d52a0d0551e3",
+        "code_lists:SectorIndCode": "f71f7af8f7beadbe8ae9558327021fc1b40d419aed25a9bd65531eec43056c48",
+        "code_lists:SecurityType": "9cb73a91e6d5a523bdfb0869a12a8c27191908ed5807411c8597b73ad2575f8b",
+        "code_lists:SpecialCommentsCode": "d4f89ee16bcb9e5c0df9ddd16544902d202db84dc875a0aab4a32d9d714106d4",
+        "code_lists:SubSecIndCode": "0b3ccdc6e140f7962a273276263df0bc5df995c52a7d26c396dba3503314931e",
+        "core_fields:BUSC": "4ef1531944700fc6cd24158e12b61cc29d9f8b2c82abc9b8e4d1822bcc8f07d9",
+        "core_fields:CONC": "ca676fa29df248264586236442546ad1aad2ce238578a6115f1aa95c53692c27",
+        "core_fields:COND": "8f5d727d1b59d62312347a95ec78f4b71de4fdf4b94a03a0be3c2816397c50a6",
+        "core_fields:CONJ": "b271078fbeb89ddceee5c119c2e798083c36ba67138acd636776d36f22a2f6f8",
+        "fields:BUSC": "486a205c092e9c486b1730d288c6a283712ed154ab33a93aba7b366d2596ccff",
+        "fields:CONC": "17504ad118c658453f199af2c1a163824a9739c583e020d29aac2a20fb78707c",
+        "fields:COND": "a35260326cb7d80af4b1aa5aec110f7de89585786d6027d756689a7935a58297",
+        "fields:CONJ": "caf06ae69dbf9d1a08c3e7c6d8d9c4e43b50dba9b3d54ac21cc5e1516a948b5a",
+        "id_fields": "64468890debe5e1c60805c2aeeb15ff1f49c6c263e708fce53b5488b9967362e",
+        "id_required_from": "59bd20d7e694fc21a8ff071539460b2dda2edcad9c6249741883ded70f9cccac",
+        "submission_due_day": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5"
+      }
     }
   },
   "tax_rules": {
     "GH-2024.1": {
-      "digest": "c9859c97d9cf175aa873ae0ad22f4179d1f7b227a4682ffea7de31bb6a0e6fc3",
-      "effective": "2024-01-01"
+      "effective": "2024-01-01",
+      "parts": {
+        "paye_bands": "a33a36392c595453e4a07f50edafbae45b3ce1827d570ac8f89adc303d76bd3b",
+        "remittance_day": "8527a891e224136950ff32ca212b45bc93f69fbb801c3b1ebedac52775f99e61",
+        "ssnit_employee": "b9739c2c11d1a028287d7e38ca8bc79cf8a7ffbcdd791bb95f53f85740887243",
+        "ssnit_employer": "fca12c7f877be6231cd4631ca21e6781a802ddb8669d184d4a0a7775812f5a3b",
+        "vat_and_levies": "947c41ffd27a07278714c57582a3e49c345cc3adef723d92b17aba5c8c9dcbed"
+      }
     }
   }
 }

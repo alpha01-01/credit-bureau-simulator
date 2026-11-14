@@ -39,6 +39,16 @@ RESUBMIT_OTHER_WITHIN = 5
 class FileKind(StrEnum):
     INDIVIDUAL = "CONC"  # Consumer Credit data file
     COMMERCIAL = "BUSC"  # Business Credit data file
+    CHEQUE = "COND"  # Consumer Dishonoured Cheque data file
+    JUDGMENT = "CONJ"  # Consumer Judgment data file
+
+
+# Credit files report facilities month by month; event files report one-off
+# events (a bounced cheque, a court judgment) about a person.
+CREDIT_KINDS = (FileKind.INDIVIDUAL, FileKind.COMMERCIAL)
+EVENT_KINDS = (FileKind.CHEQUE, FileKind.JUDGMENT)
+# File kinds whose subject is an individual (the consumer identity block).
+CONSUMER_KINDS = (FileKind.INDIVIDUAL, FileKind.CHEQUE, FileKind.JUDGMENT)
 
 
 class Option(StrEnum):
@@ -183,9 +193,39 @@ COMMERCIAL_FIELDS: tuple[Field, ...] = (
     *_GUARANTOR,
 )
 
+# The dishonoured cheque and judgment files open with the consumer identity
+# block: the first 32 columns of the consumer credit file (proposal v2, s.11).
+_IDENTITY = INDIVIDUAL_FIELDS[: [f.name for f in INDIVIDUAL_FIELDS].index("OldCustomerID")]
+
+CHEQUE_FIELDS: tuple[Field, ...] = (
+    *_IDENTITY,
+    _f("ChequeNumber", M, "text", 20),
+    _f("AccountOpened", A, "date", 8),
+    _f("DateIssued", M, "date", 8),
+    _f("DateBounced", M, "date", 8),
+    _f("ReasonReturned", M, "code", 2, "ReasonReturned"),
+    _f("Currency", M, "code", 3, "Currency"),
+    _f("ChequeAmount", M, "numeric", 15),
+)
+
+JUDGMENT_FIELDS: tuple[Field, ...] = (
+    *_IDENTITY,
+    _f("CourtName", M, "text", 50),
+    _f("CourtLocation", M, "text", 50),
+    _f("CourtType", M, "text", 50),
+    _f("CaseNumber", M, "text", 15),
+    _f("FilingDate", M, "date", 8),
+    _f("CaseType", M, "code", 1, "CaseType"),
+    _f("CaseReason", M, "code", 1, "CaseReason"),
+    _f("Currency", M, "code", 3, "Currency"),
+    _f("Amount", M, "numeric", 15),
+)
+
 FIELDS: dict[FileKind, tuple[Field, ...]] = {
     FileKind.INDIVIDUAL: INDIVIDUAL_FIELDS,
     FileKind.COMMERCIAL: COMMERCIAL_FIELDS,
+    FileKind.CHEQUE: CHEQUE_FIELDS,
+    FileKind.JUDGMENT: JUDGMENT_FIELDS,
 }
 FIELD_BY_NAME: dict[FileKind, dict[str, Field]] = {
     kind: {f.name: f for f in fields} for kind, fields in FIELDS.items()
@@ -201,6 +241,15 @@ CORE_FIELDS: dict[FileKind, frozenset[str]] = {
     FileKind.COMMERCIAL: frozenset({
         "FacilityAccNum", "CustomerID", "BusinessName", "FacilityAmount", "DisbursementDate",
         "DisbursementAmt", "MaturityDate", "CurBal",
+    }),
+    # ASSUMPTION A-039: the cleanser's gate for event files is the person and the event.
+    FileKind.CHEQUE: frozenset({
+        "FacilityAccNum", "CustomerID", "Surname", "FirstName", "DOB", "ChequeNumber",
+        "DateBounced", "ChequeAmount",
+    }),
+    FileKind.JUDGMENT: frozenset({
+        "CustomerID", "Surname", "FirstName", "DOB", "CourtName", "CaseNumber", "FilingDate",
+        "Amount",
     }),
 }  # fmt: skip
 
@@ -225,7 +274,7 @@ def file_name(
 
 FILE_NAME_PATTERN = re.compile(
     r"(?P<srn>\d{5})-(?P<period>\d{8})-(?P<created>\d{8})-(?P<version>\d+\.\d+)"
-    r"-(?P<kind>CONC|BUSC)-(?P<sequence>\d+)\.csv"
+    r"-(?P<kind>CONC|BUSC|COND|CONJ)-(?P<sequence>\d+)\.csv"
 )
 
 
@@ -361,6 +410,13 @@ CODE_LISTS: dict[str, dict[str, str]] = {
     },
     "SectorIndCode": _SECTORS,
     "SubSecIndCode": _SUB_SECTORS,
+    # Dishonoured cheques and judgments.
+    "ReasonReturned": {"11": "Insufficient funds", "12": "Fraud"},
+    "CaseType": {
+        "A": "Administration order", "C": "Court order", "J": "Judgment by default",
+        "S": "Sequestration", "M": "Judicial management", "L": "Liquidation",
+    },
+    "CaseReason": {"F": "Fraud", "R": "Debt recovery", "O": "Other"},
 }  # fmt: skip
 
 CLOSED_STATUS_CODES = frozenset({"C", "T", "P"})

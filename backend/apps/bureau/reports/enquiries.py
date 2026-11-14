@@ -20,17 +20,23 @@ from django.db import transaction
 
 from apps.bureau.core.models import (
     AccountObservation,
+    CourtJudgment,
     CreditAccount,
     Customer,
     CustomerIdentifier,
+    DishonouredCheque,
     Enquiry,
     EnquiryOutcome,
 )
 from apps.org.models import Organization
 from apps.standards.enquiry import PURPOSES
-from apps.standards.submission_template import OPEN_STATUS_CODES, WRITTEN_OFF_STATUS_CODES
+from apps.standards.submission_template import (
+    CODE_LISTS,
+    OPEN_STATUS_CODES,
+    WRITTEN_OFF_STATUS_CODES,
+)
 
-REPORT_LAYOUT = "SIMB-R0"
+REPORT_LAYOUT = "SIMB-R1"  # R1 adds dishonoured cheques and judgments (P2.0c)
 HISTORY_MONTHS = 12
 
 
@@ -140,6 +146,7 @@ def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
     previous_enquiries = Enquiry.objects.filter(
         customer=customer, enquired_at__gte=at - timedelta(days=365), enquired_at__lt=at
     ).count()
+    cheques, judgments = cheques_on_file(customer, as_of), judgments_on_file(customer, as_of)
     return {
         "layout": REPORT_LAYOUT,
         "as_of": as_of.isoformat(),
@@ -151,9 +158,50 @@ def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
             "accounts_in_arrears": sum(1 for st in open_states if (st[2] or 0) > 0),
             "written_off": sum(1 for st in states if st[0] in WRITTEN_OFF_STATUS_CODES),
             "enquiries_last_12_months": previous_enquiries,
+            "dishonoured_cheques": len(cheques),
+            "judgments": len(judgments),
         },
         "accounts": rows,
+        "dishonoured_cheques": cheques,
+        "judgments": judgments,
     }
+
+
+def cheques_on_file(customer: Customer, as_of: date) -> list[dict[str, Any]]:
+    return [
+        {
+            "lender": c.institution.institution_name,
+            "account_number": c.account_number,
+            "cheque_number": c.cheque_number,
+            "date_issued": _iso(c.date_issued),
+            "date_bounced": _iso(c.date_bounced),
+            "reason": CODE_LISTS["ReasonReturned"].get(c.reason_code, c.reason_code),
+            "currency": c.currency_code,
+            "amount": str(c.amount),
+        }
+        for c in DishonouredCheque.objects.filter(customer=customer, date_bounced__lte=as_of)
+        .select_related("institution")
+        .order_by("-date_bounced", "cheque_number")
+    ]
+
+
+def judgments_on_file(customer: Customer, as_of: date) -> list[dict[str, Any]]:
+    return [
+        {
+            "plaintiff": j.institution.institution_name,
+            "court": j.court_name,
+            "court_type": j.court_type,
+            "case_number": j.case_number,
+            "filing_date": _iso(j.filing_date),
+            "case_type": CODE_LISTS["CaseType"].get(j.case_type, j.case_type),
+            "case_reason": CODE_LISTS["CaseReason"].get(j.case_reason, j.case_reason),
+            "currency": j.currency_code,
+            "amount": str(j.amount),
+        }
+        for j in CourtJudgment.objects.filter(customer=customer, filing_date__lte=as_of)
+        .select_related("institution")
+        .order_by("-filing_date", "case_number")
+    ]
 
 
 def _subject(customer: Customer) -> dict[str, Any]:

@@ -16,9 +16,13 @@ Whatever uses a rule records the version it used (submission, processing run,
 journal entry), and later work on the same thing (review, reprocessing) uses
 that recorded version, not today's.
 
-Released editions are frozen. ``rulebook.lock.json`` holds a digest of each;
-a test fails if a released edition changes. To change a rule, add a new
-edition with a later effective date, then add its digest to the lock file.
+Released editions are frozen. ``rulebook.lock.json`` holds a digest of every
+**part** of each edition: each template, each code list, each threshold. A
+test fails if a released part changes or disappears. An edition may gain new
+parts (a template the standard always had but the game had not built yet, such
+as the dishonoured cheque file) because nothing already recorded used them. To
+change a rule, add a new edition with a later effective date, then record its
+parts in the lock file.
 """
 
 from __future__ import annotations
@@ -91,26 +95,46 @@ class Series[E: Edition]:
             self._editions.remove(edition)
 
 
-def digest(edition: object) -> str:
-    """A stable fingerprint of an edition's content, for the lock file."""
+def _plain(value: Any) -> Any:
+    """A JSON-ready form of a rule value, stable across runs."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
+    if isinstance(value, Mapping):
+        return {str(_plain(k)): _plain(v) for k, v in value.items()}
+    if isinstance(value, tuple | list):
+        return [_plain(v) for v in value]
+    if isinstance(value, frozenset | set):
+        return sorted(_plain(v) for v in value)
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, date | Decimal):
+        return str(value)
+    return value
 
-    def plain(value: Any) -> Any:
-        if dataclasses.is_dataclass(value) and not isinstance(value, type):
-            return {f.name: plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
-        if isinstance(value, Mapping):
-            return {str(plain(k)): plain(v) for k, v in value.items()}
-        if isinstance(value, tuple | list):
-            return [plain(v) for v in value]
-        if isinstance(value, frozenset | set):
-            return sorted(plain(v) for v in value)
-        if isinstance(value, Enum):
-            return value.value
-        if isinstance(value, date | Decimal):
-            return str(value)
-        return value
 
-    text = json.dumps(plain(edition), sort_keys=True, separators=(",", ":"))
+def digest(value: object) -> str:
+    """A stable fingerprint of a rule value (an edition or one of its parts)."""
+    text = json.dumps(_plain(value), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def parts(edition: object) -> dict[str, str]:
+    """The digest of each part of an edition: one per field, one per entry of a mapping.
+
+    For a data standard: ``fields:CONC``, ``core_fields:CONC``, ``code_lists:Gender``,
+    ``id_required_from`` and so on.
+    """
+    out: dict[str, str] = {}
+    for f in dataclasses.fields(edition):  # type: ignore[arg-type]
+        if f.name in ("version", "effective", "note"):
+            continue
+        value = getattr(edition, f.name)
+        if isinstance(value, Mapping):
+            for key, item in value.items():
+                out[f"{f.name}:{_plain(key)}"] = digest(item)
+        else:
+            out[f.name] = digest(value)
+    return out
 
 
 # --- The credit data standard -------------------------------------------------------

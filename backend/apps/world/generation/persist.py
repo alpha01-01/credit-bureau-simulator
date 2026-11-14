@@ -382,6 +382,9 @@ def delete_world(world_id: int) -> None:
         cursor.execute("DELETE FROM world_providersubmission WHERE world_id = %s", [world_id])
         cursor.execute(f"DROP TABLE IF EXISTS {partition}")
         for table, column in (
+            ("world_dishonouredcheque", "world_id"),
+            ("world_courtjudgment", "world_id"),
+            ("world_eventmonth", "world_id"),
             ("world_loanapplication", "world_id"),
             ("world_loan", "world_id"),
             ("world_lendercustomer", "world_id"),

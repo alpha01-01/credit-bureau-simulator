@@ -23,6 +23,7 @@ from apps.standards.rulebook import STANDARD_1_1
 from apps.standards.submission_template import (
     CODE_LISTS,
     DELIMITER,
+    EVENT_KINDS,
     FIELDS,
     FILE_NAME_PATTERN,
     SUBMISSION_DUE_DAY,
@@ -35,6 +36,8 @@ from apps.world.generation import build_world
 from apps.world.generation.config import EMPLOYMENT_TYPES, LENDER_SRN, SECTORS
 from apps.world.generation.persist import delete_world, write_world
 from apps.world.models import (
+    CourtJudgment,
+    DishonouredCheque,
     FileDefect,
     Lender,
     Loan,
@@ -129,7 +132,7 @@ def test_clean_file_matches_the_truth_exactly(world: World, tmp_path: Path) -> N
     result = generate_submission(world, lender, period, CLEAN)
 
     files = {f.kind: f for f in result.submission.files.all()}
-    assert set(files) == {"CONC", "BUSC"}
+    assert {"CONC", "BUSC"} <= set(files) <= {"CONC", "BUSC", "COND", "CONJ"}
     for stored in files.values():
         # Named as the standard requires: SRN, reporting date, creation date, version, kind.
         match = FILE_NAME_PATTERN.fullmatch(stored.file_name)
@@ -151,11 +154,41 @@ def test_clean_file_matches_the_truth_exactly(world: World, tmp_path: Path) -> N
         )
         for n, raw in enumerate(rows, start=1):
             values = dict(zip(names, raw, strict=True))
+            if kind in EVENT_KINDS:
+                _assert_event_matches_world(values, row_map[n], kind, period)
+                continue
             _assert_matches_world(values, row_map[n], kind, period)
-        reported += len(rows)
+            reported += 1
 
-    # Every account with a true state this month is reported, once.
+    # Every account with a true state this month is reported, once; so is every event.
     assert reported == LoanMonth.objects.filter(lender=lender, period=period).count()
+    for kind, model in ((FileKind.CHEQUE, DishonouredCheque), (FileKind.JUDGMENT, CourtJudgment)):
+        expected = model.objects.filter(lender=lender, period=period).count()
+        assert (files[kind.value].row_count if kind.value in files else 0) == expected
+
+
+def _assert_event_matches_world(
+    values: dict[str, str], loan_id: int, kind: FileKind, period: date
+) -> None:
+    """A cheque or judgment row against the world's event and borrower, via the ORM."""
+    loan = Loan.objects.select_related("customer__person").get(pk=loan_id)
+    person = loan.customer.person
+    assert person is not None
+    assert values["CustomerID"] == loan.customer.customer_number
+    assert (values["NatIDNum"], values["Surname"]) == (person.ghana_card, person.last_name)
+    if kind is FileKind.CHEQUE:
+        cheque = DishonouredCheque.objects.get(
+            loan=loan, period=period, cheque_number=values["ChequeNumber"]
+        )
+        assert values["FacilityAccNum"] == cheque.account_number
+        assert values["DateBounced"] == format_date(cheque.date_bounced)
+        assert values["ReasonReturned"] == cheque.reason
+        assert values["ChequeAmount"] == whole(cheque.amount)
+    else:
+        case = CourtJudgment.objects.get(loan=loan, case_number=values["CaseNumber"])
+        assert values["FilingDate"] == format_date(case.filing_date)
+        assert values["CourtName"] == case.court_name
+        assert values["Amount"] == whole(case.amount)
 
 
 def _assert_matches_world(
