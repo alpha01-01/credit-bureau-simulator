@@ -93,6 +93,14 @@ backend/.venv/Scripts/python backend/manage.py process_month --world 1 --period 
 
 The first run creates a game (a bureau organisation) for the world and onboards the five reporting providers. Provider files are generated if needed. Each provider's line shows records received, accepted, unloadable and duplicate, and the issues found.
 
+## Starting a game
+
+```bash
+backend/.venv/Scripts/python backend/manage.py start_game --world 1
+```
+
+creates a bureau in the world and pre-loads the last 12 months of provider files through the pipeline, so the bureau starts established, with a history (and its predecessors' review decisions) behind it. `--history-months 0` starts a bureau with no past.
+
 ## Playing time forward
 
 A game is a bureau running in a world. The clock advances in 15-minute ticks over Ghana working days (08:00–17:00; nights, weekends and public holidays are skipped). Provider files arrive on their scheduled days and are processed in the overnight batch. At the start of each month the world lives through the month that has just ended, so providers always have a new month to report.

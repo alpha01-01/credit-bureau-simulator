@@ -30,13 +30,7 @@ from django.utils import timezone
 
 from apps.bureau.core.models import (
     AccountObservation,
-    BusinessProfile,
     CreditAccount,
-    Customer,
-    CustomerContact,
-    CustomerIdentifier,
-    IndividualProfile,
-    ProviderCustomerLink,
 )
 from apps.bureau.quality.models import (
     CaseType,
@@ -53,6 +47,7 @@ from apps.bureau.referencing.matching import (
     Referencer,
     observed_accounts,
 )
+from apps.dbcopy import copy_insert
 from apps.org.models import Organization
 from apps.standards.submission_template import FileKind, header
 
@@ -235,13 +230,13 @@ def save_pending(organization: Organization, pending: Pending) -> None:
         first = organization.allocate("last_customer_seq", len(pending.customers))
         for i, customer in enumerate(pending.customers):
             customer.customer_reference = f"CB{first + i:010d}"
-        Customer.objects.bulk_create(pending.customers, batch_size=BATCH)
-    IndividualProfile.objects.bulk_create(pending.individual_profiles, batch_size=BATCH)
-    BusinessProfile.objects.bulk_create(pending.business_profiles, batch_size=BATCH)
-    CustomerIdentifier.objects.bulk_create(pending.identifiers, batch_size=BATCH)
-    CustomerContact.objects.bulk_create(pending.contacts, batch_size=BATCH)
-    ProviderCustomerLink.objects.bulk_create(pending.links, batch_size=BATCH)
-    CreditAccount.objects.bulk_create(pending.accounts, batch_size=BATCH)
+        copy_insert(pending.customers)
+    copy_insert(pending.individual_profiles)
+    copy_insert(pending.business_profiles)
+    copy_insert(pending.identifiers)
+    copy_insert(pending.contacts)
+    copy_insert(pending.links)
+    copy_insert(pending.accounts)
     CreditAccount.objects.bulk_update(
         list(pending.updated_accounts.values()), ["account_status"], batch_size=BATCH
     )
@@ -307,7 +302,7 @@ def _save_rows(
         )
         for row in rows
     ]
-    StagingRecord.objects.bulk_create(records, batch_size=BATCH)
+    copy_insert(records)
 
     issues = list(file_issues)
     transformations = []
@@ -327,9 +322,9 @@ def _save_rows(
             observations.append(
                 observation(row.cleansed, row.account, submission, row.file, row.number, run)
             )
-    ValidationIssue.objects.bulk_create(issues, batch_size=BATCH)
-    TransformationLog.objects.bulk_create(transformations, batch_size=BATCH)
-    AccountObservation.objects.bulk_create(observations, batch_size=BATCH)
+    copy_insert(issues)
+    copy_insert(transformations)
+    copy_insert(observations)
     return records
 
 
@@ -393,4 +388,4 @@ def open_cases(
                     opened_at=at,
                 )
             )
-    return ReviewCase.objects.bulk_create(cases, batch_size=BATCH)
+    return copy_insert(cases)

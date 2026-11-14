@@ -23,6 +23,7 @@ class ItemStatus(models.TextChoices):
 class ResolvedBy(models.TextChoices):
     EMPLOYEE = "EMPLOYEE", "An employee"
     PLAYER = "PLAYER", "The player"
+    HISTORIC = "HISTORIC", "Staff before the game began"
 
 
 class WorkItem(models.Model):

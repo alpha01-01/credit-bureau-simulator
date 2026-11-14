@@ -31,10 +31,17 @@ DELIVERY_TIME = time(9, 0)
 
 
 @transaction.atomic
-def start_game(world: World, owner: Any = None, bureau_name: str = "SimB Credit Bureau") -> Game:
+def start_game(
+    world: World,
+    owner: Any = None,
+    bureau_name: str = "SimB Credit Bureau",
+    history_months: int = 0,
+) -> Game:
     """Create a bureau for a world, onboard the reporting providers, and set the clock.
 
     Play starts on the first day of the month after the world's history.
+    ``history_months`` pre-loads that many months of provider files, so the
+    bureau starts established (the Established scenario uses 12).
     """
     organization = Organization.objects.create(
         name=bureau_name, organization_code=f"BUREAU-{uuid.uuid4().hex[:10].upper()}"
@@ -50,6 +57,10 @@ def start_game(world: World, owner: Any = None, bureau_name: str = "SimB Credit 
         onboard(game, Lender.objects.get(world=world, code=code), world.history_start)
     hire_starting_team(game, world.history_start)
     set_up_commercial(game, world.history_start)
+    if history_months:
+        from .history import preload_history  # history uses deliver(), defined below
+
+        preload_history(game, history_months)
     return game
 
 

@@ -183,7 +183,28 @@ class Referencer:
         return (values["REGISTERED_NAME"], parse_date(values["REGISTRATION_DATE"]))
 
     def _identity_of(self, key: CustomerKey) -> tuple[Any, ...]:
-        return key.identity if isinstance(key, NewCustomer) else self.identity[key]
+        if isinstance(key, NewCustomer):
+            return key.identity
+        if key not in self.identity:
+            # A customer that became a candidate during this run, e.g. one whose
+            # identifier was recorded from an earlier row of the same file.
+            self.identity[key] = self._load_identity(key)
+        return self.identity[key]
+
+    def _load_identity(self, customer_id: int) -> tuple[Any, ...]:
+        if self.kind is FileKind.INDIVIDUAL:
+            person = (
+                IndividualProfile.objects.filter(customer_id=customer_id)
+                .values_list("first_name", "last_name", "date_of_birth")
+                .first()
+            )
+            return tuple(person) if person else ("", "", None)
+        business = (
+            BusinessProfile.objects.filter(customer_id=customer_id)
+            .values_list("registered_name", "registration_date")
+            .first()
+        )
+        return tuple(business) if business else ("", None)
 
     def compare(self, values: dict[str, str], key: CustomerKey) -> Comparison:
         record, customer = self._record_identity(values), self._identity_of(key)
