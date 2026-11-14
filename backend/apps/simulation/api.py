@@ -116,9 +116,12 @@ def _item_summary(item: WorkItem) -> dict[str, Any]:
 def work_items(request: Request, game_id: int) -> Response:
     game = _game(request, game_id)
     items = WorkItem.objects.filter(organization=game.organization).select_related("assignee")
-    if status_filter := request.query_params.get("status"):
+    status_filter = request.query_params.get("status")
+    if status_filter:
         items = items.filter(status=status_filter)
-    return Response([_item_summary(i) for i in items.order_by("item_number")[:500]])
+    # Waiting work oldest first (as it is worked); finished work newest first.
+    order = "-item_number" if status_filter == "DONE" else "item_number"
+    return Response([_item_summary(i) for i in items.order_by(order)[:500]])
 
 
 @api_view(["GET"])
@@ -134,11 +137,19 @@ def work_item(request: Request, game_id: int, number: int) -> Response:
     if case.candidate_customer is not None:
         customer = case.candidate_customer
         profile = getattr(customer, "individual", None)
+        business = getattr(customer, "business", None)
         candidate = {
             "reference": customer.customer_reference,
-            "name": f"{profile.first_name} {profile.last_name}" if profile else None,
+            "name": (
+                f"{profile.first_name} {profile.last_name}"
+                if profile
+                else (business.registered_name if business else None)
+            ),
             "date_of_birth": profile.date_of_birth.isoformat()
             if profile and profile.date_of_birth
+            else None,
+            "registration_date": business.registration_date.isoformat()
+            if business and business.registration_date
             else None,
         }
     return Response(
@@ -195,11 +206,14 @@ def employees(request: Request, game_id: int) -> Response:
 @api_view(["GET"])
 def enquiries(request: Request, game_id: int) -> Response:
     game = _game(request, game_id)
-    rows = (
-        Enquiry.objects.filter(organization=game.organization)
-        .select_related("subscriber", "customer")
-        .order_by("-enquired_at", "-enquiry_reference")[:500]
-    )
+    query = Enquiry.objects.filter(organization=game.organization)
+    if start := request.query_params.get("start"):
+        query = query.filter(enquired_at__date__gte=start)
+    if outcome := request.query_params.get("outcome"):
+        query = query.filter(outcome=outcome)
+    rows = query.select_related("subscriber", "customer").order_by(
+        "-enquired_at", "-enquiry_reference"
+    )[:500]
     return Response(
         [
             {

@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 from openpyxl import load_workbook
 
+from apps.standards.calendar import next_working_day
 from apps.standards.submission_template import (
     CODE_LISTS,
     FIELDS,
@@ -327,7 +328,12 @@ def test_arrivals_follow_the_profile() -> None:
     for profile, expected_late in ((CLEAN, 0.0), (POOR, POOR.late_rate)):
         plans = [schedule(7, "XYZ", p, profile) for p in periods * 10]
         late = [s for s in plans if s.is_late]
-        assert all(s.due_date.day == SUBMISSION_DUE_DAY for s in plans)
+        # Due on the 10th, or the next working day when the 10th is not one.
+        assert all(
+            s.due_date == next_working_day(s.due_date.replace(day=SUBMISSION_DUE_DAY))
+            and s.due_date.day >= SUBMISSION_DUE_DAY
+            for s in plans
+        )
         assert all((s.arrival_date - s.due_date).days <= profile.late_days_max for s in late)
         assert abs(len(late) / len(plans) - expected_late) < 0.1
         on_time = [s for s in plans if not s.is_late]

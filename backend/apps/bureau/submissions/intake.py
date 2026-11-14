@@ -19,13 +19,15 @@ from openpyxl import load_workbook
 
 from apps.bureau.providers.models import Institution
 from apps.org.models import Organization
+from apps.standards.calendar import next_working_day
 from apps.standards.submission_template import FILE_NAME_PATTERN, SUBMISSION_DUE_DAY
 
 from .models import FileStatus, Submission, SubmissionFile, SubmissionStatus
 
 
 def due_date_for(period: date) -> date:
-    return (period + timedelta(days=1)).replace(day=SUBMISSION_DUE_DAY)
+    """The deadline: the due day of the next month, or the next working day after it."""
+    return next_working_day((period + timedelta(days=1)).replace(day=SUBMISSION_DUE_DAY))
 
 
 def submission_folder(organization: Organization, reference: str) -> Path:

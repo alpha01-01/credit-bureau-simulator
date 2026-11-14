@@ -13,7 +13,9 @@ flagged in docs/assumptions.md:
          landlords usually require); IT hosting GHS 15,000 a month.
   A-034  Opening position of an established bureau: bank GHS 1,800,000, a
          year's rent prepaid, share capital GHS 2,000,000.
-  A-035  Invoices monthly in arrears, payable within 30 days.
+  A-035  Invoices monthly in arrears, dated the last day of the month of
+         service (so revenue is recognised in that month), payable within
+         30 days.
 """
 
 from __future__ import annotations

@@ -31,3 +31,7 @@ Thumbs.db
 
 # Confidential reference material (see docs/references/README.md)
 docs/references/private/
+
+# Playwright
+frontend/test-results/
+frontend/playwright-report/

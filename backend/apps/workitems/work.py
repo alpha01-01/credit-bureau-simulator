@@ -13,7 +13,7 @@ from datetime import datetime
 import numpy as np
 from django.db import transaction
 
-from apps.bureau.core.models import IndividualProfile
+from apps.bureau.core.models import BusinessProfile, IndividualProfile
 from apps.bureau.quality.models import ALLOWED_DECISIONS, CaseType, ReviewCase
 from apps.bureau.submissions.review import apply_decision
 from apps.org.models import Employee, Organization
@@ -161,8 +161,20 @@ def explain(case: ReviewCase, result: Judgement) -> str:
             known = f"{profile.first_name} {profile.last_name}, born {born}"
             submitted = f"{record.get('FIRST_NAME', '')} {record.get('SURNAME', '')}, born {record.get('DATE_OF_BIRTH', '')}"
         else:
-            known = "a business"
-            submitted = record.get("REGISTERED_NAME", "")
+            business = (
+                BusinessProfile.objects.filter(customer_id=case.candidate_customer_id).first()
+                if case.candidate_customer_id is not None
+                else None
+            )
+            registered = (
+                f"{business.registration_date:%d/%m/%Y}"
+                if business and business.registration_date
+                else "unknown"
+            )
+            known = (
+                f"{business.registered_name}, registered {registered}" if business else "unknown"
+            )
+            submitted = f"{record.get('REGISTERED_NAME', '')}, registered {record.get('REGISTRATION_DATE', '')}"
         reasons = "; ".join(case.evidence.get("reasons", []))
         return (
             f"Identifier {identifier} is held by {held_by} ({known}). The record is for "

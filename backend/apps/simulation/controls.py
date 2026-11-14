@@ -44,7 +44,13 @@ def pause(game: Game) -> Game:
     return game
 
 
+def _ready(game: Game) -> None:
+    if game.setup_status != "READY":
+        raise ClockError("The game is still being prepared")
+
+
 def resume(game: Game) -> Game:
+    _ready(game)
     record(game, "RESUME")
     game.status = GameStatus.RUNNING
     game.save(update_fields=["status"])
@@ -62,6 +68,7 @@ def set_speed(game: Game, speed: int) -> Game:
 
 def advance_by(game: Game, unit: str, count: int = 1) -> Game:
     """Advance the clock: hours, to the end of the day (repeated), or to the next event."""
+    _ready(game)
     if unit not in ADVANCE_UNITS:
         raise ClockError(f"Unit must be one of {', '.join(ADVANCE_UNITS)}")
     if not 1 <= count <= 31:

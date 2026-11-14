@@ -54,8 +54,10 @@ def month_start(game: Game, cal: Calendar, tick: int, sequence: int) -> int:
     org = game.organization
     month_start_costs(org, first, at)
 
+    # Invoices are dated the last day of the month the service was delivered, so the
+    # revenue (and the VAT on it) belongs to that month, as accrual accounting requires.
     previous_end = previous_month_end(today)
-    invoices = invoice_usage(org, previous_end.replace(day=1), previous_end, today, at)
+    invoices = invoice_usage(org, previous_end.replace(day=1), previous_end, previous_end, at)
     events = []
     for invoice in invoices:
         paid_on = _payment_date(game, invoice)
