@@ -1,11 +1,14 @@
-"""Customer and account referencing, pipeline v0 (roadmap S3).
+"""Customer and account referencing (roadmap S3, S5; standard template P2.0a).
 
-Customer referencing uses exact identifiers only, in this order:
-  1. the provider's own customer number (ProviderCustomerLink);
-  2. the national identifier: Ghana Card for individuals; business
-     registration number, then TIN, for businesses;
+Customer referencing uses identifiers, in this order:
+  1. the provider's own customer number (CustomerID, via ProviderCustomerLink);
+  2. an identifier: Ghana Card, voter's ID, passport, driver's licence or SSNIT
+     number for individuals; business registration number, then TIN, for
+     businesses. A match whose identity does not agree is held for review;
   3. otherwise a new bureau customer.
-Account referencing uses (institution, account number), which is unique.
+Account referencing uses (institution, account number), which is unique. A
+disbursement date that differs from the account on file cannot be loaded
+(R004), except for overdrafts, as the standard says.
 
 Conflicts (an identifier already held by another customer, an account held by
 another customer) are kept as warnings for review; the provider's own keys win.
@@ -57,16 +60,23 @@ class NewCustomer:
 CustomerKey = int | NewCustomer
 
 _ID_FIELDS: dict[FileKind, tuple[tuple[str, str], ...]] = {
-    FileKind.INDIVIDUAL: (("GHANA_CARD_NUMBER", IdentifierType.GHANA_CARD),),
+    FileKind.INDIVIDUAL: (
+        ("NatIDNum", IdentifierType.GHANA_CARD),
+        ("VotersIDNum", IdentifierType.VOTER_ID),
+        ("PassportNum", IdentifierType.PASSPORT),
+        ("DriverLicNum", IdentifierType.DRIVER_LICENCE),
+        ("SSNum", IdentifierType.SSNIT),
+    ),
     FileKind.COMMERCIAL: (
-        ("REGISTRATION_NUMBER", IdentifierType.BUSINESS_REGISTRATION),
-        ("TIN", IdentifierType.TIN),
+        ("BusRegNum", IdentifierType.BUSINESS_REGISTRATION),
+        ("TINum", IdentifierType.TIN),
     ),
 }
 _PHONE_FIELDS: dict[FileKind, tuple[str, ...]] = {
-    FileKind.INDIVIDUAL: ("MOBILE_NUMBER", "ALT_MOBILE_NUMBER"),
-    FileKind.COMMERCIAL: ("CONTACT_NUMBER",),
+    FileKind.INDIVIDUAL: ("MobileTel1", "MobileTel2"),
+    FileKind.COMMERCIAL: ("OfficeTel1",),
 }
+OVERDRAFT = "121"  # the standard allows an overdraft's disbursement date to move
 
 
 @dataclass(frozen=True)
@@ -124,7 +134,7 @@ class Referencer:
         self.kind = kind
         self.pending = pending
 
-        numbers = {r["CUSTOMER_NUMBER"] for r in records}
+        numbers = {r["CustomerID"] for r in records}
         self.links: dict[str, CustomerKey] = dict(
             ProviderCustomerLink.objects.filter(
                 institution=self.institution, provider_customer_number__in=numbers
@@ -152,7 +162,7 @@ class Referencer:
         ).values_list("customer_id", "contact_value"):
             self.contacts_of[c].add(v)
 
-        accounts = {r["ACCOUNT_NUMBER"] for r in records}
+        accounts = {r["FacilityAccNum"] for r in records}
         # Who holds each account: existing holders by id, new accounts' holders by key.
         self.holders: dict[str, CustomerKey] = {}
         self.accounts: dict[str, CreditAccount] = {
@@ -179,8 +189,8 @@ class Referencer:
 
     def _record_identity(self, values: dict[str, str]) -> tuple[Any, ...]:
         if self.kind is FileKind.INDIVIDUAL:
-            return (values["FIRST_NAME"], values["SURNAME"], parse_date(values["DATE_OF_BIRTH"]))
-        return (values["REGISTERED_NAME"], parse_date(values["REGISTRATION_DATE"]))
+            return (values["FirstName"], values["Surname"], parse_date(values["DOB"]))
+        return (values["BusinessName"], parse_date(values["RegistrationDate"]))
 
     def _identity_of(self, key: CustomerKey) -> tuple[Any, ...]:
         if isinstance(key, NewCustomer):
@@ -223,7 +233,7 @@ class Referencer:
         customer, or treat the record as a different customer.
         """
         issues: list[Issue] = []
-        linked = self.links.get(values["CUSTOMER_NUMBER"])
+        linked = self.links.get(values["CustomerID"])
         found: CustomerKey | None = None
         found_field = ""
         for name, id_type in _ID_FIELDS[self.kind]:
@@ -241,10 +251,10 @@ class Referencer:
         # e.g. the second loan of a borrower whose first case was decided earlier.
         if linked is None and resolution is not None and resolution[0] == SAME and resolution[1]:
             customer = resolution[1]
-            self._link(values["CUSTOMER_NUMBER"], customer)
+            self._link(values["CustomerID"], customer)
         elif linked is None and resolution is not None and resolution[0] == DIFFERENT:
             customer = self._new_customer(values)
-            self._link(values["CUSTOMER_NUMBER"], customer)
+            self._link(values["CustomerID"], customer)
         elif linked is not None:
             customer = linked
             if found is not None and not _same(found, linked):
@@ -254,10 +264,10 @@ class Referencer:
             if not comparison.auto_link:
                 return MatchQuestion(found, comparison, found_field), []
             customer = found
-            self._link(values["CUSTOMER_NUMBER"], customer)
+            self._link(values["CustomerID"], customer)
         else:
             customer = self._new_customer(values)
-            self._link(values["CUSTOMER_NUMBER"], customer)
+            self._link(values["CustomerID"], customer)
 
         # Record identifiers the bureau did not have yet; conflicts stay as warnings.
         for name, id_type in _ID_FIELDS[self.kind]:
@@ -292,24 +302,24 @@ class Referencer:
             self.pending.individual_profiles.append(
                 IndividualProfile(
                     customer=customer,
-                    first_name=values["FIRST_NAME"],
-                    middle_name=values["MIDDLE_NAMES"],
-                    last_name=values["SURNAME"],
-                    date_of_birth=parse_date(values["DATE_OF_BIRTH"]),
-                    gender_code=values["GENDER"],
-                    employment_status=values["EMPLOYMENT_TYPE"],
+                    first_name=values["FirstName"],
+                    middle_name=values["MiddleNames"],
+                    last_name=values["Surname"],
+                    date_of_birth=parse_date(values["DOB"]),
+                    gender_code=values["Gender"],
+                    employment_status=values["EmpType"],
                 )
             )
         else:
             self.pending.business_profiles.append(
                 BusinessProfile(
                     customer=customer,
-                    registered_name=values["REGISTERED_NAME"],
-                    trading_name=values["TRADING_NAME"],
-                    registration_number=values["REGISTRATION_NUMBER"],
-                    tin_number=values["TIN"],
-                    sector_code=values["SECTOR"],
-                    registration_date=parse_date(values["REGISTRATION_DATE"]),
+                    registered_name=values["BusinessName"],
+                    trading_name=values["TradingName"],
+                    registration_number=values["BusRegNum"],
+                    tin_number=values["TINum"],
+                    sector_code=values["SubSecIndCode"],
+                    registration_date=parse_date(values["RegistrationDate"]),
                 )
             )
         return NewCustomer(customer, self._record_identity(values))
@@ -359,32 +369,41 @@ class Referencer:
         self, values: dict[str, str], customer: CustomerKey
     ) -> tuple[CreditAccount, list[Issue]]:
         issues: list[Issue] = []
-        number = values["ACCOUNT_NUMBER"]
-        status = values["ACCOUNT_STATUS"]
+        number = values["FacilityAccNum"]
+        status = values["FacilityStatusCode"]
         account = self.accounts.get(number)
         if account is not None:
+            disbursed = parse_date(values["DisbursementDate"])
+            if (
+                account.disbursement_date is not None
+                and disbursed != account.disbursement_date
+                and account.facility_type != OVERDRAFT
+            ):
+                # The standard: a changed disbursement date cannot be loaded (D18).
+                issues.append(Issue("R004", "DisbursementDate", values["DisbursementDate"]))
+                return account, issues
             holder = self.holders.get(number, account.customer_id)
             if not _same(holder, customer):
-                issues.append(Issue("R002", "ACCOUNT_NUMBER", number, "WARNING"))
+                issues.append(Issue("R002", "FacilityAccNum", number, "WARNING"))
             if account.account_status != status:
                 account.account_status = status
                 if account.pk:
                     self.pending.updated_accounts[account.pk] = account
             return account, issues
 
-        branch_id = self.branches.get(values["BRANCH_CODE"])
-        if values["BRANCH_CODE"] and branch_id is None:
-            issues.append(Issue("R003", "BRANCH_CODE", values["BRANCH_CODE"], "WARNING"))
+        branch_id = self.branches.get(values["BranchCode"])
+        if values["BranchCode"] and branch_id is None:
+            issues.append(Issue("R003", "BranchCode", values["BranchCode"], "WARNING"))
         account = CreditAccount(
             organization_id=self.organization_id,
             institution=self.institution,
             branch_id=branch_id,
             facility_account_number=number,
-            facility_type=values["FACILITY_TYPE"],
-            currency_code=values["CURRENCY"],
-            disbursement_date=parse_date(values["DISBURSEMENT_DATE"]),
-            maturity_date=parse_date(values["MATURITY_DATE"]),
-            original_amount=Decimal(values["ORIGINAL_AMOUNT"]),
+            facility_type=values["CreditFacilityType"],
+            currency_code=values["AmountCurrency"],
+            disbursement_date=parse_date(values["DisbursementDate"]),
+            maturity_date=parse_date(values["MaturityDate"]),
+            original_amount=Decimal(values["FacilityAmount"]),
             account_status=status,
             source_submission=self.submission,
         )

@@ -22,7 +22,14 @@ from django.conf import settings
 
 from apps.bureau.core.models import AccountObservation, CreditAccount, Customer
 from apps.bureau.quality.models import TransformationLog, ValidationIssue
-from apps.bureau.quality.rules import normalise_phone, validate
+from apps.bureau.quality.rules import (
+    CORE,
+    normalise_amount,
+    normalise_date,
+    normalise_phone,
+    propose_corrections,
+    validate,
+)
 from apps.bureau.submissions.intake import read_rows, receive_file
 from apps.bureau.submissions.models import (
     FileStatus,
@@ -31,10 +38,10 @@ from apps.bureau.submissions.models import (
     StagingRecord,
     Submission,
 )
-from apps.bureau.submissions.pipeline import process_submission
+from apps.bureau.submissions.pipeline import _mark_duplicates, _Row, process_submission
 from apps.simulation.bridge import deliver, start_game
 from apps.simulation.models import Delivery, Game
-from apps.standards.submission_template import FileKind
+from apps.standards.submission_template import FIELD_BY_NAME, FileKind, header, luhn_check_digit
 from apps.world.generation import build_world
 from apps.world.generation.persist import write_world
 from apps.world.models import FileDefect, Lender, Loan, ProviderFileRow, World
@@ -106,7 +113,7 @@ def test_second_month_adds_observations_to_existing_accounts(game: Game) -> None
     assert run1.accounts_created == len(accounts_after_first) == run1.records_accepted
 
     run2 = _run(game, "ATB", second, CLEAN)
-    reported = {r.cleansed["ACCOUNT_NUMBER"] for r in StagingRecord.objects.filter(run=run2)}
+    reported = {r.cleansed["FacilityAccNum"] for r in StagingRecord.objects.filter(run=run2)}
     assert run2.records_accepted == run2.records_received
     # Only accounts never reported before are new.
     assert run2.accounts_created == len(reported - accounts_after_first)
@@ -178,7 +185,7 @@ def test_every_observation_traces_to_its_source_file_and_row(game: Game, tmp_pat
         )
         assert record.record_status == RecordStatus.ACCEPTED
         assert record.raw == source
-        assert source["ACCOUNT_NUMBER"] == obs.credit_account.facility_account_number
+        assert source["FacilityAccNum"] == obs.credit_account.facility_account_number
         assert obs.source_submission_id == stored.submission_id
 
 
@@ -197,26 +204,49 @@ def test_totals_reconcile_and_defects_are_caught(game: Game) -> None:
     assert run.records_received == len(statuses)
     # Every repeated row the provider sent is caught as a duplicate.
     assert run.records_duplicated == ledger.filter(defect_type="DUPLICATE_ROW").count() > 0
-    # A blank mandatory field makes the record unloadable.
-    for defect in ledger.filter(defect_type="MISSING_FIELD").exclude(field="MATURITY_DATE"):
+    # Under the standard policy a blank mandatory field makes the record unloadable.
+    blanks = 0
+    for defect in ledger.filter(defect_type="MISSING_FIELD"):
         record = _record_for(run, defect)
-        if defect.field in ("BRANCH_CODE", "GHANA_CARD_NUMBER", "DATE_OF_BIRTH", "GENDER",
-                            "MOBILE_NUMBER", "TIN", "REGISTRATION_NUMBER", "CONTACT_NUMBER"):  # fmt: skip
-            assert record.record_status != RecordStatus.ACCEPTED
+        if record.record_status == RecordStatus.DUPLICATE:
+            continue
+        mandatory = FIELD_BY_NAME[FileKind(record.file.file_kind)][defect.field].mandatory
+        if mandatory:
+            assert record.record_status == RecordStatus.UNLOADABLE
             assert record.issues.filter(rule_code="F001", field=defect.field).exists()
+            blanks += 1
+        elif defect.field == "NatIDNum" and record.raw["DisbursementDate"] >= "20200101":
+            assert record.issues.filter(rule_code="F013").exists()
+    assert blanks > 0
     # Badly formatted phone numbers are cleansed back to the true value.
     cleansed = 0
     for defect in ledger.filter(defect_type="PHONE_FORMAT"):
         record = _record_for(run, defect)
+        if record.record_status == RecordStatus.DUPLICATE:
+            continue
         assert record.cleansed[defect.field] == defect.true_value
         assert TransformationLog.objects.filter(
             record=record, field=defect.field, rule_code="C001"
         ).exists()
         cleansed += 1
     assert cleansed > 0
+    # Badly formatted dates and amounts are cleansed too.
+    for defect in ledger.filter(defect_type__in=("DATE_FORMAT", "AMOUNT_FORMAT")):
+        record = _record_for(run, defect)
+        if record.record_status == RecordStatus.DUPLICATE or not defect.true_value:
+            continue
+        if defect.defect_type == "DATE_FORMAT" and _ambiguous(defect.true_value):
+            continue  # day and month both 12 or less: a swap cannot be detected
+        assert record.cleansed[defect.field] == defect.true_value, defect
     # A closed status with a balance is rejected.
     for defect in ledger.filter(defect_type="INCONSISTENT_STATUS"):
-        assert _record_for(run, defect).issues.filter(rule_code="F011").exists()
+        record = _record_for(run, defect)
+        if record.record_status != RecordStatus.DUPLICATE:
+            assert record.issues.filter(rule_code="F011").exists()
+
+
+def _ambiguous(value: str) -> bool:
+    return int(value[6:]) <= 12 and int(value[4:6]) <= 12
 
 
 def _record_for(run: ProcessingRun, defect: FileDefect) -> StagingRecord:
@@ -255,6 +285,10 @@ def test_repeated_and_misnamed_files_are_rejected(game: Game) -> None:
     again = receive_file(game.organization, institution, first, original.file_name, payload, when)
     assert (again.file_status, again.rejection_reason) == (FileStatus.REJECTED, "T003")
     misnamed = receive_file(game.organization, institution, first, "atb data.csv", b"x", when)
+    assert (misnamed.file_status, misnamed.rejection_reason) == (FileStatus.REJECTED, "T002")
+    # Another provider's SRN in the name is rejected too.
+    other_srn = "99999" + original.file_name[5:]
+    misnamed = receive_file(game.organization, institution, first, other_srn, b"y", when)
     assert (misnamed.file_status, misnamed.rejection_reason) == (FileStatus.REJECTED, "T002")
     # The originals are kept, never overwritten.
     assert (Path(settings.STORAGE_ROOT) / original.storage_path).read_bytes() == payload
@@ -302,24 +336,120 @@ def test_unrecognisable_phone_numbers_are_left_alone(raw: str) -> None:
     assert normalise_phone(raw) == raw
 
 
-def test_validation_flags_formats_and_cross_field_rules() -> None:
-    period = month_end(2026, 12)
-    values = {
-        "REPORTING_DATE": "31/12/2026", "PROVIDER_CODE": "ATB", "BRANCH_CODE": "ATB-001",
-        "CUSTOMER_NUMBER": "AT1", "SURNAME": "Mensah", "FIRST_NAME": "Ama", "MIDDLE_NAMES": "",
-        "DATE_OF_BIRTH": "12/31/1990", "GENDER": "F", "GHANA_CARD_NUMBER": "GHA-123456789-0",
-        "MOBILE_NUMBER": "0244123456", "ALT_MOBILE_NUMBER": "", "REGION": "Ashanti", "TOWN": "",
-        "EMPLOYMENT_TYPE": "", "ACCOUNT_NUMBER": "011", "FACILITY_TYPE": "XX", "CURRENCY": "GHS",
-        "DISBURSEMENT_DATE": "01/01/2027", "MATURITY_DATE": "01/01/2026",
-        "ORIGINAL_AMOUNT": "1,000.00", "INSTALMENT_AMOUNT": "100.00", "REPAYMENT_FREQUENCY": "M",
-        "CURRENT_BALANCE": "500.00", "ARREARS_AMOUNT": "0.00", "DAYS_PAST_DUE": "0",
-        "AMOUNT_PAID": "100.00", "ACCOUNT_STATUS": "PD", "ASSET_CLASSIFICATION": "CUR",
+@pytest.mark.parametrize(
+    ("raw", "clean"),
+    [("15/03/2024", "20240315"), ("5/3/2024", "20240305"), ("2024-03-15", "20240315"),
+     ("20241503", "20240315"), ("20240315", "20240315")],
+)  # fmt: skip
+def test_dates_are_normalised_when_their_meaning_is_certain(raw: str, clean: str) -> None:
+    assert normalise_date(raw) == clean
+
+
+@pytest.mark.parametrize("raw", ["20240305", "31/02/2024", "March 2024", "2024"])
+def test_ambiguous_or_impossible_dates_are_left_alone(raw: str) -> None:
+    assert normalise_date(raw) == raw
+
+
+@pytest.mark.parametrize(
+    ("raw", "clean"),
+    [("1,234", "1234"), ("GHS 1234", "1234"), ("1234.00", "1234"), ("1234.50", "1235"),
+     ("1234.49", "1234"), ("12a", "12a")],
+)  # fmt: skip
+def test_amounts_are_normalised_to_whole_cedis(raw: str, clean: str) -> None:
+    assert normalise_amount(raw) == clean
+
+
+def _record(**changes: str) -> dict[str, str]:
+    values = dict.fromkeys(header(FileKind.INDIVIDUAL), "")
+    values |= {
+        "Data": "D", "CorrectionIndicator": "0", "FacilityAccNum": "011", "CustomerID": "AT1",
+        "BranchCode": "ATB-001", "NatIDNum": GOOD_CARD, "Gender": "F",
+        "MaritalStatus": "S", "Nationality": "GHA", "DOB": "19900315", "Surname": "Mensah",
+        "FirstName": "Ama", "CurResAddr1": "H/No. 4 Main Street", "CurResAddr2": "Kumasi",
+        "OwnerOrTenant": "T", "PostAddrLine1": "P.O. Box 4, Kumasi",
+        "IncomeCurrency": "GHS", "Income": "2500", "MobileTel1": "0244123456", "EmpType": "104",
+        "Occupation": "Trader", "JointOrSoleAcc": "S", "NoParticipantsInAcc": "1",
+        "CreditFacilityType": "122", "PurposeOfFacility": "P", "FacilityTerm": "12",
+        "AmountCurrency": "GHS", "FacilityAmount": "1000", "DisbursementDate": "20250105",
+        "DisbursementAmt": "1000", "MaturityDate": "20260105", "SchdInstalAmount": "100",
+        "RepaymentFreq": "12", "CurBal": "500", "CurBalIndicator": "D",
+        "AssetClassification": "A", "AmountInArrears": "0", "NDIA": "0", "LegalFlag": "102",
+        "FacilityStatusCode": "A", "FacilityStatusDate": "20250105",
+        "CreditCollateralInd": "102", "NatureOfGuarantor": "103",
     }  # fmt: skip
-    codes = {(i.rule_code, i.field) for i in validate(FileKind.INDIVIDUAL, values, "ATB", period)}
-    assert ("F002", "DATE_OF_BIRTH") in codes  # month-first date, day > 12
-    assert ("F008", "GHANA_CARD_NUMBER") in codes  # bad check digit
-    assert ("F006", "FACILITY_TYPE") in codes
-    assert ("F003", "DISBURSEMENT_DATE") in codes
-    assert ("F004", "ORIGINAL_AMOUNT") in codes
-    assert ("F011", "ACCOUNT_STATUS") in codes
-    assert ("F012", "MATURITY_DATE") in codes
+    return values | changes
+
+
+GOOD_CARD = f"GHA-123456789-{luhn_check_digit('123456789')}"
+BAD_CARD = f"GHA-123456789-{(luhn_check_digit('123456789') + 1) % 10}"
+
+
+def _codes(values: dict[str, str], policy: str = "STANDARD") -> set[tuple[str, str]]:
+    checked = validate(FileKind.INDIVIDUAL, values, month_end(2025, 12), policy)
+    return {(i.rule_code, i.field) for i in checked.issues if i.severity == "ERROR"}
+
+
+def test_a_complete_record_passes() -> None:
+    assert _codes(_record()) == set()
+
+
+def test_validation_flags_formats_and_cross_field_rules() -> None:
+    values = _record(
+        DOB="19901503", NatIDNum=BAD_CARD, CreditFacilityType="999",
+        DisbursementDate="20260105", MaturityDate="20250105", FacilityAmount="1,000.00",
+        FacilityStatusCode="C",
+    )  # fmt: skip
+    codes = _codes(values)
+    assert ("F002", "DOB") in codes  # validate sees what it is given; cleansing comes first
+    assert ("F008", "NatIDNum") in codes  # bad check digit
+    assert ("F006", "CreditFacilityType") in codes
+    assert ("F003", "DisbursementDate") in codes
+    assert ("F004", "FacilityAmount") in codes
+    assert ("F011", "FacilityStatusCode") in codes
+    assert ("F014", "ClosedDate") in codes
+    assert ("F012", "MaturityDate") in codes
+
+
+def test_an_identifier_is_required_for_facilities_from_2020() -> None:
+    assert ("F013", "NatIDNum") in _codes(_record(NatIDNum=""))
+    assert ("F013", "NatIDNum") not in _codes(_record(NatIDNum="", DisbursementDate="20191231"))
+    assert ("F013", "NatIDNum") not in _codes(_record(NatIDNum="", VotersIDNum="1234567890"))
+
+
+def test_core_policy_rejects_only_on_core_fields_and_blanks_bad_values() -> None:
+    values = _record(Occupation="", Gender="Q", Surname="")
+    assert {("F001", "Occupation"), ("F006", "Gender"), ("F001", "Surname")} <= _codes(values)
+    checked = validate(FileKind.INDIVIDUAL, values, month_end(2025, 12), CORE)
+    errors = {(i.rule_code, i.field) for i in checked.issues if i.severity == "ERROR"}
+    assert errors == {("F001", "Surname")}
+    assert checked.blanked == {"Gender": "Q"}
+    # Financial logic rejects under every policy.
+    closed = _record(FacilityStatusCode="T", ClosedDate="20251231", ClosureReason="F")
+    assert ("F011", "FacilityStatusCode") in _codes(closed, CORE)
+
+
+def test_reopening_a_closed_account_is_proposed_only_when_that_is_the_whole_problem() -> None:
+    period = month_end(2025, 12)
+    closed = _record(FacilityStatusCode="C")
+    issues = validate(FileKind.INDIVIDUAL, closed, period).issues
+    assert propose_corrections(closed, issues, period)["FacilityStatusCode"] == "A"
+    broken = _record(FacilityStatusCode="C", Surname="")
+    issues = validate(FileKind.INDIVIDUAL, broken, period).issues
+    assert propose_corrections(broken, issues, period) == {}
+
+
+def test_of_duplicate_records_the_lower_balance_is_kept() -> None:
+    def row(n: int, balance: str, **changes: str) -> _Row:
+        values = _record(CurBal=balance, **changes)
+        return _Row(None, n, values, values, [])  # type: ignore[arg-type]
+
+    rows = [row(1, "900"), row(2, "400"), row(3, "400"), row(4, "100", FirstName="Kofi")]
+    _mark_duplicates(FileKind.INDIVIDUAL, rows)
+    # Rows 1-3 are one record: the lower balance (row 2, the first of the two at 400) wins.
+    assert [r.status for r in rows] == [
+        RecordStatus.DUPLICATE, RecordStatus.ACCEPTED, RecordStatus.DUPLICATE,
+        RecordStatus.ACCEPTED,
+    ]  # fmt: skip
+    assert rows[0].duplicate_of == rows[2].duplicate_of == 2
+    # Row 4's names disagree, so it is not a duplicate (the repeated account is D002).
+    assert rows[3].duplicate_of is None

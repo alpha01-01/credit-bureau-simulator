@@ -123,6 +123,15 @@ export type WorkItemRow = {
 }
 
 export type WorkItemDetail = WorkItemRow & {
+  provider: { code: string; name: string }
+  on_file: {
+    reporting_date: string
+    status: string
+    balance: string
+    arrears: string
+    days_past_due: number
+    disbursement_date: string | null
+  } | null
   record: Record<string, string>
   candidate: {
     reference: string
@@ -356,6 +365,18 @@ export function useInvoices(id: number, unpaid: string | undefined) {
   return useQuery({
     queryKey: [id, 'invoices', unpaid],
     queryFn: () => apiGet<InvoiceRow[]>(`${game(id)}/invoices/${query({ unpaid })}`),
+  })
+}
+
+export type RejectionPolicy = {
+  policy: string
+  options: { code: string; description: string }[]
+}
+
+export function useRejectionPolicy(id: number) {
+  return useQuery({
+    queryKey: [id, 'rejection-policy'],
+    queryFn: () => apiGet<RejectionPolicy>(`${game(id)}/rejection-policy/`),
   })
 }
 

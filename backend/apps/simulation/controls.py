@@ -14,6 +14,7 @@ from typing import Any
 from django.db import transaction
 from django.db.models import Max
 
+from apps.bureau.quality.rules import POLICIES
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
@@ -99,6 +100,17 @@ def resolve_item(game: Game, item_number: int, decision: str) -> WorkItem:
         sync_work_items(game, game.current_tick)
 
 
+def set_rejection_policy(game: Game, policy: str) -> Game:
+    """How strictly incoming records are rejected; applies to files processed from now on."""
+    if policy not in POLICIES:
+        raise ClockError(f"Policy must be one of {', '.join(POLICIES)}")
+    record(game, "SET_REJECTION_POLICY", {"policy": policy})
+    organization = game.organization
+    organization.rejection_policy = policy
+    organization.save(update_fields=["rejection_policy"])
+    return game
+
+
 def step(game: Game) -> Game:
     """One tick of a running clock (used by the clock worker). Not an action: speed is."""
     return advance(game, 1)
@@ -120,6 +132,8 @@ def replay(source: Game, target: Game) -> Game:
                 target = set_speed(target, int(action.payload["speed"]))
             case "ADVANCE":
                 target = advance_by(target, action.payload["unit"], int(action.payload["count"]))
+            case "SET_REJECTION_POLICY":
+                target = set_rejection_policy(target, str(action.payload["policy"]))
             case "RESOLVE_ITEM":
                 resolve_item(target, int(action.payload["item"]), str(action.payload["decision"]))
             case other:

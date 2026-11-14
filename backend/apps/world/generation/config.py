@@ -225,6 +225,15 @@ LENDERS: tuple[LenderProfile, ...] = (
 )  # fmt: skip
 
 
+# Supplier Reference Numbers (SRN): each reporting institution's number, assigned by
+# the Bank of Ghana and used in file names (ASSUMPTION A-036: fictional values).
+LENDER_SRN: dict[str, str] = {
+    "ATB": "10104", "MRB": "10117", "UNS": "20236", "SWC": "40318", "HZF": "30425",
+    "CCB": "10129", "PNB": "10132", "BCB": "10145", "KSL": "20251", "EGM": "30437",
+    "HVM": "30449", "QLD": "40322",
+}  # fmt: skip
+
+
 # --- Behaviour model (Document 07, Section 7.2) ------------------------------
 
 

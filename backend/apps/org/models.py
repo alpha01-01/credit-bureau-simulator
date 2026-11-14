@@ -28,6 +28,12 @@ class Organization(models.Model):
     organization_type = models.CharField(max_length=30, default="CREDIT_BUREAU")
     country_code = models.CharField(max_length=2, default="GH")
     base_currency = models.CharField(max_length=3, default="GHS")
+    rejection_policy = models.CharField(
+        max_length=10,
+        choices=[("STANDARD", "Standard"), ("CORE", "Core fields only")],
+        default="STANDARD",
+        help_text="How strictly incoming records are rejected (D18)",
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     # Counters for the bureau's own reference numbers.

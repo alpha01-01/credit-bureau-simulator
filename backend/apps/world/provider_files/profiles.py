@@ -18,26 +18,26 @@ from typing import Any
 
 # Fields that are realistically left blank, with relative weights.
 INDIVIDUAL_BLANKABLE = {
-    "GHANA_CARD_NUMBER": 4.0,
-    "DATE_OF_BIRTH": 2.0,
-    "MOBILE_NUMBER": 1.5,
-    "GENDER": 1.0,
-    "BRANCH_CODE": 0.5,
-    "MATURITY_DATE": 0.5,
+    "NatIDNum": 4.0,
+    "DOB": 2.0,
+    "MobileTel1": 1.5,
+    "Gender": 1.0,
+    "Occupation": 0.8,
+    "BranchCode": 0.5,
+    "MaturityDate": 0.5,
 }
 COMMERCIAL_BLANKABLE = {
-    "TIN": 3.0,
-    "REGISTRATION_NUMBER": 2.0,
-    "CONTACT_NUMBER": 1.5,
-    "BRANCH_CODE": 0.5,
-    "MATURITY_DATE": 0.5,
+    "TINum": 3.0,
+    "BusRegNum": 2.0,
+    "OfficeTel1": 1.5,
+    "BranchCode": 0.5,
+    "MaturityDate": 0.5,
 }
 
 
 @dataclass(frozen=True)
 class DataQualityProfile:
     name: str
-    file_format: str = "CSV"  # CSV | XLSX
     # Row-level defect rates.
     missing_field: float = 0.0
     phone_format: float = 0.0
@@ -52,7 +52,7 @@ class DataQualityProfile:
     duplicate_row: float = 0.0
     omit_account: float = 0.0
     # Excel drops the leading zero of phone numbers typed as numbers.
-    xlsx_numeric_phones: bool = False
+    phones_as_numbers: bool = False  # the extract went through Excel: leading zeros lost
     # Relative weights of which field is left blank (overrides the defaults).
     blank_weights: dict[str, float] = field(default_factory=dict)
     # File and submission level.
@@ -82,10 +82,10 @@ AVERAGE = DataQualityProfile(
 )  # fmt: skip
 
 POOR = DataQualityProfile(
-    "POOR", file_format="XLSX", missing_field=0.04, phone_format=0.06, amount_format=0.02,
+    "POOR", missing_field=0.04, phone_format=0.06, amount_format=0.02,
     name_typo=0.025, name_swap=0.01, wrong_identifier=0.005, stale_values=0.02,
     inconsistent_status=0.01, date_format=0.015, future_date=0.003, duplicate_row=0.01,
-    omit_account=0.01, xlsx_numeric_phones=True, template_drift=0.06, late_rate=0.35,
+    omit_account=0.01, phones_as_numbers=True, template_drift=0.06, late_rate=0.35,
     late_days_max=20, arrival_days=(8, 10),
 )  # fmt: skip
 
@@ -94,7 +94,7 @@ DIGITAL = replace(
     GOOD,
     name="DIGITAL",
     missing_field=0.08,
-    blank_weights={"GHANA_CARD_NUMBER": 3.0, "DATE_OF_BIRTH": 3.0, "GENDER": 1.0},
+    blank_weights={"NatIDNum": 3.0, "DOB": 3.0, "Gender": 1.0},
     name_typo=0.006,
     late_rate=0.02,
     arrival_days=(1, 4),

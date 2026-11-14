@@ -31,6 +31,7 @@ urlpatterns = [
         name="work-item-resolve",
     ),
     path("games/<int:game_id>/employees/", api.employees, name="employees"),
+    path("games/<int:game_id>/rejection-policy/", api.rejection_policy, name="rejection-policy"),
     path("games/<int:game_id>/enquiries/", api.enquiries, name="enquiries"),
     path("games/<int:game_id>/finance/", api.finance, name="finance"),
     path(

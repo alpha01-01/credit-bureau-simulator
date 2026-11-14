@@ -61,9 +61,11 @@ def world(db: None) -> World:
 
 
 def _play_month(game: Game) -> Game:
-    """A player's month: a few hours, a speed change, pause/resume, then skip event to event."""
+    """A player's month: a few hours, a speed and policy change, pause/resume, then skip event
+    to event."""
     game = controls.advance_by(game, "hour", 3)
     game = controls.set_speed(game, 4)
+    game = controls.set_rejection_policy(game, "CORE")
     game = controls.resume(game)
     game = controls.pause(game)
     start_month = controls.state(game).now.month
@@ -238,6 +240,23 @@ def test_clock_api(world: World) -> None:
     other = User.objects.create_user("someone-else")
     client.force_authenticate(other)
     assert client.get(f"/api/v1/games/{game.pk}/clock/").status_code == 404
+
+
+def test_rejection_policy_api(world: World) -> None:
+    owner = User.objects.create_user("player")
+    game = start_game(world, owner=owner)
+    client = APIClient()
+    client.force_authenticate(owner)
+    url = f"/api/v1/games/{game.pk}/rejection-policy/"
+
+    current = client.get(url).json()
+    assert current["policy"] == "STANDARD"
+    assert {o["code"] for o in current["options"]} == {"STANDARD", "CORE"}
+    assert client.post(url, {"policy": "CORE"}, format="json").json()["policy"] == "CORE"
+    assert client.post(url, {"policy": "LAX"}, format="json").status_code == 400
+    game.organization.refresh_from_db()
+    assert game.organization.rejection_policy == "CORE"
+    assert game.actions.filter(action_type="SET_REJECTION_POLICY").count() == 1
 
 
 def test_clock_worker_advances_running_games_only(world: World) -> None:

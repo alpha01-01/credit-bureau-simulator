@@ -109,7 +109,11 @@ export function CustomerPage() {
         <Card key={a.account_number} title={`${a.lender}: ${a.account_number}`}>
           <p className="mb-2 text-sm text-slate-600">
             {a.facility_type}, opened {day(a.opened)}, original {money(a.original_amount)}, status{' '}
-            <Badge tone={a.status === 'WO' ? 'bad' : a.status === 'AC' ? 'info' : 'neutral'}>
+            <Badge
+              tone={
+                a.status === 'W' || a.status === 'G' ? 'bad' : a.status === 'A' ? 'info' : 'neutral'
+              }
+            >
               {a.status}
             </Badge>
           </p>

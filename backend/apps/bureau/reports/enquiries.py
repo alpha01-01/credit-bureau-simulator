@@ -28,6 +28,7 @@ from apps.bureau.core.models import (
 )
 from apps.org.models import Organization
 from apps.standards.enquiry import PURPOSES
+from apps.standards.submission_template import OPEN_STATUS_CODES, WRITTEN_OFF_STATUS_CODES
 
 REPORT_LAYOUT = "SIMB-R0"
 HISTORY_MONTHS = 12
@@ -134,7 +135,7 @@ def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
             }
         )
 
-    open_states = [st for st in states if st[0] == "AC"]
+    open_states = [st for st in states if st[0] in OPEN_STATUS_CODES]
     total = sum((st[1] for st in open_states if st[1] is not None), Decimal("0"))
     previous_enquiries = Enquiry.objects.filter(
         customer=customer, enquired_at__gte=at - timedelta(days=365), enquired_at__lt=at
@@ -148,7 +149,7 @@ def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
             "open_accounts": len(open_states),
             "total_outstanding": str(total),
             "accounts_in_arrears": sum(1 for st in open_states if (st[2] or 0) > 0),
-            "written_off": sum(1 for st in states if st[0] == "WO"),
+            "written_off": sum(1 for st in states if st[0] in WRITTEN_OFF_STATUS_CODES),
             "enquiries_last_12_months": previous_enquiries,
         },
         "accounts": rows,

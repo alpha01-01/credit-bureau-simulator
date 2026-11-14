@@ -19,8 +19,9 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.bureau.core.models import Enquiry
+from apps.bureau.core.models import AccountObservation, Enquiry
 from apps.bureau.quality.models import ALLOWED_DECISIONS
+from apps.bureau.quality.rules import POLICIES
 from apps.bureau.submissions.review import ReviewError
 from apps.finance import statements
 from apps.org.models import Employee
@@ -81,6 +82,23 @@ def clock_advance(request: Request, game_id: int) -> Response:
         return _error(exc)
 
 
+@api_view(["GET", "POST"])
+def rejection_policy(request: Request, game_id: int) -> Response:
+    """The bureau's record rejection policy (D18): read it, or change it."""
+    game = _game(request, game_id)
+    if request.method == "POST":
+        try:
+            controls.set_rejection_policy(game, str(_field(request, "policy")))
+        except (ClockError, ValueError) as exc:
+            return _error(exc)
+    return Response(
+        {
+            "policy": game.organization.rejection_policy,
+            "options": [{"code": k, "description": v} for k, v in POLICIES.items()],
+        }
+    )
+
+
 def _field(request: Request, name: str) -> Any:
     if name not in request.data:
         raise ValueError(f"'{name}' is required")
@@ -128,7 +146,9 @@ def work_items(request: Request, game_id: int) -> Response:
 def work_item(request: Request, game_id: int, number: int) -> Response:
     game = _game(request, game_id)
     item = get_object_or_404(
-        WorkItem.objects.select_related("case__record", "case__candidate_customer", "assignee"),
+        WorkItem.objects.select_related(
+            "case__record__file__submission__institution", "case__candidate_customer", "assignee"
+        ),
         organization=game.organization,
         item_number=number,
     )
@@ -152,9 +172,15 @@ def work_item(request: Request, game_id: int, number: int) -> Response:
             if business and business.registration_date
             else None,
         }
+    institution = case.record.file.submission.institution
     return Response(
         _item_summary(item)
         | {
+            "provider": {
+                "code": institution.institution_code,
+                "name": institution.institution_name,
+            },
+            "on_file": _on_file(institution.pk, case.record.cleansed.get("FacilityAccNum", "")),
             "record": case.record.cleansed,
             "candidate": candidate,
             "score": case.score,
@@ -164,6 +190,32 @@ def work_item(request: Request, game_id: int, number: int) -> Response:
             "explanation": item.explanation or None,
         }
     )
+
+
+def _on_file(institution_id: int, account_number: str) -> dict[str, Any] | None:
+    """The bureau's latest position for the account, so a reviewer can compare."""
+    latest = (
+        AccountObservation.objects.filter(
+            credit_account__institution_id=institution_id,
+            credit_account__facility_account_number=account_number,
+            is_current=True,
+        )
+        .select_related("credit_account")
+        .order_by("-reporting_date")
+        .first()
+    )
+    if latest is None:
+        return None
+    return {
+        "reporting_date": latest.reporting_date.isoformat(),
+        "status": latest.facility_status,
+        "balance": str(latest.outstanding_balance),
+        "arrears": str(latest.arrears_amount),
+        "days_past_due": latest.days_past_due,
+        "disbursement_date": latest.credit_account.disbursement_date.isoformat()
+        if latest.credit_account.disbursement_date
+        else None,
+    }
 
 
 @api_view(["POST"])

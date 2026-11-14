@@ -3,9 +3,11 @@
 Stages (Document 04, Section 18):
   structural validation  - file columns must match the template exactly (T001)
   staging                - every row kept as received, with its row number
-  cleansing              - C001 phone normalisation, logged
-  duplicate detection    - exact duplicate rows (D001); repeated accounts (D002)
-  field validation       - mandatory fields, formats, code lists (F001-F012)
+  cleansing              - phones, dates, amounts and codes normalised (C001-C004)
+  duplicate detection    - same account, customer and disbursement date: the lower
+                           balance is kept (D001); repeated accounts (D002)
+  field validation       - mandatory and conditional fields, formats, code lists,
+                           financial logic (F001-F014), under the bureau's policy
   referencing            - customer and account matching; weak identifier
                            matches are held for review (S5)
   loading                - accepted records become observations; conflicts (L001)
@@ -39,7 +41,7 @@ from apps.bureau.quality.models import (
     TransformationLog,
     ValidationIssue,
 )
-from apps.bureau.quality.rules import Issue, cleanse, propose_corrections, validate
+from apps.bureau.quality.rules import Issue, cleanse, parse_date, propose_corrections, validate
 from apps.bureau.referencing.matching import (
     MatchQuestion,
     NewCustomer,
@@ -63,7 +65,7 @@ from .models import (
     SubmissionStatus,
 )
 
-PROCESSING_VERSION = "pipeline-v1"
+PROCESSING_VERSION = "pipeline-v2"
 BATCH = 2000
 
 
@@ -166,36 +168,68 @@ def _stage_file(
 
     stored.file_status = FileStatus.ACCEPTED
     stored.save(update_fields=["file_status"])
-    institution = run.submission.institution
     period = run.submission.reporting_period
 
+    policy = run.submission.organization.rejection_policy
     rows: list[_Row] = []
-    first_seen: dict[tuple[str, ...], int] = {}
-    account_rows: set[str] = set()
     for n, values in enumerate(raw_rows, start=1):
         raw = dict(zip(names, values, strict=True))
         cleansed, logs = cleanse(kind, raw)
-        row = _Row(stored, n, raw, cleansed, logs)
-        rows.append(row)
+        rows.append(_Row(stored, n, raw, cleansed, logs))
+    _mark_duplicates(kind, rows)
 
-        key = tuple(values)
-        if key in first_seen:
-            row.status = RecordStatus.DUPLICATE
-            row.duplicate_of = first_seen[key]
-            row.issues.append(Issue("D001", value=f"row {first_seen[key]}", severity="WARNING"))
+    account_rows: dict[str, int] = {}
+    for row in rows:
+        if row.status == RecordStatus.DUPLICATE:
             continue
-        first_seen[key] = n
-
-        row.issues.extend(validate(kind, cleansed, institution.institution_code, period))
-        account = cleansed["ACCOUNT_NUMBER"]
+        checked = validate(kind, row.cleansed, period, policy)
+        row.issues.extend(checked.issues)
+        for name, value in checked.blanked.items():
+            row.cleansed[name] = ""
+            row.transformations.append((name, "C005", value, ""))
+        account = row.cleansed["FacilityAccNum"]
         if account and account in account_rows:
-            row.issues.append(Issue("D002", "ACCOUNT_NUMBER", account))
-        if account:
-            account_rows.add(account)
+            row.issues.append(Issue("D002", "FacilityAccNum", account))
+        elif account:
+            account_rows[account] = row.number
         if any(i.severity == Severity.ERROR for i in row.issues):
             row.status = RecordStatus.UNLOADABLE
-            row.proposal = propose_corrections(cleansed, row.issues, period)
+            row.proposal = propose_corrections(row.cleansed, row.issues, period)
     return rows
+
+
+def _balance(values: dict[str, str]) -> int | None:
+    balance = values.get("CurBal", "")
+    return int(balance) if balance.isdigit() else None
+
+
+def _mark_duplicates(kind: FileKind, rows: list[_Row]) -> None:
+    """The standard's duplicate rule (D18): the same account, customer and disbursement date.
+
+    The names must agree as well. Of a set of duplicates the record with the
+    lower balance is kept (owner's rule, strictly enforced); on equal balances,
+    the first. A provider who disagrees raises a dispute.
+    """
+    names = ("BusinessName",) if kind is FileKind.COMMERCIAL else ("Surname", "FirstName")
+    groups: dict[tuple[str, ...], list[_Row]] = {}
+    for row in rows:
+        v = row.cleansed
+        names_agreed = (v[n].upper() for n in names)
+        key = (v["FacilityAccNum"], v["CustomerID"], v["DisbursementDate"], *names_agreed)
+        if all(key[:3]):
+            groups.setdefault(key, []).append(row)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        kept = min(
+            group, key=lambda r: (_balance(r.cleansed) is None, _balance(r.cleansed) or 0, r.number)
+        )
+        for row in group:
+            if row is kept:
+                continue
+            row.status = RecordStatus.DUPLICATE
+            row.duplicate_of = kept.number
+            row.issues.append(Issue("D001", value=f"row {kept.number}", severity="WARNING"))
 
 
 def _reference(
@@ -210,9 +244,9 @@ def _reference(
     existing = {a.facility_account_number: a.pk for a in referencer.accounts.values() if a.pk}
     clashes = observed_accounts(list(existing.values()), submission.reporting_period)
     for row in rows:
-        if existing.get(row.cleansed["ACCOUNT_NUMBER"]) in clashes:
+        if existing.get(row.cleansed["FacilityAccNum"]) in clashes:
             row.status = RecordStatus.UNLOADABLE
-            row.issues.append(Issue("L001", "ACCOUNT_NUMBER", row.cleansed["ACCOUNT_NUMBER"]))
+            row.issues.append(Issue("L001", "FacilityAccNum", row.cleansed["FacilityAccNum"]))
             continue
         customer, issues = referencer.customer_for(row.cleansed, resolution)
         if isinstance(customer, MatchQuestion):
@@ -221,7 +255,11 @@ def _reference(
             continue
         row.account, account_issues = referencer.account_for(row.cleansed, customer)
         row.issues.extend(issues + account_issues)
-        row.status = RecordStatus.ACCEPTED
+        row.status = (
+            RecordStatus.UNLOADABLE
+            if any(i.severity == Severity.ERROR for i in account_issues)
+            else RecordStatus.ACCEPTED
+        )
 
 
 def save_pending(organization: Organization, pending: Pending) -> None:
@@ -250,22 +288,29 @@ def observation(
     row_number: int,
     run: ProcessingRun,
 ) -> AccountObservation:
+    period = submission.reporting_period
+    paid = parse_date(values.get("LastPaymentDate", ""))
+    in_period = paid is not None and (paid.year, paid.month) == (period.year, period.month)
     return AccountObservation(
         credit_account=account,
-        reporting_date=submission.reporting_period,
-        outstanding_balance=Decimal(values["CURRENT_BALANCE"]),
-        arrears_amount=Decimal(values["ARREARS_AMOUNT"]),
-        days_past_due=int(values["DAYS_PAST_DUE"]),
-        instalment_amount=Decimal(values["INSTALMENT_AMOUNT"]),
-        amount_paid=Decimal(values["AMOUNT_PAID"]),
-        facility_status=values["ACCOUNT_STATUS"],
-        asset_classification=values["ASSET_CLASSIFICATION"],
-        is_written_off=values["ACCOUNT_STATUS"] == "WO",
+        reporting_date=period,
+        outstanding_balance=_amount(values, "CurBal"),
+        arrears_amount=_amount(values, "AmountInArrears"),
+        days_past_due=int(values.get("NDIA") or 0),
+        instalment_amount=_amount(values, "SchdInstalAmount"),
+        amount_paid=_amount(values, "LastPaymentAmount") if in_period else Decimal(0),
+        facility_status=values["FacilityStatusCode"],
+        asset_classification=values.get("AssetClassification", ""),
+        is_written_off=values["FacilityStatusCode"] == "W",
         source_submission=submission,
         source_file=stored,
         source_row_number=row_number,
         processing_run=run,
     )
+
+
+def _amount(values: dict[str, str], name: str) -> Decimal:
+    return Decimal(values.get(name) or 0)
 
 
 def issue_rows(

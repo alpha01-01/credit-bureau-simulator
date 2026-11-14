@@ -58,7 +58,12 @@ def fingerprint(game: Game) -> str:
     org = game.organization_id
     h = hashlib.sha256()
     sub = "submission__submission_reference"
-    _section(h, "game", [(game.clock_start, game.current_tick, game.status, game.speed)])
+    _section(
+        h,
+        "game",
+        [(game.clock_start, game.current_tick, game.status, game.speed,
+          game.organization.rejection_policy)],
+    )  # fmt: skip
     _section(
         h,
         "ticks",

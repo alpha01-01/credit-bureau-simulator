@@ -1,9 +1,45 @@
 import { Link, useParams, useSearchParams } from 'react-router'
 
-import { useSubmission, useSubmissions } from '../api/game'
+import {
+  useGameCommand,
+  useRejectionPolicy,
+  useSubmission,
+  useSubmissions,
+  type RejectionPolicy,
+} from '../api/game'
 import { useGameId } from '../app/useGameId'
 import { Badge, Card, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
 import { count, dateTime, day } from '../lib/format'
+
+/** The bureau's rejection policy: how strictly incoming records are rejected (D18). */
+function PolicyControl({ gameId }: { gameId: number }) {
+  const policy = useRejectionPolicy(gameId)
+  const change = useGameCommand<RejectionPolicy>(gameId, '/rejection-policy/')
+  if (!policy.data) return null
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded border border-slate-200 bg-white p-3 text-sm">
+      <span className="font-medium">Rejection policy</span>
+      {policy.data.options.map((o) => (
+        <label key={o.code} className="flex items-center gap-1" title={o.description}>
+          <input
+            type="radio"
+            value={o.code}
+            name="rejection-policy"
+            checked={policy.data.policy === o.code}
+            disabled={change.isPending}
+            onChange={() => change.mutate({ policy: o.code })}
+          />
+          {o.code === 'STANDARD' ? 'Standard' : 'Core fields only'}
+        </label>
+      ))}
+      <span className="text-slate-500">
+        {policy.data.options.find((o) => o.code === policy.data.policy)?.description}. Applies to
+        files processed from now on.
+      </span>
+      {change.isError && <span className="text-red-700">{String(change.error)}</span>}
+    </div>
+  )
+}
 
 export function SubmissionsPage() {
   const gameId = useGameId()
@@ -22,6 +58,7 @@ export function SubmissionsPage() {
           : 'Every file providers have sent, newest first.'
       }
     >
+      <PolicyControl gameId={gameId} />
       {rows.isPending && <Loading what="submissions" />}
       {rows.isError && <Failed error={rows.error} />}
       {rows.data?.length === 0 && <Empty>No submissions.</Empty>}

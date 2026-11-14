@@ -18,6 +18,7 @@ from apps.bureau.providers.models import Institution, InstitutionBranch
 from apps.bureau.submissions.intake import receive_file
 from apps.bureau.submissions.models import Submission
 from apps.org.models import Organization
+from apps.world.generation.config import LENDER_SRN
 from apps.world.models import Branch, Lender, ProviderSubmission, World
 from apps.world.provider_files import play_start
 from apps.world.provider_files.profiles import REPORTING_PROVIDERS
@@ -72,6 +73,7 @@ def onboard(game: Game, lender: Lender, onboarding_date: date) -> Institution:
         organization=game.organization,
         institution_code=lender.code,
         institution_name=lender.name,
+        srn=LENDER_SRN[lender.code],
         institution_type=lender.lender_type,
         onboarding_date=onboarding_date,
     )

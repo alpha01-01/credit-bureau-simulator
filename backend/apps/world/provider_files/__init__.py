@@ -29,10 +29,11 @@ from apps.standards.submission_template import (
     file_name,
 )
 
+from ..generation.config import LENDER_SRN
 from ..generation.persist import copy_rows
 from ..generation.rng import stream
 from ..models import Lender, ProviderFile, ProviderSubmission, World
-from .files import EXTENSIONS, to_bytes
+from .files import to_bytes
 from .profiles import DataQualityProfile, profile_for
 from .render import Defect, Layout, RenderedFile, drifted_layout, render
 from .truth import load_truth
@@ -213,7 +214,7 @@ def generate_submission(
                 )
             )
         for kind, result in rendered.items():
-            stored = _store_file(submission, kind, result, profile.file_format, period, directory)
+            stored = _store_file(submission, kind, result, period, plan.arrival_date, directory)
             with connection.cursor() as cursor:
                 copy_rows(
                     cursor,
@@ -247,19 +248,20 @@ def _store_file(
     submission: ProviderSubmission,
     kind: FileKind,
     rendered: RenderedFile,
-    file_format: str,
     period: date,
+    created: date,
     directory: Path,
 ) -> ProviderFile:
-    data = to_bytes(rendered, file_format, period)
-    name = file_name(submission.lender.code, kind, period, EXTENSIONS[file_format])
+    """Write the file under the standard's name: SRN, reporting date, creation date, version."""
+    data = to_bytes(rendered)
+    name = file_name(LENDER_SRN[submission.lender.code], kind, period, created)
     path = directory / name
     path.write_bytes(data)
     return ProviderFile.objects.create(
         submission=submission,
         kind=kind.value,
         file_name=name,
-        file_format=file_format,
+        file_format="CSV",
         storage_path=relative_storage_path(path),
         size_bytes=len(data),
         sha256=hashlib.sha256(data).hexdigest(),

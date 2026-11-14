@@ -13,6 +13,9 @@ class Institution(models.Model):
     )
     institution_code = models.CharField(max_length=30)
     institution_name = models.CharField(max_length=150)
+    srn = models.CharField(
+        max_length=5, blank=True, help_text="Submitter reference number used in file names"
+    )
     institution_type = models.CharField(max_length=50)
     submission_frequency = models.CharField(max_length=30, default="MONTHLY")
     onboarding_date = models.DateField(null=True, blank=True)
