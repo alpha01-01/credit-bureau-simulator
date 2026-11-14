@@ -14,4 +14,18 @@ Status values: Not started, In progress, In review, Blocked, Done. See Document 
 | S6 — Enquiries and demand v0 | Done | 2026-11-13 | 2026-11-13 | World loan applications (A-024); subscribers, contracts, usage records; enquiries with purpose and consent (A-025); basic report SIMB-R0 (A-026); demand model (A-027) with price GHS 15 placeholder (A-028); every enquiry judged against the world. The world now lives through each month at its start. Default world January: 13,818 applications, 1,298 enquiries, 46% hits, GHS 19,470 usage. Merged as PR #7, tagged `s6` |
 | S6b — Established bureau history | Done | 2026-11-13 | 2026-11-14 | New games can start with 12 months of provider files pre-loaded through the pipeline; past review cases settled by a former team (A-029). Pipeline saves with COPY: ~2x faster. Default world: game creation 753s; January hit rate 85% (46% without history), 1,502 enquiries, first wrong-person report from a former-staff false merge. Merged as PR #8, tagged `s6b`. Follow-up: game creation time |
 | S7 — Finance v0 | Done | 2026-11-14 | 2026-11-14 | Double-entry ledger with a posting service that enforces balance, reversal instead of editing, immutable posted rows; automatic posting of opening balances, rent, IT, invoices (with VAT and levies), subscriber payments, payroll (PAYE, SSNIT) and remittances; trial balance, income statement, balance sheet, cash position from posted lines only (A-030 to A-035). Merged as PR #9, tagged `s7` |
-| S8 — Thin UI | In review | 2026-11-14 | | Sign-in; games (Established games prepared in the background with progress); clock bar; morning briefing and inbox; CEO dashboard with "Why?" drill-down on every figure; submissions register and run detail; work queue with match review and triage screens; customer lookup; enquiries; statements, ledger and invoices. Playwright end-to-end test (installed Edge). Fixes found in the browser: CSRF behind the Vite proxy, login response, sign-out, weekend deadlines, revenue recognised in the month of service |
+| S8 — Thin UI | Done | 2026-11-14 | 2026-11-14 | Sign-in; games (Established games prepared in the background with progress); clock bar; morning briefing and inbox; CEO dashboard with "Why?" drill-down on every figure; submissions register and run detail; work queue with match review and triage screens; customer lookup; enquiries; statements, ledger and invoices. Playwright end-to-end test (installed Edge). Fixes found in the browser: CSRF behind the Vite proxy, login response, sign-out, weekend deadlines, revenue recognised in the month of service. Merged as PR #10, tagged `s8`; Phase 1 tagged `phase-1` |
+| Phase 2 plan (Document 08) | In review | 2026-11-14 | | Draft for owner review: Phase 1 review, team playtest, increments P2.1–P2.13 in five milestones |
+| P2.1 — Speed and stability | Not started | | | |
+| P2.2 — Events, notifications and the live clock | Not started | | | |
+| P2.3 — Data assets and the monthly Data Quality Review | Not started | | | |
+| P2.4 — Data Operations depth I: matching | Not started | | | Needs R1–R4 for release |
+| P2.5 — Data Operations depth II: templates, rules and feedback | Not started | | | Needs R1–R3 for release |
+| P2.6 — Providers respond | Not started | | | Needs R5 for release |
+| P2.7 — Disputes and compliance | Not started | | | Needs R6, R7, R10 for release |
+| P2.8 — The flywheel turns | Not started | | | Owner decision on lenders acting on reports |
+| P2.9 — Managed departments: HR, Sales, IT | Not started | | | Needs R8, R13, R14 |
+| P2.10 — Pressure and failure | Not started | | | Needs R11 for release |
+| P2.11 — Learning: missions, debriefs, Handbook | Not started | | | Owner review of regulatory content |
+| P2.12 — Balancing | Not started | | | |
+| P2.13 — Polish and exit | Not started | | | |
