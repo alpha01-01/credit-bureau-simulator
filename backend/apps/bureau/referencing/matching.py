@@ -45,7 +45,7 @@ from apps.bureau.referencing.similarity import (
     compare_individuals,
 )
 from apps.bureau.submissions.models import Submission
-from apps.standards.submission_template import FileKind
+from apps.standards.submission_template import CONSUMER_KINDS, FileKind
 
 
 @dataclass(eq=False)
@@ -132,6 +132,9 @@ class Referencer:
         self.organization_id = submission.organization_id
         self.institution: Institution = submission.institution
         self.kind = kind
+        # Cheque and judgment records identify a person as a consumer credit record does.
+        self.consumer = kind in CONSUMER_KINDS
+        self.subject = FileKind.INDIVIDUAL if self.consumer else FileKind.COMMERCIAL
         self.pending = pending
 
         numbers = {r["CustomerID"] for r in records}
@@ -140,8 +143,8 @@ class Referencer:
                 institution=self.institution, provider_customer_number__in=numbers
             ).values_list("provider_customer_number", "customer_id")
         )
-        values = {r[f] for r in records for f, _ in _ID_FIELDS[kind] if r.get(f)}
-        types = [t for _, t in _ID_FIELDS[kind]]
+        values = {r[f] for r in records for f, _ in _ID_FIELDS[self.subject] if r.get(f)}
+        types = [t for _, t in _ID_FIELDS[self.subject]]
         self.identifiers: dict[tuple[str, str], CustomerKey] = {
             (t, v): c
             for t, v, c in CustomerIdentifier.objects.filter(
@@ -176,7 +179,7 @@ class Referencer:
         # Identity of customers an identifier could match, for the similarity check.
         candidates = [k for k in self.identifiers.values() if isinstance(k, int)]
         self.identity: dict[CustomerKey, tuple[Any, ...]] = {}
-        if kind is FileKind.INDIVIDUAL:
+        if self.consumer:
             for c, first, last, born in IndividualProfile.objects.filter(
                 customer_id__in=candidates
             ).values_list("customer_id", "first_name", "last_name", "date_of_birth"):
@@ -188,7 +191,7 @@ class Referencer:
                 self.identity[c] = (name, registered)
 
     def _record_identity(self, values: dict[str, str]) -> tuple[Any, ...]:
-        if self.kind is FileKind.INDIVIDUAL:
+        if self.consumer:
             return (values["FirstName"], values["Surname"], parse_date(values["DOB"]))
         return (values["BusinessName"], parse_date(values["RegistrationDate"]))
 
@@ -202,7 +205,7 @@ class Referencer:
         return self.identity[key]
 
     def _load_identity(self, customer_id: int) -> tuple[Any, ...]:
-        if self.kind is FileKind.INDIVIDUAL:
+        if self.consumer:
             person = (
                 IndividualProfile.objects.filter(customer_id=customer_id)
                 .values_list("first_name", "last_name", "date_of_birth")
@@ -218,7 +221,7 @@ class Referencer:
 
     def compare(self, values: dict[str, str], key: CustomerKey) -> Comparison:
         record, customer = self._record_identity(values), self._identity_of(key)
-        if self.kind is FileKind.INDIVIDUAL:
+        if self.consumer:
             return compare_individuals(record, customer)
         return compare_businesses(record, customer)
 
@@ -236,7 +239,7 @@ class Referencer:
         linked = self.links.get(values["CustomerID"])
         found: CustomerKey | None = None
         found_field = ""
-        for name, id_type in _ID_FIELDS[self.kind]:
+        for name, id_type in _ID_FIELDS[self.subject]:
             value = values.get(name, "")
             owner = self.identifiers.get((id_type, value)) if value else None
             if owner is None:
@@ -259,7 +262,7 @@ class Referencer:
         elif linked is not None:
             customer = linked
             if found is not None and not _same(found, linked):
-                issues.append(Issue("R001", _ID_FIELDS[self.kind][0][0], "", "WARNING"))
+                issues.append(Issue("R001", _ID_FIELDS[self.subject][0][0], "", "WARNING"))
         elif found is not None:
             comparison = self.compare(values, found)
             if not comparison.auto_link:
@@ -271,7 +274,7 @@ class Referencer:
             self._link(values["CustomerID"], customer)
 
         # Record identifiers the bureau did not have yet; conflicts stay as warnings.
-        for name, id_type in _ID_FIELDS[self.kind]:
+        for name, id_type in _ID_FIELDS[self.subject]:
             value = values.get(name, "")
             if not value:
                 continue
@@ -291,15 +294,11 @@ class Referencer:
     def _new_customer(self, values: dict[str, str]) -> NewCustomer:
         customer = Customer(
             organization_id=self.organization_id,
-            customer_type=(
-                CustomerType.INDIVIDUAL
-                if self.kind is FileKind.INDIVIDUAL
-                else CustomerType.BUSINESS
-            ),
+            customer_type=(CustomerType.INDIVIDUAL if self.consumer else CustomerType.BUSINESS),
             source_submission=self.submission,
         )
         self.pending.customers.append(customer)
-        if self.kind is FileKind.INDIVIDUAL:
+        if self.consumer:
             self.pending.individual_profiles.append(
                 IndividualProfile(
                     customer=customer,
@@ -350,7 +349,7 @@ class Referencer:
 
     def _contacts(self, customer: CustomerKey, values: dict[str, str]) -> None:
         known = self.contacts_of[customer]
-        for name in _PHONE_FIELDS[self.kind]:
+        for name in _PHONE_FIELDS[self.subject]:
             number = values.get(name, "")
             if not number or not MOBILE.fullmatch(number) or number in known:
                 continue

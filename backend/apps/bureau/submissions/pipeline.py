@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -32,7 +32,9 @@ from django.utils import timezone
 
 from apps.bureau.core.models import (
     AccountObservation,
+    CourtJudgment,
     CreditAccount,
+    DishonouredCheque,
 )
 from apps.bureau.quality.models import (
     CaseType,
@@ -43,6 +45,7 @@ from apps.bureau.quality.models import (
 )
 from apps.bureau.quality.rules import Issue, cleanse, parse_date, propose_corrections, validate
 from apps.bureau.referencing.matching import (
+    CustomerKey,
     MatchQuestion,
     NewCustomer,
     Pending,
@@ -52,7 +55,12 @@ from apps.bureau.referencing.matching import (
 from apps.dbcopy import copy_insert
 from apps.org.models import Organization
 from apps.standards.rulebook import DATA_STANDARDS
-from apps.standards.submission_template import FileKind
+from apps.standards.submission_template import (
+    CONSUMER_KINDS,
+    CREDIT_KINDS,
+    EVENT_KINDS,
+    FileKind,
+)
 
 from .intake import read_rows
 from .models import (
@@ -81,6 +89,7 @@ class _Row:
     duplicate_of: int | None = None
     issues: list[Issue] = field(default_factory=list)
     account: CreditAccount | None = None
+    customer: CustomerKey | None = None  # for event records, which have no credit account
     question: MatchQuestion | None = None
     proposal: dict[str, str] = field(default_factory=dict)
 
@@ -111,14 +120,24 @@ def process_submission(submission: Submission, at: datetime | None = None) -> Pr
             rows.extend(_stage_file(run, stored, file_issues))
 
         pending = Pending()
-        for kind in FileKind:
-            batch = [
-                r
-                for r in rows
-                if r.status == RecordStatus.ACCEPTED and r.file.file_kind == kind.value
-            ]
-            if batch:
-                _reference(submission, kind, batch, pending)
+        # Files about the same kind of subject share one referencer: a person named in
+        # the credit file and the cheque file is one customer, created once.
+        for kinds in (CONSUMER_KINDS, (FileKind.COMMERCIAL,)):
+            batches = {
+                kind: [
+                    r
+                    for r in rows
+                    if r.status == RecordStatus.ACCEPTED and r.file.file_kind == kind.value
+                ]
+                for kind in kinds
+            }
+            everyone = [r.cleansed for batch in batches.values() for r in batch]
+            if not everyone:
+                continue
+            referencer = Referencer(submission, kinds[0], everyone, pending)
+            for kind, batch in batches.items():
+                if batch:
+                    _reference(submission, kind, batch, pending, referencer=referencer)
         save_pending(submission.organization, pending)
         records = _save_rows(run, submission, rows, file_issues)
         _open_cases(submission.organization, rows, records, at)
@@ -191,7 +210,7 @@ def _stage_file(
         for name, value in checked.blanked.items():
             row.cleansed[name] = ""
             row.transformations.append((name, "C005", value, ""))
-        account = row.cleansed["FacilityAccNum"]
+        account = row.cleansed["FacilityAccNum"] if kind in CREDIT_KINDS else ""
         if account and account in account_rows:
             row.issues.append(Issue("D002", "FacilityAccNum", account))
         elif account:
@@ -207,19 +226,30 @@ def _balance(values: dict[str, str]) -> int | None:
     return int(balance) if balance.isdigit() else None
 
 
+# What makes two records the same record (D18). Credit: account, customer and
+# disbursement date; a cheque: the account and cheque number; a case: its number.
+DUPLICATE_KEYS = {
+    FileKind.INDIVIDUAL: ("FacilityAccNum", "CustomerID", "DisbursementDate"),
+    FileKind.COMMERCIAL: ("FacilityAccNum", "CustomerID", "DisbursementDate"),
+    FileKind.CHEQUE: ("FacilityAccNum", "CustomerID", "ChequeNumber"),
+    FileKind.JUDGMENT: ("CaseNumber", "CustomerID", "FilingDate"),
+}
+
+
 def _mark_duplicates(kind: FileKind, rows: list[_Row]) -> None:
-    """The standard's duplicate rule (D18): the same account, customer and disbursement date.
+    """The standard's duplicate rule (D18): the same record reported twice.
 
     The names must agree as well. Of a set of duplicates the record with the
     lower balance is kept (owner's rule, strictly enforced); on equal balances,
     the first. A provider who disagrees raises a dispute.
     """
     names = ("BusinessName",) if kind is FileKind.COMMERCIAL else ("Surname", "FirstName")
+    fields = DUPLICATE_KEYS[kind]
     groups: dict[tuple[str, ...], list[_Row]] = {}
     for row in rows:
         v = row.cleansed
         names_agreed = (v[n].upper() for n in names)
-        key = (v["FacilityAccNum"], v["CustomerID"], v["DisbursementDate"], *names_agreed)
+        key = (*(v[f] for f in fields), *names_agreed)
         if all(key[:3]):
             groups.setdefault(key, []).append(row)
     for group in groups.values():
@@ -242,8 +272,13 @@ def _reference(
     rows: list[_Row],
     pending: Pending,
     resolution: tuple[str, int | None] | None = None,
+    referencer: Referencer | None = None,
 ) -> None:
-    referencer = Referencer(submission, kind, [r.cleansed for r in rows], pending)
+    if referencer is None:
+        referencer = Referencer(submission, kind, [r.cleansed for r in rows], pending)
+    if kind in EVENT_KINDS:
+        _reference_events(submission, kind, rows, referencer, resolution)
+        return
     # An observation already loaded for this date is a load conflict, not a new row.
     existing = {a.facility_account_number: a.pk for a in referencer.accounts.values() if a.pk}
     clashes = observed_accounts(list(existing.values()), submission.reporting_period)
@@ -264,6 +299,59 @@ def _reference(
             if any(i.severity == Severity.ERROR for i in account_issues)
             else RecordStatus.ACCEPTED
         )
+
+
+def _reference_events(
+    submission: Submission,
+    kind: FileKind,
+    rows: list[_Row],
+    referencer: Referencer,
+    resolution: tuple[str, int | None] | None,
+) -> None:
+    """Cheques and judgments need only their customer; one already loaded is a conflict."""
+    loaded = loaded_events(submission, kind, [r.cleansed for r in rows])
+    for row in rows:
+        field, key = event_key(kind, row.cleansed)
+        if key in loaded:
+            row.status = RecordStatus.UNLOADABLE
+            row.issues.append(Issue("L001", field, row.cleansed[field]))
+            continue
+        customer, issues = referencer.customer_for(row.cleansed, resolution)
+        if isinstance(customer, MatchQuestion):
+            row.status = RecordStatus.PENDING_REVIEW
+            row.question = customer
+            continue
+        row.customer = customer
+        row.issues.extend(issues)
+        row.status = RecordStatus.ACCEPTED
+        loaded.add(key)
+
+
+def event_key(kind: FileKind, values: dict[str, str]) -> tuple[str, tuple[str, ...]]:
+    """The field to report a conflict on, and the event's identity at its institution."""
+    if kind is FileKind.CHEQUE:
+        return "ChequeNumber", (values["FacilityAccNum"], values["ChequeNumber"])
+    return "CaseNumber", (values["CaseNumber"],)
+
+
+def loaded_events(
+    submission: Submission, kind: FileKind, records: list[dict[str, str]]
+) -> set[tuple[str, ...]]:
+    """Events of these records the bureau already holds from this institution."""
+    if kind is FileKind.CHEQUE:
+        numbers = {r["ChequeNumber"] for r in records}
+        return set(
+            DishonouredCheque.objects.filter(
+                institution=submission.institution, cheque_number__in=numbers
+            ).values_list("account_number", "cheque_number")
+        )
+    cases = {r["CaseNumber"] for r in records}
+    return {
+        (c,)
+        for c in CourtJudgment.objects.filter(
+            institution=submission.institution, case_number__in=cases
+        ).values_list("case_number", flat=True)
+    }
 
 
 def save_pending(organization: Organization, pending: Pending) -> None:
@@ -313,6 +401,74 @@ def observation(
     )
 
 
+def loaded_record(
+    row: Any, submission: Submission, run: ProcessingRun
+) -> AccountObservation | DishonouredCheque | CourtJudgment:
+    """What an accepted row becomes in the credit database."""
+    kind = FileKind(row.file.file_kind)
+    if kind in CREDIT_KINDS:
+        if row.account is None:
+            raise RuntimeError(f"Accepted row {row.number} has no account")
+        return observation(row.cleansed, row.account, submission, row.file, row.number, run)
+    if row.customer is None:
+        raise RuntimeError(f"Accepted row {row.number} has no customer")
+    return event(kind, row.cleansed, _customer_id(row.customer), submission, row, run)
+
+
+def _customer_id(key: CustomerKey) -> int:
+    return key if isinstance(key, int) else key.customer.pk
+
+
+def event(
+    kind: FileKind,
+    values: dict[str, str],
+    customer_id: int,
+    submission: Submission,
+    row: Any,
+    run: ProcessingRun,
+) -> DishonouredCheque | CourtJudgment:
+    common: dict[str, Any] = {
+        "organization_id": submission.organization_id,
+        "customer_id": customer_id,
+        "institution_id": submission.institution_id,
+        "currency_code": values["Currency"],
+        "source_submission": submission,
+        "source_file": row.file,
+        "source_row_number": row.number,
+        "processing_run": run,
+    }
+    if kind is FileKind.CHEQUE:
+        return DishonouredCheque(
+            **common,
+            amount=_amount(values, "ChequeAmount"),
+            account_number=values["FacilityAccNum"],
+            cheque_number=values["ChequeNumber"],
+            account_opened=parse_date(values.get("AccountOpened", "")),
+            date_issued=_date(values, "DateIssued"),
+            date_bounced=_date(values, "DateBounced"),
+            reason_code=values["ReasonReturned"],
+        )
+    return CourtJudgment(
+        **common,
+        amount=_amount(values, "Amount"),
+        court_name=values["CourtName"],
+        court_location=values["CourtLocation"],
+        court_type=values["CourtType"],
+        case_number=values["CaseNumber"],
+        filing_date=_date(values, "FilingDate"),
+        case_type=values["CaseType"],
+        case_reason=values["CaseReason"],
+    )
+
+
+def _date(values: dict[str, str], name: str) -> date:
+    """A mandatory date of an accepted record (validation has already checked it)."""
+    value = parse_date(values[name])
+    if value is None:
+        raise RuntimeError(f"Accepted record has no valid {name}")
+    return value
+
+
 def _amount(values: dict[str, str], name: str) -> Decimal:
     return Decimal(values.get(name) or 0)
 
@@ -355,7 +511,7 @@ def _save_rows(
 
     issues = list(file_issues)
     transformations = []
-    observations = []
+    loaded: dict[type, list[Any]] = {}
     for row, record in zip(rows, records, strict=True):
         issues.extend(issue_rows(run, row.file, record, row.number, row.issues))
         for name, rule, before, after in row.transformations:
@@ -366,14 +522,12 @@ def _save_rows(
                 )
             )  # fmt: skip
         if row.status == RecordStatus.ACCEPTED:
-            if row.account is None:
-                raise RuntimeError(f"Accepted row {row.number} has no account")
-            observations.append(
-                observation(row.cleansed, row.account, submission, row.file, row.number, run)
-            )
+            record_ = loaded_record(row, submission, run)
+            loaded.setdefault(type(record_), []).append(record_)
     copy_insert(issues)
     copy_insert(transformations)
-    copy_insert(observations)
+    for objects in loaded.values():
+        copy_insert(objects)
     return records
 
 

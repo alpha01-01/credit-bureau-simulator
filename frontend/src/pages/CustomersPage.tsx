@@ -135,6 +135,46 @@ export function CustomerPage() {
           </Table>
         </Card>
       ))}
+      {c.dishonoured_cheques.length > 0 && (
+        <Card title="Dishonoured cheques">
+          <Table head={['Bounced', 'Lender', 'Account', 'Cheque', 'Issued', 'Reason', 'Amount']}>
+            {c.dishonoured_cheques.map((q) => (
+              <tr key={`${q.account_number}-${q.cheque_number}`}>
+                <Td>{day(q.date_bounced)}</Td>
+                <Td>{q.lender}</Td>
+                <Td>
+                  <span className="font-mono text-xs">{q.account_number}</span>
+                </Td>
+                <Td>{q.cheque_number}</Td>
+                <Td>{day(q.date_issued)}</Td>
+                <Td>
+                  <Badge tone={q.reason === 'Fraud' ? 'bad' : 'warn'}>{q.reason}</Badge>
+                </Td>
+                <Td right>{money(q.amount)}</Td>
+              </tr>
+            ))}
+          </Table>
+        </Card>
+      )}
+      {c.judgments.length > 0 && (
+        <Card title="Court judgments">
+          <Table head={['Filed', 'Plaintiff', 'Court', 'Case', 'Type', 'Reason', 'Amount']}>
+            {c.judgments.map((j) => (
+              <tr key={j.case_number}>
+                <Td>{day(j.filing_date)}</Td>
+                <Td>{j.plaintiff}</Td>
+                <Td>{j.court}</Td>
+                <Td>
+                  <span className="font-mono text-xs">{j.case_number}</span>
+                </Td>
+                <Td>{j.case_type}</Td>
+                <Td>{j.case_reason}</Td>
+                <Td right>{money(j.amount)}</Td>
+              </tr>
+            ))}
+          </Table>
+        </Card>
+      )}
       <Card title="Recent enquiries">
         {c.enquiries.length === 0 ? (
           <Empty>No enquiries.</Empty>

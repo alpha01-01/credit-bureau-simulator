@@ -32,12 +32,14 @@ from django.db import connection
 
 from apps.standards.rulebook import DATA_STANDARDS
 from apps.standards.submission_template import (
+    EVENT_KINDS,
     FileKind,
     asset_classification,
     format_date,
 )
 from apps.world.models import World
 
+from ..generation.events import ensure_events
 from .details import business_details, person_details
 
 # Fields a provider forgets to refresh when it re-sends last month's extract.
@@ -180,13 +182,18 @@ def load_truth(
         "period": period,
         "previous": previous_month_end(period),
     }
-    sql = _INDIVIDUAL_SQL if kind is FileKind.INDIVIDUAL else _COMMERCIAL_SQL
+    world = World.objects.get(pk=world_id)
+    if kind in EVENT_KINDS:
+        ensure_events(world, period)
+        sql, build = _EVENT_SQL[kind], _event
+    else:
+        sql = _INDIVIDUAL_SQL if kind is FileKind.INDIVIDUAL else _COMMERCIAL_SQL
+        build = _record
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
         rows = cursor.fetchall()
-    seed = World.objects.values_list("seed", flat=True).get(pk=world_id)
     columns = DATA_STANDARDS.at(period).header(kind)
-    return [_project(_record(row, kind, seed, period), columns) for row in rows]
+    return [_project(build(row, kind, world.seed, period), columns) for row in rows]
 
 
 def _project(record: TruthRecord, columns: tuple[str, ...]) -> TruthRecord:
@@ -202,6 +209,115 @@ def _project(record: TruthRecord, columns: tuple[str, ...]) -> TruthRecord:
         else None
     )
     return TruthRecord(record.loan_id, values, previous)
+
+
+def _person(row: tuple[Any, ...], seed: int, period: date) -> dict[str, str]:
+    """The consumer identity block: identifiers, person, address, employment, holders."""
+    (seq, last, first, middle, born, gender, card, phone, phone2, town, employment,
+     income) = row  # fmt: skip
+    details = person_details(seed, seq, employment, born, town, period)
+    return {
+        "NatIDNum": card,
+        "VotersIDNum": "",
+        "DriverLicNum": "",
+        "PassportNum": "",
+        "SSNum": details["SSNum"],
+        "Gender": gender,
+        "MaritalStatus": details["MaritalStatus"],
+        "Nationality": details["Nationality"],
+        "DOB": format_date(born),
+        "Surname": last,
+        "FirstName": first,
+        "MiddleNames": middle,
+        "PrevName": "",
+        "CurResAddr1": details["CurResAddr1"],
+        "CurResAddr2": details["CurResAddr2"],
+        "OwnerOrTenant": details["OwnerOrTenant"],
+        "PostAddrLine1": details["PostAddrLine1"],
+        "EmailAddress": "",
+        "MobileTel1": phone,
+        "MobileTel2": phone2,
+        "EmpType": details["EmpType"],
+        "EmpName": details["EmpName"],
+        "Occupation": details["Occupation"],
+        "IncomeCurrency": "GHS",
+        "Income": whole(income),
+        "JointOrSoleAcc": "S",
+        "NoParticipantsInAcc": "1",
+    }
+
+
+# --- Dishonoured cheques and judgments (P2.0c) ----------------------------------------
+
+_EVENT_JOINS = """
+    JOIN world_loan l ON l.id = e.loan_id
+    JOIN world_branch br ON br.id = l.branch_id
+    JOIN world_lendercustomer c ON c.id = l.customer_id
+    JOIN world_person p ON p.id = c.person_id
+    WHERE e.world_id = %(world)s AND e.lender_id = %(lender)s AND e.period = %(period)s
+"""
+
+_CHEQUE_COLUMNS = """ e.loan_id, br.code, c.customer_number, e.account_number,
+    e.cheque_number, e.account_opened, e.date_issued, e.date_bounced, e.reason, l.currency,
+    e.amount, """
+_JUDGMENT_COLUMNS = """ e.loan_id, br.code, c.customer_number, l.account_number,
+    e.court_name, e.court_location, e.court_type, e.case_number, e.filing_date, e.case_type,
+    e.case_reason, l.currency, e.amount, """
+
+_EVENT_SQL = {
+    FileKind.CHEQUE: "SELECT"
+    + _CHEQUE_COLUMNS
+    + _PERSON
+    + " FROM world_dishonouredcheque e"
+    + _EVENT_JOINS
+    + " ORDER BY br.code, e.account_number, e.cheque_number",
+    FileKind.JUDGMENT: "SELECT"
+    + _JUDGMENT_COLUMNS
+    + _PERSON
+    + " FROM world_courtjudgment e"
+    + _EVENT_JOINS
+    + " ORDER BY e.case_number",
+}
+
+
+def _event(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> TruthRecord:
+    """A cheque or judgment record: the record block, the person, then the event."""
+    loan_id, branch, customer, account = row[:4]
+    values = {
+        "Data": "D",
+        "CorrectionIndicator": "0",
+        "FacilityAccNum": account,
+        "CustomerID": customer,
+        "BranchCode": branch,
+    }
+    if kind is FileKind.CHEQUE:
+        (number, opened, issued, bounced, reason, currency, amount) = row[4:11]
+        values |= _person(row[11:], seed, period)
+        values |= {
+            "ChequeNumber": number,
+            "AccountOpened": format_date(opened),
+            "DateIssued": format_date(issued),
+            "DateBounced": format_date(bounced),
+            "ReasonReturned": reason,
+            "Currency": currency,
+            "ChequeAmount": whole(amount),
+        }
+    else:
+        (court, location, court_type, case, filed, case_type, reason, currency,
+         amount) = row[4:13]  # fmt: skip
+        values |= _person(row[13:], seed, period)
+        values |= {
+            "CourtName": court,
+            "CourtLocation": location,
+            "CourtType": court_type,
+            "CaseNumber": case,
+            "FilingDate": format_date(filed),
+            "CaseType": case_type,
+            "CaseReason": reason,
+            "Currency": currency,
+            "Amount": whole(amount),
+        }
+    return TruthRecord(loan_id=loan_id, values=values, previous=None)
 
 
 def _record(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> TruthRecord:
@@ -227,40 +343,10 @@ def _record(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> Tr
         "BranchCode": branch,
     }
     if kind is FileKind.INDIVIDUAL:
-        (seq, last, first, middle, born, gender, card, phone, phone2, town, employment,
-         income) = rest  # fmt: skip
-        details = person_details(seed, seq, employment, born, town, period)
+        employment = rest[10]
         if product == "PERSONAL_LOAN" and employment.startswith("SALARIED"):
             facility_type = "115"
-        values |= {
-            "NatIDNum": card,
-            "VotersIDNum": "",
-            "DriverLicNum": "",
-            "PassportNum": "",
-            "SSNum": details["SSNum"],
-            "Gender": gender,
-            "MaritalStatus": details["MaritalStatus"],
-            "Nationality": details["Nationality"],
-            "DOB": format_date(born),
-            "Surname": last,
-            "FirstName": first,
-            "MiddleNames": middle,
-            "PrevName": "",
-            "CurResAddr1": details["CurResAddr1"],
-            "CurResAddr2": details["CurResAddr2"],
-            "OwnerOrTenant": details["OwnerOrTenant"],
-            "PostAddrLine1": details["PostAddrLine1"],
-            "EmailAddress": "",
-            "MobileTel1": phone,
-            "MobileTel2": phone2,
-            "EmpType": details["EmpType"],
-            "EmpName": details["EmpName"],
-            "Occupation": details["Occupation"],
-            "IncomeCurrency": "GHS",
-            "Income": whole(income),
-            "JointOrSoleAcc": "S",
-            "NoParticipantsInAcc": "1",
-        }
+        values |= _person(rest, seed, period)
         guarantor = {
             "NatureOfGuarantor": "103",
             "NameOfComGuarantor": "", "BusRegOfGuarantor": "", "G1Surname": "",

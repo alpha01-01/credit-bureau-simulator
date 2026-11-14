@@ -36,7 +36,7 @@ The bureau's own prices are not in the rule book. Each subscriber contract carri
 
 2. **Teach the world any new field.** Providers' true values come from `apps/world/provider_files/truth.py`. Until the world produces a new column, it is sent blank, and a new mandatory column would then be rejected.
 
-3. **Release it.** Add the edition's digest to `apps/standards/rulebook.lock.json`. You can print the digest with `digest(STANDARD_1_2)`. The lock test fails until you do, and it fails whenever a released edition is edited.
+3. **Release it.** Record the edition's parts in `apps/standards/rulebook.lock.json`. You can print them with `parts(STANDARD_1_2)`: one digest per template, code list and threshold. The lock test fails until you do, and it fails whenever a released part is edited or removed.
 
 4. **Record it.** Add a row to `docs/assumptions.md` (or cite the source) and a line to `docs/progress.md`.
 
@@ -49,6 +49,8 @@ The bureau's own prices are not in the rule book. Each subscriber contract carri
 
 ## Never
 
-- Never edit a released edition (the lock test stops this).
+- Never edit a released part of an edition (the lock test stops this).
+
+Adding a part the standard always had to a released edition is allowed. The dishonoured cheque and judgment templates were added to 1.1 this way (P2.0c), because no recorded data used them. Record the new parts in the lock file.
 - Never delete one: games that used it still need it for reviews and reprocessing.
 - Never give two editions of one series the same effective date.

@@ -29,7 +29,7 @@ from .pipeline import (
     _reference,
     _Row,
     issue_rows,
-    observation,
+    loaded_record,
     open_cases,
     save_pending,
 )
@@ -125,9 +125,7 @@ def _load(record: StagingRecord, at: datetime, resolution: tuple[str, int | None
     ValidationIssue.objects.bulk_create(
         issue_rows(run, record.file, record, record.source_row_number, row.issues)
     )
-    if row.status == RecordStatus.ACCEPTED and row.account is not None:
-        observation(
-            row.cleansed, row.account, submission, record.file, record.source_row_number, run
-        ).save()
+    if row.status == RecordStatus.ACCEPTED:
+        loaded_record(row, submission, run).save()
     elif row.question is not None:
         open_cases(submission.organization, [(row, record)], at)

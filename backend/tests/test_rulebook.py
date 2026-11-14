@@ -1,6 +1,6 @@
 """P2.0b — The rule book: versioned rules with effective dates (D19).
 
-Released editions are frozen (the lock file), the edition in force is found by
+Released rules are frozen part by part (the lock file), the edition in force is found by
 date, and trial editions leave the series as released.
 """
 
@@ -22,16 +22,18 @@ from apps.standards.rulebook import (
     TAX_RULES,
     Series,
     digest,
+    parts,
 )
 
 LOCK = Path(rulebook.__file__).with_name("rulebook.lock.json")
 
 
 def test_released_editions_are_frozen() -> None:
-    """Changing a released edition would rewrite the past of every game that used it.
+    """Changing a released rule would rewrite the past of every game that used it.
 
-    To change a rule, add a new edition with a later effective date and record
-    its digest in rulebook.lock.json.
+    Each part of each edition (a template, a code list, a threshold) is locked.
+    A released part may never change or disappear; new parts may be added (and
+    must then be locked too). To change a rule, publish a new edition.
     """
     lock = json.loads(LOCK.read_text())
     assert set(lock) == set(SERIES)
@@ -41,7 +43,12 @@ def test_released_editions_are_frozen() -> None:
         for version, entry in lock[name].items():
             edition = published[version]
             assert str(edition.effective) == entry["effective"], f"{name} {version} moved"
-            assert digest(edition) == entry["digest"], f"{name} {version} was edited"
+            current = parts(edition)
+            for part, locked in entry["parts"].items():
+                assert part in current, f"{name} {version}: {part} was removed"
+                assert current[part] == locked, f"{name} {version}: {part} was edited"
+            unlocked = set(current) - set(entry["parts"])
+            assert not unlocked, f"{name} {version}: lock the new parts {sorted(unlocked)}"
 
 
 def test_the_edition_in_force_is_found_by_date() -> None:
@@ -64,6 +71,20 @@ def test_editions_must_be_distinct() -> None:
         Series("test", (TAX_2024, replace(TAX_2024, effective=date(2025, 1, 1))))
     with pytest.raises(ValueError, match="take effect on"):
         Series("test", (TAX_2024, replace(TAX_2024, version="other")))
+
+
+def test_parts_split_an_edition_into_its_rules() -> None:
+    names = parts(STANDARD_1_1)
+    assert {"fields:CONC", "fields:BUSC", "fields:COND", "fields:CONJ"} <= set(names)
+    assert "code_lists:Gender" in names and "id_required_from" in names
+    assert "version" not in names and "note" not in names
+    assert set(parts(TAX_2024)) == {
+        "vat_and_levies",
+        "ssnit_employer",
+        "ssnit_employee",
+        "paye_bands",
+        "remittance_day",
+    }
 
 
 def test_the_digest_sees_any_change() -> None:
