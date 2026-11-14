@@ -1,6 +1,6 @@
 # Proposal: simplified submission templates
 
-**Status:** Approved by the owner on 14 November 2026 (Document 07, D18–D20). **Revised by section 11 (version 2)** after the official data format manuals arrived; version 2 awaits the owner's confirmation. The game does not use either yet; they are built in increment P2.0 (Document 08).
+**Status:** Approved by the owner on 14 November 2026 (Document 07, D18–D20). **Revised by section 11 (version 2)** after the official data format manuals arrived; **version 2 approved by the owner on 14 November 2026**, including rejection strictness as a player-set policy. The game does not use either yet; they are built in increment P2.0 (Document 08).
 **Sources:** [`templates.md`](templates.md) (the six column lists) and [`CLEANSER_RULES.md`](CLEANSER_RULES.md) (how the cleanser treats each column).
 
 ## 1. What we have today
@@ -165,7 +165,7 @@ The business versions wait for their manuals.
 * All code lists in `data-formats.md`, in place of the game's placeholders (assumptions A-012, A-013, A-015).
 * The resubmission clock: rejections notified within 2 working days; corrections back within 2 (financial) or 5 (other) working days.
 
-### One decision for the owner: how strictly to reject
+### Rejection strictness (approved: a player-set policy)
 
 The standard rejects any record missing a mandatory field. The cleanser rejects only when the core fields fail and cleans or blanks the rest. Both are real practice. I propose making this a **bureau policy the player sets** (D19 lets it change mid-game):
 

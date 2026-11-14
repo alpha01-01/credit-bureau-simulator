@@ -44,5 +44,5 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 | # | File | Source | Version / date | Public or owner-written |
 | --- | --- | --- | --- | --- |
 | R1 | `templates.md` | Owner: column lists of the six templates in use | November 2026 | Owner-supplied |
-| R1 | `template-simplification-proposal.md` | Written for this project; v1 approved by the owner, v2 (section 11) awaiting confirmation | 14 November 2026 | Owner-written |
+| R1 | `template-simplification-proposal.md` | Written for this project; v2 (section 11) approved by the owner | 14 November 2026 | Owner-written |
 | R1, R2, R3, R5 | `data-formats.md` | Notes from the Data Standards Committee manuals (CONC, BUSC, COND, CONJ), v1.1, July 2012; the manuals are not stored here | 14 November 2026 | Notes from owner-supplied documents |
