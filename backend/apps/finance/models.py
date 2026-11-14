@@ -71,6 +71,9 @@ class JournalEntry(_Immutable):
     source_type = models.CharField(max_length=30, help_text="The business event that posted it")
     source_reference = models.CharField(max_length=60, blank=True)
     posted_at = models.DateTimeField(help_text="Game time of posting")
+    rules_version = models.CharField(
+        max_length=20, blank=True, help_text="Rule book edition used to compute it (D19)"
+    )
     reversal_of = models.OneToOneField(
         "self", on_delete=models.PROTECT, null=True, blank=True, related_name="reversed_by"
     )

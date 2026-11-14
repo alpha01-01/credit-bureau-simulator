@@ -29,6 +29,9 @@ class Submission(models.Model):
     )
     submission_reference = models.CharField(max_length=60)
     reporting_period = models.DateField(help_text="Reporting month-end")
+    template_version = models.CharField(
+        max_length=20, help_text="Data standard in force for the reporting period (D19)"
+    )
     due_date = models.DateField()
     received_at = models.DateTimeField()
     submission_status = models.CharField(
@@ -95,6 +98,9 @@ class ProcessingRun(models.Model):
         max_length=20, choices=RunStatus.choices, default=RunStatus.RUNNING
     )
     processing_version = models.CharField(max_length=20)
+    template_version = models.CharField(
+        max_length=20, help_text="Data standard the records were judged under (D19)"
+    )
     records_received = models.IntegerField(default=0)
     records_accepted = models.IntegerField(default=0)
     records_unloadable = models.IntegerField(default=0)
@@ -134,9 +140,8 @@ class RecordStatus(models.TextChoices):
 class StagingRecord(models.Model):
     """One source row. ``raw`` is exactly as received; ``cleansed`` after cleansing rules.
 
-    JSON is used while the template is a placeholder (ASSUMPTION A-012); once
-    the real template is confirmed, staging moves to typed columns per template
-    (Document 04, Section 18).
+    JSON keeps staging independent of the template edition: a record keeps the
+    columns of the data standard it was submitted under (D19).
     """
 
     run = models.ForeignKey(ProcessingRun, on_delete=models.CASCADE, related_name="records")

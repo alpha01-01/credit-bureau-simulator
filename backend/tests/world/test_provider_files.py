@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from apps.standards.calendar import next_working_day
+from apps.standards.rulebook import STANDARD_1_1
 from apps.standards.submission_template import (
     CODE_LISTS,
     DELIMITER,
@@ -362,7 +363,7 @@ def test_template_drift_persists_once_it_happens() -> None:
         )
         for i in range(36)
     ]
-    standard = Layout.standard(FileKind.INDIVIDUAL)
+    standard = Layout.standard(FileKind.INDIVIDUAL, STANDARD_1_1)
     changed = [i for i, layout in enumerate(layouts) if layout != standard]
     assert changed, "expected at least one change over 36 months at this hazard"
     first = changed[0]
@@ -382,8 +383,10 @@ def test_no_template_drift_before_play_starts(world: World, tmp_path: Path) -> N
     start = play_start(world)
     assert start > world.history_end
     kind = FileKind.INDIVIDUAL
-    assert layout_for(1, "XYZ", kind, start, world.history_end, always) == Layout.standard(kind)
-    assert layout_for(1, "XYZ", kind, start, start, always) != Layout.standard(kind)
+    assert layout_for(1, "XYZ", kind, start, world.history_end, always) == Layout.standard(
+        kind, STANDARD_1_1
+    )
+    assert layout_for(1, "XYZ", kind, start, start, always) != Layout.standard(kind, STANDARD_1_1)
 
 
 # --- Template and code lists ----------------------------------------------------
@@ -435,7 +438,7 @@ def test_files_are_pipe_delimited_csv_with_a_header() -> None:
 
     kind = FileKind.INDIVIDUAL
     row = ["a|b" if i == 0 else "x" for i in range(len(header(kind)))]
-    rendered = RenderedFile(kind, Layout.standard(kind), [row], [1], [], ())
+    rendered = RenderedFile(kind, Layout.standard(kind, STANDARD_1_1), [row], [1], [], ())
     lines = to_bytes(rendered).decode("utf-8").split("\r\n")
     assert lines[0] == DELIMITER.join(header(kind))
     assert lines[1].startswith('"a|b"|x|')  # a delimiter inside a value is quoted

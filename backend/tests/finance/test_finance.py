@@ -6,6 +6,7 @@ from posted entries; a full month's events produce the expected ledger.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -21,9 +22,6 @@ from apps.finance.events import (
     MONTHLY_IT,
     MONTHLY_RENT,
     OPENING_BANK,
-    SSNIT_EMPLOYEE,
-    SSNIT_EMPLOYER,
-    VAT_AND_LEVIES,
     balance,
     paye,
 )
@@ -50,6 +48,7 @@ from apps.org.models import Employee
 from apps.simulation import controls
 from apps.simulation.bridge import start_game
 from apps.simulation.models import Game
+from apps.standards.rulebook import TAX_2024, TAX_RULES
 from apps.world.generation import build_world
 from apps.world.generation.persist import write_world
 from apps.world.models import World
@@ -127,7 +126,7 @@ def test_posted_entries_are_reversed_never_edited(world: World) -> None:
     [("490", "0.00"), ("600", "5.50"), ("730", "18.50"), ("4000", "598.50")],
 )
 def test_paye_bands(chargeable: str, tax: str) -> None:
-    assert paye(Decimal(chargeable)) == Decimal(tax)
+    assert paye(Decimal(chargeable), TAX_2024) == Decimal(tax)
 
 
 # --- A month of business produces the expected books ---------------------------------------
@@ -147,7 +146,7 @@ def test_a_month_of_play_produces_the_expected_ledger(world: World) -> None:
     invoices = Invoice.objects.filter(organization=org)
     assert sum((i.subtotal for i in invoices), Decimal("0")) == billed
     assert -balance(org, REVENUE) == billed
-    assert -balance(org, VAT_PAYABLE) == money(billed * VAT_AND_LEVIES)  # not yet filed
+    assert -balance(org, VAT_PAYABLE) == money(billed * TAX_2024.vat_and_levies)  # not yet filed
     paid = Payment.objects.filter(organization=org).aggregate(s=Sum("amount"))["s"] or 0
     assert balance(org, RECEIVABLES) == sum((i.total for i in invoices), Decimal("0")) - paid
 
@@ -156,12 +155,18 @@ def test_a_month_of_play_produces_the_expected_ledger(world: World) -> None:
     gross = sum((e.monthly_salary for e in staff), Decimal("0"))
     assert balance(org, SALARIES) == gross
     assert balance(org, PAYE_PAYABLE) == 0 and balance(org, SSNIT_PAYABLE) == 0
-    employee_ssnit = sum((money(e.monthly_salary * SSNIT_EMPLOYEE) for e in staff), Decimal("0"))
-    employer_ssnit = sum((money(e.monthly_salary * SSNIT_EMPLOYER) for e in staff), Decimal("0"))
-    income_tax = sum(
-        (paye(e.monthly_salary - money(e.monthly_salary * SSNIT_EMPLOYEE)) for e in staff),
-        Decimal("0"),
+    rules = TAX_2024
+    employee_ssnit = sum(
+        (money(e.monthly_salary * rules.ssnit_employee) for e in staff), Decimal("0")
     )
+    employer_ssnit = sum(
+        (money(e.monthly_salary * rules.ssnit_employer) for e in staff), Decimal("0")
+    )
+    income_tax = sum(
+        (paye(e.monthly_salary - money(e.monthly_salary * rules.ssnit_employee), rules)
+         for e in staff),
+        Decimal("0"),
+    )  # fmt: skip
     net_pay = gross - employee_ssnit - income_tax
 
     # Rent from the prepayment; IT hosting from the bank; two months of each.
@@ -178,6 +183,39 @@ def test_a_month_of_play_produces_the_expected_ledger(world: World) -> None:
         + Decimal(paid)
     )
     assert balance(org, BANK) == expected_bank
+
+
+def test_a_tax_change_mid_game_applies_only_from_its_effective_date(world: World) -> None:
+    """D19: a new edition of the tax rules changes nothing posted before its date."""
+    change = replace(
+        TAX_2024, version="GH-TEST", effective=date(2027, 1, 30), vat_and_levies=Decimal("0.25"),
+        ssnit_employee=Decimal("0.06"), note="test edition",
+    )  # fmt: skip
+    with TAX_RULES.trial(change):
+        game = _play_until(start_game(world), date(2027, 2, 3))
+    org = game.organization
+
+    # January's payroll (paid on Friday 29 January) used the rules in force then.
+    payroll = JournalEntry.objects.get(organization=org, source_type="PAYROLL")
+    assert payroll.transaction_date < change.effective
+    assert payroll.rules_version == TAX_2024.version
+    staff = list(Employee.objects.filter(organization=org))
+    owed = sum((money(e.monthly_salary * Decimal("0.055")) for e in staff), Decimal("0"))
+    assert owed > 0
+    assert payroll.lines.get(account__code=SSNIT_PAYABLE).credit == owed + sum(
+        (money(e.monthly_salary * TAX_2024.ssnit_employer) for e in staff), Decimal("0")
+    )
+
+    # January's invoices (dated 31 January, the tax point) use the new rate, and say so.
+    invoices = list(Invoice.objects.filter(organization=org).select_related("journal"))
+    assert invoices
+    for invoice in invoices:
+        assert invoice.issue_date >= change.effective
+        assert invoice.journal.rules_version == "GH-TEST"
+        assert invoice.tax == money(invoice.subtotal * Decimal("0.25"))
+
+    # Once the trial is over, the series is as released.
+    assert TAX_RULES.at(date(2027, 3, 1)) is TAX_2024
 
 
 def test_statements_come_from_posted_entries_and_balance(world: World) -> None:

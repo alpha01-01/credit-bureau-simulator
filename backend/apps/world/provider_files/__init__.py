@@ -22,9 +22,8 @@ from django.conf import settings
 from django.db import connection, transaction
 
 from apps.standards.calendar import next_working_day
+from apps.standards.rulebook import DATA_STANDARDS
 from apps.standards.submission_template import (
-    SUBMISSION_DUE_DAY,
-    TEMPLATE_VERSION,
     FileKind,
     file_name,
 )
@@ -76,14 +75,13 @@ def schedule(seed: int, lender_code: str, period: date, profile: DataQualityProf
     """When the provider sends this month's files (ASSUMPTION A-014 for the deadline)."""
     rng = stream(seed, f"submission-arrival:{lender_code}", month_index(period))
     next_month = period + timedelta(days=1)
-    due = next_working_day(next_month.replace(day=SUBMISSION_DUE_DAY))
+    due_day = DATA_STANDARDS.at(period).submission_due_day
+    due = next_working_day(next_month.replace(day=due_day))
     if rng.random() < profile.late_rate and profile.late_days_max > 0:
         arrival = due + timedelta(days=int(rng.integers(1, profile.late_days_max + 1)))
     else:
         first, last = profile.arrival_days
-        arrival = next_month.replace(
-            day=int(rng.integers(first, min(last, SUBMISSION_DUE_DAY) + 1))
-        )
+        arrival = next_month.replace(day=int(rng.integers(first, min(last, due_day) + 1)))
     return Schedule(due, arrival)
 
 
@@ -113,13 +111,16 @@ def layout_for(
     provider changes its extract without notice; once changed, the new layout
     persists in later months.
     """
+    standard = DATA_STANDARDS.at(period)
     if period < drift_from:
-        return Layout.standard(kind)
+        return Layout.standard(kind, standard)
     months = months_between(drift_from, period) + 1
     hazard = stream(seed, f"template-drift:{lender_code}:{kind.value}").random(months)
     if profile.template_drift > 0 and (hazard < profile.template_drift).any():
-        return drifted_layout(kind, stream(seed, f"template-layout:{lender_code}:{kind.value}"))
-    return Layout.standard(kind)
+        return drifted_layout(
+            kind, standard, stream(seed, f"template-layout:{lender_code}:{kind.value}")
+        )
+    return Layout.standard(kind, standard)
 
 
 def submission_dir(world_id: int, lender_code: str, period: date) -> Path:
@@ -197,7 +198,7 @@ def generate_submission(
             due_date=plan.due_date,
             arrival_date=plan.arrival_date,
             profile=profile.snapshot(),
-            template_version=TEMPLATE_VERSION,
+            template_version=DATA_STANDARDS.at(period).version,
         )
         defects: list[tuple[int | None, Defect]] = []
         if plan.is_late:
@@ -254,7 +255,10 @@ def _store_file(
 ) -> ProviderFile:
     """Write the file under the standard's name: SRN, reporting date, creation date, version."""
     data = to_bytes(rendered)
-    name = file_name(LENDER_SRN[submission.lender.code], kind, period, created)
+    name = file_name(
+        LENDER_SRN[submission.lender.code], kind, period, created,
+        version=submission.template_version,
+    )  # fmt: skip
     path = directory / name
     path.write_bytes(data)
     return ProviderFile.objects.create(

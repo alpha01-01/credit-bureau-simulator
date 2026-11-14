@@ -19,18 +19,16 @@ from django.db import transaction
 from apps.bureau.providers.models import Institution
 from apps.org.models import Organization
 from apps.standards.calendar import next_working_day
-from apps.standards.submission_template import (
-    DELIMITER,
-    FILE_NAME_PATTERN,
-    SUBMISSION_DUE_DAY,
-)
+from apps.standards.rulebook import DATA_STANDARDS
+from apps.standards.submission_template import DELIMITER, FILE_NAME_PATTERN
 
 from .models import FileStatus, Submission, SubmissionFile, SubmissionStatus
 
 
 def due_date_for(period: date) -> date:
     """The deadline: the due day of the next month, or the next working day after it."""
-    return next_working_day((period + timedelta(days=1)).replace(day=SUBMISSION_DUE_DAY))
+    due_day = DATA_STANDARDS.at(period).submission_due_day
+    return next_working_day((period + timedelta(days=1)).replace(day=due_day))
 
 
 def submission_folder(organization: Organization, reference: str) -> Path:
@@ -69,6 +67,7 @@ def receive_file(
                 institution=institution,
                 submission_reference=f"SUB-{period:%Y%m}-{institution.institution_code}-{seq:06d}",
                 reporting_period=period,
+                template_version=DATA_STANDARDS.at(period).version,
                 due_date=due_date_for(period),
                 received_at=received_at,
             )
@@ -91,6 +90,8 @@ def receive_file(
             or match["period"] != f"{period:%Y%m%d}"
         ):
             status, reason = FileStatus.REJECTED, "T002"
+        elif match["version"] != submission.template_version:
+            status, reason = FileStatus.REJECTED, "T005"
         elif SubmissionFile.objects.filter(
             submission__institution=institution, file_hash=digest
         ).exists():

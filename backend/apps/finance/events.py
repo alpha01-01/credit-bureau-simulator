@@ -29,6 +29,7 @@ from django.db.models import Sum
 
 from apps.commercial.models import Subscriber, UsageRecord
 from apps.org.models import Employee, Organization
+from apps.standards.rulebook import TAX_RULES, TaxRules
 
 from .ledger import (
     BANK,
@@ -52,25 +53,12 @@ from .ledger import (
 )
 from .models import Account, Invoice, InvoiceLine, JournalLine, Payment
 
-VAT_AND_LEVIES = Decimal("0.20")
-SSNIT_EMPLOYER = Decimal("0.13")
-SSNIT_EMPLOYEE = Decimal("0.055")
-# Monthly PAYE bands: (width of band in GHS, rate); the last band is unbounded.
-PAYE_BANDS: tuple[tuple[Decimal | None, Decimal], ...] = (
-    (Decimal("490"), Decimal("0")),
-    (Decimal("110"), Decimal("0.05")),
-    (Decimal("130"), Decimal("0.10")),
-    (Decimal("3166.67"), Decimal("0.175")),
-    (Decimal("16000"), Decimal("0.25")),
-    (Decimal("30520"), Decimal("0.30")),
-    (None, Decimal("0.35")),
-)
+# Tax and payroll rates come from the rule book edition in force (apps.standards.rulebook).
 MONTHLY_RENT = Decimal("45000.00")
 MONTHLY_IT = Decimal("15000.00")
 OPENING_BANK = Decimal("1800000.00")
 SHARE_CAPITAL_AMOUNT = Decimal("2000000.00")
 PAYMENT_TERMS_DAYS = 30
-REMITTANCE_DAY = 14
 
 
 def open_books(organization: Organization, on: date, at: datetime) -> None:
@@ -143,7 +131,8 @@ def invoice_usage(
             for r in records:
                 groups[(r.product.product_code, r.product.product_name, r.unit_price)] += r.quantity
             subtotal = money(sum((p * q for (_, _, p), q in groups.items()), Decimal("0")))
-            tax = money(subtotal * VAT_AND_LEVIES)
+            rules = TAX_RULES.at(issue_date)  # the rate in force when the invoice is issued
+            tax = money(subtotal * rules.vat_and_levies)
             total = subtotal + tax
             seq = organization.allocate("last_invoice_seq")
             number = f"INV{seq:07d}"
@@ -152,7 +141,7 @@ def invoice_usage(
                 organization, issue_date,
                 f"Invoice {number}: {subscriber.subscriber_name}, {period_start:%B %Y}",
                 [dr(RECEIVABLES, total), cr(REVENUE, subtotal), cr(VAT_PAYABLE, tax)],
-                "INVOICE", at, number,
+                "INVOICE", at, number, rules_version=rules.version,
             )  # fmt: skip
             invoice = Invoice.objects.create(
                 organization=organization,
@@ -200,11 +189,11 @@ def outstanding(invoice: Invoice) -> Decimal:
 # --- Payroll and taxes ------------------------------------------------------------------------
 
 
-def paye(chargeable: Decimal) -> Decimal:
-    """Monthly PAYE on chargeable income (ASSUMPTION A-032 bands)."""
+def paye(chargeable: Decimal, rules: TaxRules) -> Decimal:
+    """Monthly PAYE on chargeable income, by the edition's bands."""
     tax = Decimal("0")
     remaining = chargeable
-    for width, rate in PAYE_BANDS:
+    for width, rate in rules.paye_bands:
         portion = remaining if width is None else min(remaining, width)
         if portion <= 0:
             break
@@ -223,12 +212,18 @@ def run_payroll(organization: Organization, pay_date: date, at: datetime) -> Dec
     gross = money(sum((e.monthly_salary for e in staff), Decimal("0")))
     if not gross:
         return gross
-    employee_ssnit = sum((money(e.monthly_salary * SSNIT_EMPLOYEE) for e in staff), Decimal("0"))
-    employer_ssnit = sum((money(e.monthly_salary * SSNIT_EMPLOYER) for e in staff), Decimal("0"))
-    income_tax = sum(
-        (paye(e.monthly_salary - money(e.monthly_salary * SSNIT_EMPLOYEE)) for e in staff),
-        Decimal("0"),
+    rules = TAX_RULES.at(pay_date)
+    employee_ssnit = sum(
+        (money(e.monthly_salary * rules.ssnit_employee) for e in staff), Decimal("0")
     )
+    employer_ssnit = sum(
+        (money(e.monthly_salary * rules.ssnit_employer) for e in staff), Decimal("0")
+    )
+    income_tax = sum(
+        (paye(e.monthly_salary - money(e.monthly_salary * rules.ssnit_employee), rules)
+         for e in staff),
+        Decimal("0"),
+    )  # fmt: skip
     net = gross - employee_ssnit - income_tax
     post(
         organization, pay_date, f"Salaries for {pay_date:%B %Y} ({len(staff)} staff)", [
@@ -237,7 +232,7 @@ def run_payroll(organization: Organization, pay_date: date, at: datetime) -> Dec
             cr(BANK, net, "Net pay"),
             cr(PAYE_PAYABLE, income_tax),
             cr(SSNIT_PAYABLE, employee_ssnit + employer_ssnit),
-        ], "PAYROLL", at,
+        ], "PAYROLL", at, rules_version=rules.version,
     )  # fmt: skip
     return gross
 

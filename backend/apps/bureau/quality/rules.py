@@ -23,18 +23,14 @@ real error codes (reference R3) are still needed.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from apps.standards.rulebook import DATA_STANDARDS, DataStandard
 from apps.standards.submission_template import (
     CLOSED_STATUS_CODES,
-    CODE_LISTS,
-    CORE_FIELDS,
     DATE_FORMAT,
-    FIELD_BY_NAME,
-    FIELDS,
-    ID_REQUIRED_FROM,
-    INDIVIDUAL_ID_FIELDS,
     FileKind,
     is_valid_ghana_card,
 )
@@ -51,6 +47,7 @@ RULES: dict[str, str] = {
     "T002": "File name does not follow the naming convention",
     "T003": "File is identical to a file already received",
     "T004": "File could not be read",
+    "T005": "File uses a template version not in force for its reporting period",
     # Field level
     "F001": "Mandatory field is blank",
     "F002": "Date is not a valid YYYYMMDD date",
@@ -160,9 +157,12 @@ def normalise_amount(value: str) -> str:
 
 
 def cleanse(
-    kind: FileKind, values: dict[str, str]
+    kind: FileKind, values: dict[str, str], standard: DataStandard
 ) -> tuple[dict[str, str], list[tuple[str, str, str, str]]]:
-    """Apply cleansing rules. Returns the cleansed values and (field, rule, before, after) logs."""
+    """Apply cleansing rules. Returns the cleansed values and (field, rule, before, after) logs.
+
+    Field types come from the data standard the record is governed by.
+    """
     out = dict(values)
     logs = []
 
@@ -171,7 +171,7 @@ def cleanse(
             logs.append((name, rule, out[name], after))
             out[name] = after
 
-    for f in FIELDS[kind]:
+    for f in standard.fields[kind]:
         value = out.get(f.name, "")
         if not value:
             continue
@@ -202,7 +202,12 @@ class Validation:
 
 
 def _format_issue(
-    name: str, kind: str, length: int, value: str, code_list: str | None
+    name: str,
+    kind: str,
+    length: int,
+    value: str,
+    code_list: str | None,
+    code_lists: Mapping[str, Mapping[str, str]],
 ) -> str | None:
     if len(value) > length:
         return "F009"
@@ -211,7 +216,7 @@ def _format_issue(
     if kind == "numeric":
         return None if WHOLE.fullmatch(value) else "F004"
     if kind == "code":
-        return None if code_list and value in CODE_LISTS[code_list] else "F006"
+        return None if code_list and value in code_lists[code_list] else "F006"
     if kind == "phone":
         return None if MOBILE.fullmatch(value) else "F007"
     if name == "NatIDNum" or name == "G1NatID":
@@ -220,11 +225,20 @@ def _format_issue(
 
 
 def validate(
-    kind: FileKind, values: dict[str, str], period: date, policy: str = STANDARD
+    kind: FileKind,
+    values: dict[str, str],
+    period: date,
+    policy: str = STANDARD,
+    standard: DataStandard | None = None,
 ) -> Validation:
-    """Field, conditional and financial-logic checks of one cleansed record."""
+    """Field, conditional and financial-logic checks of one cleansed record.
+
+    ``standard`` is the data standard governing the record; by default, the one
+    in force for its reporting period.
+    """
+    standard = standard or DATA_STANDARDS.at(period)
     result = Validation()
-    core = CORE_FIELDS[kind]
+    core = standard.core_fields[kind]
     strict = policy == STANDARD
 
     def problem(code: str, name: str, value: str = "", always: bool = False) -> None:
@@ -232,13 +246,13 @@ def validate(
         result.issues.append(Issue(code, name, value, "ERROR" if fatal else "WARNING"))
 
     # Types, lengths and catalogues.
-    for f in FIELDS[kind]:
+    for f in standard.fields[kind]:
         value = values.get(f.name, "")
         if not value:
             if f.mandatory:
                 problem("F001", f.name)
             continue
-        code = _format_issue(f.name, f.kind, f.length, value, f.code_list)
+        code = _format_issue(f.name, f.kind, f.length, value, f.code_list, standard.code_lists)
         if code is None:
             continue
         if strict or f.name in core:
@@ -257,8 +271,8 @@ def validate(
     # Identity: at least one valid ID, mandatory from 2020 (owner's rule).
     disbursed = parse_date(values.get("DisbursementDate", ""))
     if kind is FileKind.INDIVIDUAL:
-        has_id = any(present(n) and not _bad_id(n, values[n]) for n in INDIVIDUAL_ID_FIELDS)
-        if not has_id and disbursed is not None and disbursed >= ID_REQUIRED_FROM:
+        has_id = any(present(n) and not _bad_id(n, values[n]) for n in standard.id_fields)
+        if not has_id and disbursed is not None and disbursed >= standard.id_required_from:
             problem("F013", "NatIDNum", always=True)
         require("EmpName", values.get("CreditFacilityType") == "115")
     elif not (present("BusRegNum") or present("TINum")):
@@ -297,10 +311,6 @@ def validate(
 
 def _bad_id(name: str, value: str) -> bool:
     return name == "NatIDNum" and not is_valid_ghana_card(value)
-
-
-def field_spec(kind: FileKind, name: str) -> object:
-    return FIELD_BY_NAME[kind][name]
 
 
 # --- Proposed corrections for triage (ASSUMPTION A-022) ----------------------------------

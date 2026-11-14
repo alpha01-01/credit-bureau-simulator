@@ -51,7 +51,8 @@ from apps.bureau.referencing.matching import (
 )
 from apps.dbcopy import copy_insert
 from apps.org.models import Organization
-from apps.standards.submission_template import FileKind, header
+from apps.standards.rulebook import DATA_STANDARDS
+from apps.standards.submission_template import FileKind
 
 from .intake import read_rows
 from .models import (
@@ -99,6 +100,8 @@ def process_submission(submission: Submission, at: datetime | None = None) -> Pr
             run_number=number,
             started_at=at,
             processing_version=PROCESSING_VERSION,
+            # Data is judged by the standard for its period, never by today's (D19).
+            template_version=submission.template_version,
         )
         file_issues: list[ValidationIssue] = []
         rows: list[_Row] = []
@@ -163,7 +166,8 @@ def _stage_file(
     except (ValueError, OSError, KeyError) as exc:
         return reject("T004", str(exc))
     kind = FileKind(stored.file_kind)
-    if names != list(header(kind)):
+    standard = DATA_STANDARDS.get(run.template_version)
+    if names != list(standard.header(kind)):
         return reject("T001", ",".join(names))
 
     stored.file_status = FileStatus.ACCEPTED
@@ -174,7 +178,7 @@ def _stage_file(
     rows: list[_Row] = []
     for n, values in enumerate(raw_rows, start=1):
         raw = dict(zip(names, values, strict=True))
-        cleansed, logs = cleanse(kind, raw)
+        cleansed, logs = cleanse(kind, raw, standard)
         rows.append(_Row(stored, n, raw, cleansed, logs))
     _mark_duplicates(kind, rows)
 
@@ -182,7 +186,7 @@ def _stage_file(
     for row in rows:
         if row.status == RecordStatus.DUPLICATE:
             continue
-        checked = validate(kind, row.cleansed, period, policy)
+        checked = validate(kind, row.cleansed, period, policy, standard)
         row.issues.extend(checked.issues)
         for name, value in checked.blanked.items():
             row.cleansed[name] = ""

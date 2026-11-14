@@ -197,7 +197,18 @@ export function InvoicesPage() {
       {invoices.isError && <Failed error={invoices.error} />}
       {invoices.data?.length === 0 && <Empty>No invoices.</Empty>}
       {invoices.data && invoices.data.length > 0 && (
-        <Table head={['Invoice', 'Subscriber', 'Period', 'Issued', 'Due', 'Total', 'Outstanding']}>
+        <Table
+          head={[
+            'Invoice',
+            'Subscriber',
+            'Period',
+            'Issued',
+            'Due',
+            'VAT and levies',
+            'Total',
+            'Outstanding',
+          ]}
+        >
           {invoices.data.map((i) => (
             <tr key={i.number}>
               <Td>{i.number}</Td>
@@ -205,6 +216,9 @@ export function InvoicesPage() {
               <Td>{day(i.period)}</Td>
               <Td>{day(i.issued)}</Td>
               <Td>{day(i.due)}</Td>
+              <Td right>
+                <span title={`Tax rules ${i.tax_rules}`}>{money(i.tax)}</span>
+              </Td>
               <Td right>{money(i.total)}</Td>
               <Td right>
                 {Number(i.outstanding) > 0 ? money(i.outstanding) : <Badge tone="good">paid</Badge>}

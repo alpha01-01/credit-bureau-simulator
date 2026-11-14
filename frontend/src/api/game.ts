@@ -79,6 +79,7 @@ export type SubmissionDetail = {
   reference: string
   provider: string
   period: string
+  template_version: string
   received_at: string
   due_date: string
   late: boolean
@@ -94,6 +95,7 @@ export type SubmissionDetail = {
   }[]
   runs: {
     run_number: number
+    template_version: string
     started_at: string
     completed_at: string
     status: string
@@ -245,8 +247,10 @@ export type InvoiceRow = {
   period: string
   issued: string
   due: string
+  tax: string
   total: string
   outstanding: string
+  tax_rules: string
 }
 
 function query(params: Record<string, string | undefined>): string {

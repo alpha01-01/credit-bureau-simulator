@@ -13,7 +13,8 @@ from datetime import date, timedelta
 
 import numpy as np
 
-from apps.standards.submission_template import FileKind, format_date, header
+from apps.standards.rulebook import DATA_STANDARDS, DataStandard
+from apps.standards.submission_template import FileKind, format_date
 
 from .profiles import COMMERCIAL_BLANKABLE, INDIVIDUAL_BLANKABLE, DataQualityProfile
 from .truth import STALE_FIELDS, TruthRecord
@@ -77,14 +78,15 @@ class Layout:
 
     columns: tuple[str, ...]  # canonical field names, in submitted order
     names: tuple[str, ...]  # header text as written, same order
+    expected: tuple[str, ...]  # the standard's columns, in the standard's order
 
     @classmethod
-    def standard(cls, kind: FileKind) -> Layout:
-        cols = header(kind)
-        return cls(cols, cols)
+    def standard(cls, kind: FileKind, standard: DataStandard) -> Layout:
+        cols = standard.header(kind)
+        return cls(cols, cols, cols)
 
-    def drift_defects(self, kind: FileKind) -> list[Defect]:
-        expected = header(kind)
+    def drift_defects(self) -> list[Defect]:
+        expected = self.expected
         out = []
         for position, (column, name) in enumerate(zip(self.columns, self.names, strict=True)):
             if name != column:
@@ -111,9 +113,10 @@ class RenderedFile:
     phone_columns: tuple[int, ...]  # positions of phone fields
 
 
-def drifted_layout(kind: FileKind, rng: np.random.Generator) -> Layout:
+def drifted_layout(kind: FileKind, standard: DataStandard, rng: np.random.Generator) -> Layout:
     """A provider's changed extract: one to three renamed columns, maybe two swapped."""
-    columns = list(header(kind))
+    expected = standard.header(kind)
+    columns = list(expected)
     renamable = [c for c in columns if c in HEADER_SYNONYMS]
     picks = rng.choice(len(renamable), size=int(rng.integers(1, 4)), replace=False)
     names: dict[str, str] = {}
@@ -123,7 +126,7 @@ def drifted_layout(kind: FileKind, rng: np.random.Generator) -> Layout:
     if rng.random() < 0.5:
         i = int(rng.integers(4, len(columns) - 1))  # never moves the leading identification block
         columns[i], columns[i + 1] = columns[i + 1], columns[i]
-    return Layout(tuple(columns), tuple(names.get(c, c) for c in columns))
+    return Layout(tuple(columns), tuple(names.get(c, c) for c in columns), expected)
 
 
 def render(
@@ -134,7 +137,7 @@ def render(
     rng: np.random.Generator,
     layout: Layout | None = None,
 ) -> RenderedFile:
-    layout = layout or Layout.standard(kind)
+    layout = layout or Layout.standard(kind, DATA_STANDARDS.at(period))
     blank_weights = profile.blank_weights or (
         INDIVIDUAL_BLANKABLE if kind is FileKind.INDIVIDUAL else COMMERCIAL_BLANKABLE
     )
@@ -152,7 +155,7 @@ def render(
 
     rows = _insert_duplicates(rows, profile, rng)
 
-    defects: list[Defect] = layout.drift_defects(kind)
+    defects: list[Defect] = layout.drift_defects()
     position = {id(r): n for n, r in enumerate(rows, start=1)}
     for n, row in enumerate(rows, start=1):
         for d in row.defects:
@@ -198,7 +201,8 @@ def _apply_row_defects(
     # Last month's extract re-sent for this account.
     if record.previous is not None and rng.random() < profile.stale_values:
         for name in STALE_FIELDS:
-            change(name, record.previous[name], "STALE_VALUE")
+            if name in record.previous:
+                change(name, record.previous[name], "STALE_VALUE")
 
     if rng.random() < profile.inconsistent_status:
         status = row.values["FacilityStatusCode"]
