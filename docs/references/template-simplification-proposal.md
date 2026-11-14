@@ -1,6 +1,6 @@
 # Proposal: simplified submission templates
 
-**Status:** Approved by the owner on 14 November 2026 (Document 07, D18–D20). The game does not use it yet; it is built in increment P2.0 (Document 08).
+**Status:** Approved by the owner on 14 November 2026 (Document 07, D18–D20). **Revised by section 11 (version 2)** after the official data format manuals arrived; version 2 awaits the owner's confirmation. The game does not use either yet; they are built in increment P2.0 (Document 08).
 **Sources:** [`templates.md`](templates.md) (the six column lists) and [`CLEANSER_RULES.md`](CLEANSER_RULES.md) (how the cleanser treats each column).
 
 ## 1. What we have today
@@ -116,3 +116,62 @@ These repeat the full person or business block and then add a few columns. They 
 8. **Duplicates:** why does the *lower* balance win (the most recent position)?
 9. **Ghana Card format:** what exactly does the cleanser accept as "Ghana Card-like"?
 10. **Publishing:** the repository is now public. `templates.md` (column names) is already in it. May `CLEANSER_RULES.md`, which describes an internal application, be published too, or should it stay in `docs/references/private/`?
+
+## 11. Version 2: aligned with the official standard
+
+The owner then supplied the industry standard itself (see [`data-formats.md`](data-formats.md)). It changes three things.
+
+1. **Some columns I proposed dropping are mandatory in the standard:** `Data`, `CurBalIndicator`, `PostAddrLine1`, `NoParticipantsInAcc`, `FacilityTerm` (consumer), and `CommencementDate`, `PostAddrLine1` (business). Without them a file is not standard, so they come back.
+2. **Real column names and codes.** Version 1 invented some names (`GuarantorType`, a typed "other ID" pair standing in for voter, driver and passport numbers). Version 2 uses only the standard's own names. The standard's "at least one of national ID, voter's ID, driver's licence, passport" rule needs those four columns.
+3. **Fields needed for the standard's own logic checks** stay: closure, write-off and restructure reasons (required when an account is closed, written off or restructured), the nature of charge (for secured loans), and the special comments code.
+
+### Consumer credit (`CONC`): 178 → 74 columns
+
+| Group | Columns |
+| --- | --- |
+| Record (5) | `Data`, `CorrectionIndicator`, `FacilityAccNum`, `CustomerID`, `BranchCode` |
+| Identifiers (5) | `NatIDNum`, `VotersIDNum`, `DriverLicNum`, `PassportNum`, `SSNum` |
+| Person (8) | `Gender`, `MaritalStatus`, `Nationality`, `DOB`, `Surname`, `FirstName`, `MiddleNames`, `PrevName` |
+| Address and contact (7) | `CurResAddr1`, `CurResAddr2`, `OwnerOrTenant`, `PostAddrLine1`, `EmailAddress`, `MobileTel1`, `MobileTel2` |
+| Employment and income (5) | `EmpType`, `EmpName`, `Occupation`, `IncomeCurrency`, `Income` |
+| Account holders (2) | `JointOrSoleAcc`, `NoParticipantsInAcc` |
+| Facility (10) | `CreditFacilityType`, `PurposeOfFacility`, `FacilityTerm`, `AmountCurrency`, `FacilityAmount`, `DisbursementDate`, `DisbursementAmt`, `MaturityDate`, `SchdInstalAmount`, `RepaymentFreq` |
+| Monthly position (17) | `LastPaymentAmount`, `LastPaymentDate`, `CurBal`, `CurBalIndicator`, `AssetClassification`, `AmountInArrears`, `NDIA`, `LegalFlag`, `FacilityStatusCode`, `FacilityStatusDate`, `ClosedDate`, `ClosureReason`, `WrittenOffAmt`, `ReasonForWrittenOff`, `DateRestructured`, `ReasonForRestructure`, `SpecialCommentsCode` |
+| Security (4) | `CreditCollateralInd`, `SecurityType`, `NatureOfCharge`, `SecurityValue` |
+| Earlier references (2) | `OldCustomerID`, `OldAccountNum` |
+| One guarantor (9) | `NatureOfGuarantor`, `NameOfComGuarantor`, `BusRegOfGuarantor`, `G1Surname`, `G1FirstName`, `G1NatID`, `G1Gender`, `G1DOB`, `G1Mobile` |
+
+### Business credit (`BUSC`): 158 → 63 columns
+
+Record (5), facility (10), monthly position (17), security (4), earlier references (2) and one guarantor (9) as above, plus:
+
+| Group | Columns |
+| --- | --- |
+| Business (11) | `BusRegNum`, `TINum`, `SectorIndCode`, `SubSecIndCode`, `BusType`, `RegistrationDate`, `CommencementDate`, `BusinessName`, `TradingName`, `TurnoverCurrency`, `TurnoverAmount` |
+| Address and contact (5) | `CurLocAdd1`, `CurLocAdd2`, `PostAddrLine1`, `EmailAddress`, `OfficeTel1` |
+
+### Dishonoured cheques (`COND`) and judgments (`CONJ`)
+
+The consumer identity block above (record 5, identifiers 5, person 8, address and contact 7, employment and income 5, account holders 2 = 32), plus:
+
+* **`COND` (39):** `ChequeNumber`, `AccountOpened`, `DateIssued`, `DateBounced`, `ReasonReturned`, `Currency`, `ChequeAmount`.
+* **`CONJ` (41):** `CourtName`, `CourtLocation`, `CourtType`, `CaseNumber`, `FilingDate`, `CaseType`, `CaseReason`, `Currency`, `Amount`.
+
+The business versions wait for their manuals.
+
+### What the game takes from the standard as well
+
+* File names `SRN-ReportingDate-DateCreated-Version-Identifier-Sequence.csv`, a five-character SRN per provider, pipe-delimited CSV, `YYYYMMDD` dates, whole-number amounts.
+* All code lists in `data-formats.md`, in place of the game's placeholders (assumptions A-012, A-013, A-015).
+* The resubmission clock: rejections notified within 2 working days; corrections back within 2 (financial) or 5 (other) working days.
+
+### One decision for the owner: how strictly to reject
+
+The standard rejects any record missing a mandatory field. The cleanser rejects only when the core fields fail and cleans or blanks the rest. Both are real practice. I propose making this a **bureau policy the player sets** (D19 lets it change mid-game):
+
+| Policy | Rejects when | Effect in play |
+| --- | --- | --- |
+| Standard | Any mandatory or applicable conditional field is missing or invalid | Cleaner data, fewer records, angrier providers, lower coverage |
+| Core fields (cleanser) | Only the core fields fail; the rest is cleaned or blanked | More records loaded, some with gaps; more for the dispute desk later |
+
+This is exactly the quality-versus-coverage trade-off the game is built around (Document 07, Section 10.1).

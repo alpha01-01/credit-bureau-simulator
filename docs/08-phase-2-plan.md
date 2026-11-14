@@ -101,7 +101,7 @@ Each increment ends like a Phase 1 step: tests that judge it against the truth, 
 
 Done in three parts, each its own pull request:
 
-* **a. Credit templates.** Replace placeholder SIMB-T0 with the approved individual (62 columns) and business (52) templates, with the real column names. Follow real practice from the cleanser rules: cleanse first and reject only on the required fields; asset classification `A`–`E`; `NDIA`; no reporting-date column; `CorrectionIndicator` 0/1/2; a valid ID mandatory for records from 1 January 2020; the real duplicate rule; disbursement-date mismatch.
+* **a. Credit templates.** Replace placeholder SIMB-T0 with the industry-standard templates as simplified (consumer 74 columns, business 63; proposal section 11), with the standard's names, codes, file naming (SRN), pipe-delimited CSV, `YYYYMMDD` dates and whole-number amounts (`references/data-formats.md`). Rejection strictness becomes a bureau policy (standard or core fields). Follow real practice from the cleanser rules: cleanse first and reject only on the required fields; asset classification `A`–`E`; `NDIA`; no reporting-date column; `CorrectionIndicator` 0/1/2; a valid ID mandatory for records from 1 January 2020; the real duplicate rule; disbursement-date mismatch.
 * **b. Versioned rules.** Templates, code lists, validation rules and prices carry a version and an effective date. Every submission, run, invoice and decision records the version it used, so a rule change never rewrites the past.
 * **c. Dud cheques and judgements.** The world produces bounced cheques and court judgements; providers report them on their own templates; the bureau loads them and shows them on the credit report.
 
