@@ -15,7 +15,6 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time, timedelta
 
 from apps.finance.events import (
-    REMITTANCE_DAY,
     file_vat,
     invoice_usage,
     month_start_costs,
@@ -26,6 +25,7 @@ from apps.finance.events import (
 )
 from apps.finance.models import Invoice
 from apps.standards.calendar import is_working_day, next_working_day
+from apps.standards.rulebook import TAX_RULES
 from apps.world.generation.rng import stream
 
 from .clock import Calendar, previous_month_end
@@ -73,7 +73,7 @@ def month_start(game: Game, cal: Calendar, tick: int, sequence: int) -> int:
             )
         )
         sequence += 1
-    remit_on = next_working_day(first.replace(day=REMITTANCE_DAY))
+    remit_on = next_working_day(first.replace(day=TAX_RULES.at(first).remittance_day))
     vat_on = last_working_day(first)
     for event_type, on in (
         (EventType.PAYROLL_TAX_REMITTANCE, remit_on),

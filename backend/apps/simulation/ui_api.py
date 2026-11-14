@@ -411,6 +411,7 @@ def submission_detail(request: Request, game_id: int, reference: str) -> Respons
         runs.append(
             {
                 "run_number": run.run_number,
+                "template_version": run.template_version,
                 "started_at": run.started_at,
                 "completed_at": run.completed_at,
                 "status": run.processing_status,
@@ -442,6 +443,7 @@ def submission_detail(request: Request, game_id: int, reference: str) -> Respons
             "reference": s.submission_reference,
             "provider": s.institution.institution_name,
             "period": s.reporting_period,
+            "template_version": s.template_version,
             "received_at": s.received_at,
             "due_date": s.due_date,
             "late": s.is_late,
@@ -609,7 +611,7 @@ def invoices(request: Request, game_id: int) -> Response:
     rows = []
     for i in (
         Invoice.objects.filter(organization=game.organization)
-        .select_related("subscriber")
+        .select_related("subscriber", "journal")
         .order_by("-issue_date", "-invoice_number")[:200]
     ):
         owed = outstanding(i)
@@ -622,8 +624,10 @@ def invoices(request: Request, game_id: int) -> Response:
                 "period": i.period_start,
                 "issued": i.issue_date,
                 "due": i.due_date,
+                "tax": i.tax,
                 "total": i.total,
                 "outstanding": owed,
+                "tax_rules": i.journal.rules_version,
             }
         )
     return Response(rows)

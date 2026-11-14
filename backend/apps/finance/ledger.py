@@ -83,6 +83,7 @@ def post(
     at: datetime,
     source_reference: str = "",
     reversal_of: JournalEntry | None = None,
+    rules_version: str = "",
 ) -> JournalEntry:
     """Validate and post one balanced journal entry."""
     lines = [line for line in lines if line.debit or line.credit]
@@ -116,6 +117,7 @@ def post(
             source_reference=source_reference[:60],
             posted_at=at,
             reversal_of=reversal_of,
+            rules_version=rules_version,
         )
         JournalLine.objects.bulk_create(
             JournalLine(

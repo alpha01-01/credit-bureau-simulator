@@ -1,0 +1,14 @@
+{
+  "data_standard": {
+    "1.1": {
+      "digest": "e20abfb42d4437e8adcc99a16615e0d7333540165aa29eefe87af7fd9a683749",
+      "effective": "2020-01-01"
+    }
+  },
+  "tax_rules": {
+    "GH-2024.1": {
+      "digest": "c9859c97d9cf175aa873ae0ad22f4179d1f7b227a4682ffea7de31bb6a0e6fc3",
+      "effective": "2024-01-01"
+    }
+  }
+}

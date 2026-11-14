@@ -212,8 +212,15 @@ def header(kind: FileKind) -> tuple[str, ...]:
     return tuple(f.name for f in FIELDS[kind])
 
 
-def file_name(srn: str, kind: FileKind, period: date, created: date, sequence: int = 1) -> str:
-    return f"{srn}-{period:%Y%m%d}-{created:%Y%m%d}-{TEMPLATE_VERSION}-{kind.value}-{sequence}.csv"
+def file_name(
+    srn: str,
+    kind: FileKind,
+    period: date,
+    created: date,
+    sequence: int = 1,
+    version: str = TEMPLATE_VERSION,
+) -> str:
+    return f"{srn}-{period:%Y%m%d}-{created:%Y%m%d}-{version}-{kind.value}-{sequence}.csv"
 
 
 FILE_NAME_PATTERN = re.compile(

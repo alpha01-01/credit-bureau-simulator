@@ -21,6 +21,7 @@ from apps.bureau.quality.models import (
 )
 from apps.bureau.quality.rules import Issue, validate
 from apps.bureau.referencing.matching import DIFFERENT, SAME, Pending
+from apps.standards.rulebook import DATA_STANDARDS
 from apps.standards.submission_template import FileKind
 
 from .models import RecordStatus, StagingRecord
@@ -95,6 +96,7 @@ def _correct_and_load(record: StagingRecord, proposal: dict[str, str], at: datet
         values,
         submission.reporting_period,
         submission.organization.rejection_policy,
+        DATA_STANDARDS.get(record.run.template_version),
     )
     errors = [i for i in checked.issues if i.severity == "ERROR"]
     if errors:

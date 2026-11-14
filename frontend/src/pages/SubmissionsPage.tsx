@@ -124,7 +124,7 @@ export function SubmissionPage() {
   return (
     <Page
       title={s.reference}
-      subtitle={`${s.provider}, ${day(s.period)} data, received ${dateTime(s.received_at)} (due ${day(s.due_date)})`}
+      subtitle={`${s.provider}, ${day(s.period)} data under data standard ${s.template_version}, received ${dateTime(s.received_at)} (due ${day(s.due_date)})`}
     >
       <Card title="Files">
         <Table head={['File', 'Type', 'Size', 'SHA-256', 'Status']}>
@@ -147,7 +147,10 @@ export function SubmissionPage() {
         </Table>
       </Card>
       {s.runs.map((run) => (
-        <Card key={run.run_number} title={`Processing run ${run.run_number}`}>
+        <Card
+          key={run.run_number}
+          title={`Processing run ${run.run_number} (data standard ${run.template_version})`}
+        >
           <p className="mb-3 text-sm text-slate-600">
             {count(run.received)} received = {count(run.accepted)} loaded + {count(run.unloadable)}{' '}
             unloadable + {count(run.duplicates)} duplicates + {count(run.pending)} held for review{' '}

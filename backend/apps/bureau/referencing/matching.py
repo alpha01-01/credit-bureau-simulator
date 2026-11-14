@@ -140,7 +140,7 @@ class Referencer:
                 institution=self.institution, provider_customer_number__in=numbers
             ).values_list("provider_customer_number", "customer_id")
         )
-        values = {r[f] for r in records for f, _ in _ID_FIELDS[kind] if r[f]}
+        values = {r[f] for r in records for f, _ in _ID_FIELDS[kind] if r.get(f)}
         types = [t for _, t in _ID_FIELDS[kind]]
         self.identifiers: dict[tuple[str, str], CustomerKey] = {
             (t, v): c
@@ -237,13 +237,14 @@ class Referencer:
         found: CustomerKey | None = None
         found_field = ""
         for name, id_type in _ID_FIELDS[self.kind]:
-            owner = self.identifiers.get((id_type, values[name])) if values[name] else None
+            value = values.get(name, "")
+            owner = self.identifiers.get((id_type, value)) if value else None
             if owner is None:
                 continue
             if found is None:
                 found, found_field = owner, name
             elif not _same(found, owner):
-                issues.append(Issue("R001", name, values[name], "WARNING"))
+                issues.append(Issue("R001", name, value, "WARNING"))
 
         customer: CustomerKey
         # Once the provider's customer number is linked, it decides (as everywhere else);
@@ -271,7 +272,7 @@ class Referencer:
 
         # Record identifiers the bureau did not have yet; conflicts stay as warnings.
         for name, id_type in _ID_FIELDS[self.kind]:
-            value = values[name]
+            value = values.get(name, "")
             if not value:
                 continue
             owner = self.identifiers.get((id_type, value))
@@ -350,7 +351,7 @@ class Referencer:
     def _contacts(self, customer: CustomerKey, values: dict[str, str]) -> None:
         known = self.contacts_of[customer]
         for name in _PHONE_FIELDS[self.kind]:
-            number = values[name]
+            number = values.get(name, "")
             if not number or not MOBILE.fullmatch(number) or number in known:
                 continue
             contact = CustomerContact(

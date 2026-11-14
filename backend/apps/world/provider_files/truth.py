@@ -30,6 +30,7 @@ from typing import Any
 
 from django.db import connection
 
+from apps.standards.rulebook import DATA_STANDARDS
 from apps.standards.submission_template import (
     FileKind,
     asset_classification,
@@ -184,7 +185,23 @@ def load_truth(
         cursor.execute(sql, params)
         rows = cursor.fetchall()
     seed = World.objects.values_list("seed", flat=True).get(pk=world_id)
-    return [_record(row, kind, seed, period) for row in rows]
+    columns = DATA_STANDARDS.at(period).header(kind)
+    return [_project(_record(row, kind, seed, period), columns) for row in rows]
+
+
+def _project(record: TruthRecord, columns: tuple[str, ...]) -> TruthRecord:
+    """The record in the columns of the data standard in force for its period (D19).
+
+    The world knows the values of the standard's fields; a field a later
+    edition adds is blank until the world is taught to produce it.
+    """
+    values = {name: record.values.get(name, "") for name in columns}
+    previous = (
+        {k: v for k, v in record.previous.items() if k in values}
+        if record.previous is not None
+        else None
+    )
+    return TruthRecord(record.loan_id, values, previous)
 
 
 def _record(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> TruthRecord:
