@@ -110,10 +110,14 @@ def test_second_month_adds_observations_to_existing_accounts(game: Game) -> None
         CreditAccount.objects.values_list("facility_account_number", flat=True)
     )
     assert run1.records_accepted == run1.records_received > 0
-    assert run1.accounts_created == len(accounts_after_first) == run1.records_accepted
+    credit = {"file__file_kind__in": ("CONC", "BUSC")}  # cheques and judgments are not accounts
+    loaded = StagingRecord.objects.filter(run=run1, record_status=RecordStatus.ACCEPTED, **credit)
+    assert run1.accounts_created == len(accounts_after_first) == loaded.count()
 
     run2 = _run(game, "ATB", second, CLEAN)
-    reported = {r.cleansed["FacilityAccNum"] for r in StagingRecord.objects.filter(run=run2)}
+    reported = {
+        r.cleansed["FacilityAccNum"] for r in StagingRecord.objects.filter(run=run2, **credit)
+    }
     assert run2.records_accepted == run2.records_received
     # Only accounts never reported before are new.
     assert run2.accounts_created == len(reported - accounts_after_first)

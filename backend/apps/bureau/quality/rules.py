@@ -30,10 +30,19 @@ from datetime import date, datetime
 from apps.standards.rulebook import DATA_STANDARDS, DataStandard
 from apps.standards.submission_template import (
     CLOSED_STATUS_CODES,
+    CONSUMER_KINDS,
     DATE_FORMAT,
     FileKind,
     is_valid_ghana_card,
 )
+
+# The date a record is about: what the ID rule and the future-date check go by.
+RECORD_DATE = {
+    FileKind.INDIVIDUAL: "DisbursementDate",
+    FileKind.COMMERCIAL: "DisbursementDate",
+    FileKind.CHEQUE: "DateBounced",
+    FileKind.JUDGMENT: "FilingDate",
+}
 
 STANDARD, CORE = "STANDARD", "CORE"
 POLICIES = {
@@ -62,6 +71,7 @@ RULES: dict[str, str] = {
     "F012": "Maturity date is before the disbursement date",
     "F013": "No valid identifier for a facility disbursed from 2020",
     "F014": "Required conditional field is blank",
+    "F015": "Cheque is reported bounced before it was issued",
     # Duplicates
     "D001": "Duplicate of another row in the file (the lower balance is kept)",
     "D002": "Account number repeated in the file for a different customer",
@@ -268,11 +278,13 @@ def validate(
         if when and not present(name):
             problem("F014", name)
 
-    # Identity: at least one valid ID, mandatory from 2020 (owner's rule).
+    # Identity: at least one valid ID, mandatory from 2020 (owner's rule) by the record's
+    # own date: disbursement for a facility, the bounce or the filing for an event.
     disbursed = parse_date(values.get("DisbursementDate", ""))
-    if kind is FileKind.INDIVIDUAL:
+    dated = parse_date(values.get(RECORD_DATE[kind], ""))
+    if kind in CONSUMER_KINDS:
         has_id = any(present(n) and not _bad_id(n, values[n]) for n in standard.id_fields)
-        if not has_id and disbursed is not None and disbursed >= standard.id_required_from:
+        if not has_id and dated is not None and dated >= standard.id_required_from:
             problem("F013", "NatIDNum", always=True)
         require("EmpName", values.get("CreditFacilityType") == "115")
     elif not (present("BusRegNum") or present("TINum")):
@@ -302,10 +314,15 @@ def validate(
     matures = parse_date(values.get("MaturityDate", ""))
     if disbursed and matures and matures < disbursed:
         problem("F012", "MaturityDate", values["MaturityDate"], always=True)
-    for name in ("DisbursementDate", "DOB", "RegistrationDate", "LastPaymentDate"):
+    issued = parse_date(values.get("DateIssued", ""))
+    bounced = parse_date(values.get("DateBounced", ""))
+    if issued and bounced and bounced < issued:
+        problem("F015", "DateBounced", values["DateBounced"], always=True)
+    for name in ("DisbursementDate", "DOB", "RegistrationDate", "LastPaymentDate",
+                 "DateIssued", "DateBounced", "FilingDate"):  # fmt: skip
         when = parse_date(values.get(name, ""))
         if when is not None and when > period:
-            problem("F003", name, values[name], always=name == "DisbursementDate")
+            problem("F003", name, values[name], always=name == RECORD_DATE[kind])
     return result
 
 

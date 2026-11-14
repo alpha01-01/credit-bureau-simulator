@@ -187,6 +187,27 @@ export type CustomerDetail = CustomerRow & {
       source: string
     }[]
   }[]
+  dishonoured_cheques: {
+    lender: string
+    account_number: string
+    cheque_number: string
+    date_issued: string
+    date_bounced: string
+    reason: string
+    currency: string
+    amount: string
+  }[]
+  judgments: {
+    plaintiff: string
+    court: string
+    court_type: string
+    case_number: string
+    filing_date: string
+    case_type: string
+    case_reason: string
+    currency: string
+    amount: string
+  }[]
   enquiries: { reference: string; subscriber: string; at: string; purpose: string }[]
 }
 

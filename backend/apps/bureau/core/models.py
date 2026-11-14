@@ -217,6 +217,68 @@ class AccountObservation(models.Model):
         return f"{self.credit_account_id} @ {self.reporting_date}"
 
 
+class _ReportedEvent(models.Model):
+    """A one-off adverse event about a customer, as a provider reported it (P2.0c)."""
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="+")
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="%(class)ss")
+    institution = models.ForeignKey(Institution, on_delete=models.PROTECT, related_name="+")
+    currency_code = models.CharField(max_length=3)
+    amount = models.DecimalField(max_digits=19, decimal_places=2)
+    source_submission = models.ForeignKey(Submission, on_delete=models.PROTECT, related_name="+")
+    source_file = models.ForeignKey(SubmissionFile, on_delete=models.PROTECT, related_name="+")
+    source_row_number = models.IntegerField()
+    processing_run = models.ForeignKey(ProcessingRun, on_delete=models.PROTECT, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        abstract = True
+
+
+class DishonouredCheque(_ReportedEvent):
+    """A cheque returned unpaid, from a Consumer Dishonoured Cheque (COND) file."""
+
+    account_number = models.CharField(max_length=30, help_text="Account the cheque was drawn on")
+    cheque_number = models.CharField(max_length=20)
+    account_opened = models.DateField(null=True, blank=True)
+    date_issued = models.DateField()
+    date_bounced = models.DateField()
+    reason_code = models.CharField(max_length=2, help_text="11 insufficient funds, 12 fraud")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["institution", "account_number", "cheque_number"],
+                name="cheque_unique_number",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.account_number}/{self.cheque_number}"
+
+
+class CourtJudgment(_ReportedEvent):
+    """A court case and its judgment, from a Consumer Judgment (CONJ) file."""
+
+    court_name = models.CharField(max_length=50)
+    court_location = models.CharField(max_length=50)
+    court_type = models.CharField(max_length=50)
+    case_number = models.CharField(max_length=15)
+    filing_date = models.DateField()
+    case_type = models.CharField(max_length=1)
+    case_reason = models.CharField(max_length=1)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["institution", "case_number"], name="judgment_unique_case"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.case_number
+
+
 class EnquiryOutcome(models.TextChoices):
     HIT = "HIT", "Subject found"
     NO_HIT = "NO_HIT", "No record found"

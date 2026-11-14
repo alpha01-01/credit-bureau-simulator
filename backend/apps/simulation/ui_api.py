@@ -33,6 +33,7 @@ from apps.bureau.core.models import (
     EnquiryOutcome,
 )
 from apps.bureau.quality.models import ValidationIssue
+from apps.bureau.reports.enquiries import cheques_on_file, judgments_on_file
 from apps.bureau.submissions.intake import due_date_for
 from apps.bureau.submissions.models import (
     FileStatus,
@@ -557,6 +558,8 @@ def customer_detail(request: Request, game_id: int, reference: str) -> Response:
                 for link in c.provider_links.select_related("institution").order_by("pk")
             ],
             "accounts": accounts,
+            "dishonoured_cheques": cheques_on_file(c, _today(game)),
+            "judgments": judgments_on_file(c, _today(game)),
             "enquiries": [
                 {
                     "reference": e.enquiry_reference,
