@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
+from decimal import Decimal
 
 import numpy as np
 
@@ -31,11 +32,12 @@ Borrower = tuple[str, int]  # ("person" | "business", world id)
 TRIAGE_DIFFICULTY = {"F004": 0.15, "F002": 0.45, "F011": 0.6}
 
 # The Data Operations team a new bureau starts with (ASSUMPTION A-023).
+# Monthly gross salaries are placeholders (ASSUMPTION A-032, until reference R13).
 STARTING_TEAM = (
-    ("Senior Data Officer", {CaseType.MATCH_REVIEW: 0.88, CaseType.UNLOADABLE_TRIAGE: 0.9}, 0.75),
-    ("Data Officer", {CaseType.MATCH_REVIEW: 0.72, CaseType.UNLOADABLE_TRIAGE: 0.78}, 0.7),
-    ("Junior Data Officer", {CaseType.MATCH_REVIEW: 0.55, CaseType.UNLOADABLE_TRIAGE: 0.62}, 0.72),
-)
+    ("Senior Data Officer", {CaseType.MATCH_REVIEW: 0.88, CaseType.UNLOADABLE_TRIAGE: 0.9}, 0.75, "9500.00"),
+    ("Data Officer", {CaseType.MATCH_REVIEW: 0.72, CaseType.UNLOADABLE_TRIAGE: 0.78}, 0.7, "6800.00"),
+    ("Junior Data Officer", {CaseType.MATCH_REVIEW: 0.55, CaseType.UNLOADABLE_TRIAGE: 0.62}, 0.72, "4800.00"),
+)  # fmt: skip
 
 
 def hire_starting_team(game: Game, hired_on: date) -> list[Employee]:
@@ -43,7 +45,7 @@ def hire_starting_team(game: Game, hired_on: date) -> list[Employee]:
     groups = list(SURNAMES)
     first = game.organization.allocate("last_employee_seq", len(STARTING_TEAM))
     team = []
-    for n, (title, skills, morale) in enumerate(STARTING_TEAM):
+    for n, (title, skills, morale, salary) in enumerate(STARTING_TEAM):
         group = groups[int(rng.integers(len(groups)))]
         gender = "F" if rng.random() < 0.5 else "M"
         names = FIRST_NAMES[group][gender] + COMMON_FIRST_NAMES[gender]
@@ -56,6 +58,7 @@ def hire_starting_team(game: Game, hired_on: date) -> list[Employee]:
                 job_title=title,
                 skills={str(k): v for k, v in skills.items()},
                 morale=morale,
+                monthly_salary=Decimal(salary),
                 hired_on=hired_on,
             )
         )

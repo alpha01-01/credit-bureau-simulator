@@ -22,6 +22,7 @@ from rest_framework.response import Response
 from apps.bureau.core.models import Enquiry
 from apps.bureau.quality.models import ALLOWED_DECISIONS
 from apps.bureau.submissions.review import ReviewError
+from apps.finance import statements
 from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 from apps.workitems.work import WorkError
@@ -222,3 +223,29 @@ def enquiry_report(request: Request, game_id: int, reference: str) -> Response:
         Enquiry, organization=game.organization, enquiry_reference=reference
     )
     return Response({"reference": enquiry.enquiry_reference, "report": enquiry.report})
+
+
+# --- Finance ----------------------------------------------------------------------------
+#
+#   GET /api/v1/games/<id>/finance/   statements at the current game date:
+#       trial balance, month-to-date and year-to-date income statements,
+#       balance sheet and cash position, all derived from posted entries.
+
+
+@api_view(["GET"])
+def finance(request: Request, game_id: int) -> Response:
+    game = _game(request, game_id)
+    today = controls.state(game).now.date()
+    org = game.organization
+    return Response(
+        {
+            "as_of": today,
+            "trial_balance": statements.trial_balance(org, today),
+            "income_month_to_date": statements.income_statement(org, today.replace(day=1), today),
+            "income_year_to_date": statements.income_statement(
+                org, today.replace(month=1, day=1), today
+            ),
+            "balance_sheet": statements.balance_sheet(org, today),
+            "cash": statements.cash_position(org, today),
+        }
+    )

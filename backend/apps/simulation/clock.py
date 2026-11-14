@@ -75,6 +75,13 @@ class Calendar:
     def is_last_tick_of_day(self, tick: int) -> bool:
         return tick % TICKS_PER_DAY == 0
 
+    def is_last_tick_of_month(self, tick: int) -> bool:
+        """True for the last tick of the last working day of a calendar month."""
+        if tick % TICKS_PER_DAY:
+            return False
+        day_index = tick // TICKS_PER_DAY - 1
+        return self.day(day_index + 1).month != self.day(day_index).month
+
     def is_first_tick_of_month(self, tick: int) -> bool:
         """True for the first tick of the first working day of a calendar month."""
         if (tick - 1) % TICKS_PER_DAY:

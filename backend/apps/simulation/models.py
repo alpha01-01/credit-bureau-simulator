@@ -69,6 +69,9 @@ class EventType(models.TextChoices):
     PROVIDER_FILES_ARRIVE = "PROVIDER_FILES_ARRIVE", "Provider files arrive"
     WORLD_ADVANCED = "WORLD_ADVANCED", "The world lived through another month"
     CREDIT_APPLICATION = "CREDIT_APPLICATION", "A borrower applies to a lender"
+    SUBSCRIBER_PAYMENT = "SUBSCRIBER_PAYMENT", "A subscriber pays an invoice"
+    PAYROLL_TAX_REMITTANCE = "PAYROLL_TAX_REMITTANCE", "PAYE and SSNIT are paid over"
+    VAT_RETURN = "VAT_RETURN", "VAT and levies are paid to the GRA"
 
 
 class EventStatus(models.TextChoices):

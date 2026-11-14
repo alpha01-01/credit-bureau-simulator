@@ -31,6 +31,7 @@ from apps.bureau.providers.models import Institution, InstitutionBranch
 from apps.bureau.quality.models import ReviewCase, TransformationLog, ValidationIssue
 from apps.bureau.submissions.models import ProcessingRun, StagingRecord, Submission, SubmissionFile
 from apps.commercial.models import Contract, Product, Subscriber, UsageRecord
+from apps.finance.models import Account, Invoice, InvoiceLine, JournalEntry, JournalLine, Payment
 from apps.org.models import Employee, Organization
 from apps.workitems.models import WorkItem
 from apps.world.generation.persist import delete_world
@@ -57,7 +58,18 @@ _RECORDS = f"SELECT id FROM {_table(StagingRecord)} WHERE run_id IN ({_RUNS})"
 _CUSTOMERS = f"SELECT id FROM {_table(Customer)} WHERE organization_id = %(org)s"
 _INSTITUTIONS = f"SELECT id FROM {_table(Institution)} WHERE organization_id = %(org)s"
 
+_ENTRIES = f"SELECT id FROM {_table(JournalEntry)} WHERE organization_id = %(org)s"
+
 _ORDER: tuple[tuple[type[Model], str], ...] = (
+    (Payment, "organization_id = %(org)s"),
+    (
+        InvoiceLine,
+        f"invoice_id IN (SELECT id FROM {_table(Invoice)} WHERE organization_id = %(org)s)",
+    ),
+    (Invoice, "organization_id = %(org)s"),
+    (JournalLine, f"entry_id IN ({_ENTRIES})"),
+    (JournalEntry, "organization_id = %(org)s"),
+    (Account, "organization_id = %(org)s"),
     (EnquiryJudgement, "game_id = %(game)s"),
     (SubscriberView, "game_id = %(game)s"),
     (UsageRecord, "organization_id = %(org)s"),

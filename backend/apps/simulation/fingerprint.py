@@ -30,6 +30,7 @@ from apps.bureau.core.models import Customer as BureauCustomer
 from apps.bureau.quality.models import ReviewCase, TransformationLog, ValidationIssue
 from apps.bureau.submissions.models import ProcessingRun, StagingRecord, Submission, SubmissionFile
 from apps.commercial.models import UsageRecord
+from apps.finance.models import Invoice, JournalLine, Payment
 from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 
@@ -287,4 +288,32 @@ def fingerprint(game: Game) -> str:
             "enquiry__enquiry_reference", "should_hit", "hit", "correct_person", "outcome",
         ),
     )  # fmt: skip
+    _section(
+        h,
+        "journal",
+        JournalLine.objects.filter(entry__organization_id=org)
+        .order_by("entry__journal_reference", "account__code", "debit", "credit", "memo")
+        .values_list(
+            "entry__journal_reference", "entry__transaction_date", "entry__description",
+            "entry__source_type", "entry__source_reference", "entry__posted_at",
+            "entry__reversal_of__journal_reference", "account__code", "debit", "credit", "memo",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "invoices",
+        Invoice.objects.filter(organization_id=org)
+        .order_by("invoice_number")
+        .values_list(
+            "invoice_number", "subscriber__subscriber_code", "period_start", "period_end",
+            "issue_date", "due_date", "subtotal", "tax", "total",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "payments",
+        Payment.objects.filter(organization_id=org)
+        .order_by("reference")
+        .values_list("reference", "invoice__invoice_number", "amount", "received_on"),
+    )
     return h.hexdigest()

@@ -119,6 +119,10 @@ Records the pipeline cannot settle on its own become work items: uncertain custo
 
 Each month the world's borrowers apply for credit. When the lender subscribes to the bureau it decides, application by application, whether to check the bureau first, depending on price and on how useful the bureau has been to it so far. Each enquiry is logged with its purpose and consent reference, billed as usage, and answered with a credit report when the subject is found. `/api/v1/games/<id>/enquiries/` lists them.
 
+## Finance
+
+The bureau keeps real double-entry books. Rent, IT costs, invoices (with VAT and levies), subscriber payments, payroll (PAYE and SSNIT) and tax remittances post automatically as they happen in game time; every journal must balance and posted entries are corrected by reversal, never edited. `/api/v1/games/<id>/finance/` returns the trial balance, income statements, balance sheet and cash position, all derived from posted entries.
+
 ## Checks
 
 Run everything (formatting, lint, module boundaries, types, migrations, tests) before merging:
