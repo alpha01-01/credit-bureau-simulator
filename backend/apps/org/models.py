@@ -16,6 +16,8 @@ COUNTERS = (
     "last_case_seq",
     "last_employee_seq",
     "last_enquiry_seq",
+    "last_journal_seq",
+    "last_invoice_seq",
 )
 
 
@@ -34,6 +36,8 @@ class Organization(models.Model):
     last_case_seq = models.BigIntegerField(default=0)
     last_employee_seq = models.BigIntegerField(default=0)
     last_enquiry_seq = models.BigIntegerField(default=0)
+    last_journal_seq = models.BigIntegerField(default=0)
+    last_invoice_seq = models.BigIntegerField(default=0)
 
     def __str__(self) -> str:
         return self.name
@@ -69,6 +73,9 @@ class Employee(models.Model):
     skills = models.JSONField(default=dict)
     experience = models.JSONField(default=dict)
     morale = models.FloatField(default=0.7)
+    monthly_salary = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0, help_text="Gross, GHS"
+    )
     is_active = models.BooleanField(default=True)
     hired_on = models.DateField()
     # Work state, advanced by the simulation each tick.

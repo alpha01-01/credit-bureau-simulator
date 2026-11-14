@@ -22,6 +22,7 @@ from apps.world.models import Branch, Lender, ProviderSubmission, World
 from apps.world.provider_files import play_start
 from apps.world.provider_files.profiles import REPORTING_PROVIDERS
 
+from .bookkeeping import open_game_books
 from .enquiries import set_up_commercial
 from .judgement import hire_starting_team
 from .models import Delivery, Game
@@ -57,6 +58,7 @@ def start_game(
         onboard(game, Lender.objects.get(world=world, code=code), world.history_start)
     hire_starting_team(game, world.history_start)
     set_up_commercial(game, world.history_start)
+    open_game_books(game)
     if history_months:
         from .history import preload_history  # history uses deliver(), defined below
 

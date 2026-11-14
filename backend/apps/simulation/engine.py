@@ -21,6 +21,7 @@ from django.db.models import Max
 
 from apps.bureau.submissions.models import Submission, SubmissionStatus
 from apps.bureau.submissions.pipeline import process_submission
+from apps.finance.events import run_payroll
 from apps.standards.calendar import next_working_day
 from apps.workitems.work import has_work, work_tick
 from apps.world.generation.advance import extend_world
@@ -30,6 +31,7 @@ from apps.world.models import Lender, ProviderSubmission
 from apps.world.provider_files import generate_submission
 from apps.world.provider_files import month_end as period_end
 
+from . import bookkeeping
 from .bridge import deliver
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
 from .enquiries import handle_application, schedule_applications
@@ -95,6 +97,7 @@ def next_busy_tick(game: Game) -> int:
         candidates.append(end_of_day_tick(current))
     if has_work(game.organization):
         candidates.append(current + 1)  # staff are working through the queue
+    candidates.append(end_of_month_tick(cal, current))  # payroll
     return min(candidates)
 
 
@@ -152,6 +155,10 @@ def run_tick(game_id: int, tick: int) -> bool:
         if cal.is_last_tick_of_day(tick):
             processed += _overnight_batch(game, cal.tick_end(tick))
 
+        if cal.is_last_tick_of_month(tick):
+            run_payroll(game.organization, cal.tick_start(tick).date(), cal.tick_end(tick))
+            processed += 1
+
         # Review cases opened this tick (by the batch or by decisions) become work items.
         sync_work_items(game, tick)
 
@@ -198,6 +205,8 @@ def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
         ensure_applications(world, this_month)
         sequence = schedule_applications(game, cal, tick, this_month, sequence)
 
+    sequence = bookkeeping.month_start(game, cal, tick, sequence)
+
     for institution in game.organization.institutions.filter(is_active=True).order_by(
         "institution_code"
     ):
@@ -226,6 +235,9 @@ def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
 def _handle(game: Game, event: ScheduledEvent, at: datetime) -> None:
     if event.event_type == EventType.CREDIT_APPLICATION:
         handle_application(game, event.payload, at)
+        return
+    if event.event_type in bookkeeping.FINANCE_EVENTS:
+        bookkeeping.handle(game, event, at)
         return
     if event.event_type == EventType.PROVIDER_FILES_ARRIVE:
         world_sub = ProviderSubmission.objects.get(
@@ -283,6 +295,11 @@ def next_month_tick(cal: Calendar, current: int) -> int:
     while cal.day(day_index).month == month:
         day_index += 1
     return cal.first_tick_of_day(day_index)
+
+
+def end_of_month_tick(cal: Calendar, current: int) -> int:
+    """Last tick of the month in which the next tick falls (payday)."""
+    return next_month_tick(cal, current) - 1
 
 
 def end_of_day_tick(current: int) -> int:
