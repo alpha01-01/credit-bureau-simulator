@@ -97,6 +97,16 @@ Document 06 (Section 6) asks the team to play Phase 1 and record what is fun, te
 
 Each increment ends like a Phase 1 step: tests that judge it against the truth, played in the browser, all checks green, a pull request.
 
+## P2.0 — Real templates and versioned rules (added 14 November 2026; D18–D20)
+
+Done in three parts, each its own pull request:
+
+* **a. Credit templates.** Replace placeholder SIMB-T0 with the industry-standard templates as simplified (consumer 74 columns, business 63; proposal section 11), with the standard's names, codes, file naming (SRN), pipe-delimited CSV, `YYYYMMDD` dates and whole-number amounts (`references/data-formats.md`). Rejection strictness becomes a bureau policy (standard or core fields). Follow real practice from the cleanser rules: cleanse first and reject only on the required fields; asset classification `A`–`E`; `NDIA`; no reporting-date column; `CorrectionIndicator` 0/1/2; a valid ID mandatory for records from 1 January 2020; the real duplicate rule; disbursement-date mismatch.
+* **b. Versioned rules.** Templates, code lists, validation rules and prices carry a version and an effective date. Every submission, run, invoice and decision records the version it used, so a rule change never rewrites the past.
+* **c. Dud cheques and judgements.** The world produces bounced cheques and court judgements; providers report them on their own templates; the bureau loads them and shows them on the credit report.
+
+**Done when:** a game plays a month on the real templates with every existing guarantee intact (ledger of defects, lineage, reconciliation, replay); a template or price change made mid-game applies only from its effective date; dud cheques and judgements appear on reports.
+
 ## P2.1 — Speed and stability
 
 * Game creation for an Established bureau under 2 minutes (a dedicated bulk path for history, generated world files reused across games).
@@ -206,7 +216,7 @@ Each increment ends like a Phase 1 step: tests that judge it against the truth, 
 
 | Milestone | Increments | What the player gets |
 | --- | --- | --- |
-| **A: a game that responds** | Playtest, P2.1, P2.2, P2.3 | Fast to start, never silent, and it tells you how good your data really is |
+| **A: a game that responds** | Playtest, P2.0, P2.1, P2.2, P2.3 | Fast to start, never silent, and it tells you how good your data really is |
 | **B: Data Operations in depth** | P2.4, P2.5, P2.6 | Real matching decisions, rules you write, providers that change |
 | **C: consequences** | P2.7, P2.8 | Mistakes reach people, lenders and the regulator |
 | **D: running the company** | P2.9, P2.10 | Staff, sales, IT, money and the board |

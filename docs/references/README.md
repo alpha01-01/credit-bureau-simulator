@@ -15,11 +15,11 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 
 | # | Material | Used for | Status |
 | --- | --- | --- | --- |
-| R1 | **Data submission template(s)** for consumer and commercial credit data: field names, order, types, lengths, mandatory/optional, allowed values | Provider files, template validation, staging tables | Needed |
-| R2 | **Code lists**: account status, facility types, payment status, currency, identifier types, gender/marital codes, sector codes, regions | Validation rules, world generator | Needed |
-| R3 | **Validation and rejection rules / error codes** a bureau applies (what makes a record unloadable, warning vs reject) | Pipeline, unloadable records, provider feedback reports | Needed |
+| R1 | **Data submission template(s)** for consumer and commercial credit data: field names, order, types, lengths, mandatory/optional, allowed values | Provider files, template validation, staging tables | **Received** (`templates.md`); simplified version approved (`template-simplification-proposal.md`). Types and lengths still needed |
+| R2 | **Code lists**: account status, facility types, payment status, currency, identifier types, gender/marital codes, sector codes, regions | Validation rules, world generator | **Received** (`data-formats.md`, section 4) |
+| R3 | **Validation and rejection rules / error codes** a bureau applies (what makes a record unloadable, warning vs reject) | Pipeline, unloadable records, provider feedback reports | **Mostly received** (`data-formats.md`, section 2; cleanser rules). Bureau error codes still needed |
 | R4 | **Matching practice**: which identifiers and fields are used to link customers and accounts, and how uncertain matches are handled | Referencing engine, match-review work items | Needed |
-| R5 | **Submission calendar and SLAs**: reporting deadlines, frequency, correction/resubmission practice | Month loop, provider lateness, SLA penalties | Needed |
+| R5 | **Submission calendar and SLAs**: reporting deadlines, frequency, correction/resubmission practice | Month loop, provider lateness, SLA penalties | **Partly received**: resubmission deadlines (`data-formats.md`, section 2). Reporting deadline still needed |
 | R6 | **Credit Reporting Act, 2007 (Act 726)** (and any amendments) | Handbook, regulator rules | Needed (public) |
 | R7 | **Credit Reporting Regulations, 2020 (L.I. 2394)**, especially dispute resolution (Regs 23–26), consent, access, retention | Dispute workflow and deadlines, consent, retention | Needed (public) |
 | R8 | **Pricing**: GHS prices for individual reports, business reports, batch enquiries; typical contract structures (pay-per-use, bundles, subscriptions) | Products, billing, demand model | Needed |
@@ -43,4 +43,6 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 
 | # | File | Source | Version / date | Public or owner-written |
 | --- | --- | --- | --- | --- |
-| | | | | |
+| R1 | `templates.md` | Owner: column lists of the six templates in use | November 2026 | Owner-supplied |
+| R1 | `template-simplification-proposal.md` | Written for this project; v2 (section 11) approved by the owner | 14 November 2026 | Owner-written |
+| R1, R2, R3, R5 | `data-formats.md` | Notes from the Data Standards Committee manuals (CONC, BUSC, COND, CONJ), v1.1, July 2012; the manuals are not stored here | 14 November 2026 | Notes from owner-supplied documents |
