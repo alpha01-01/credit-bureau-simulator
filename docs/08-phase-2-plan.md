@@ -3,8 +3,8 @@
 ## DOCUMENT 08 — PHASE 2 PLAN: THE FIRST PLAYABLE SLICE
 
 **Document ID:** CBS-P2P-001
-**Version:** 0.1
-**Status:** Draft for owner review
+**Version:** 0.2
+**Status:** Approved by owner (14 November 2026); the order of Section 4 may change after the playtest. Section 7, items 3–5 remain open
 **Date:** 14 November 2026
 **Working title:** SimB
 **Depends on:** CBS-CGD-001 (07, the slice is defined in Section 13), CBS-DRTP-001 (06, Phase 2 is outlined in Section 7)
@@ -262,7 +262,7 @@ Rules already live in configuration, so placeholders never block building. They 
 | Field | Value |
 | --- | --- |
 | Document ID | CBS-P2P-001 |
-| Version | 0.1 |
-| Status | Draft for owner review |
-| Change history | 0.1 first draft after Phase 1 |
-| Next step | Owner review; team playtest; reorder Section 4 if needed |
+| Version | 0.2 |
+| Status | Approved |
+| Change history | 0.1 first draft after Phase 1; 0.2 owner approved the plan and the playtest-first start |
+| Next step | Team playtest; reorder Section 4 if needed; owner decisions on Section 7, items 3–5 |
