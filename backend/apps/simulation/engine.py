@@ -37,8 +37,9 @@ from .bridge import deliver
 from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
 from .enquiries import handle_application, schedule_applications
+from .feed import Feed, money
 from .judgement import rng_for, sync_work_items
-from .models import CheckpointKind, EventStatus, EventType, Game, ScheduledEvent, TickLog
+from .models import CheckpointKind, EventStatus, EventType, Game, Notice, ScheduledEvent, TickLog
 
 
 class ClockError(Exception):
@@ -57,13 +58,16 @@ def calendar(game: Game) -> Calendar:
 # --- Running ticks ----------------------------------------------------------------
 
 
-def advance(game: Game, ticks: int) -> Game:
+def advance(game: Game, ticks: int, *, stop_on_pause: bool = False) -> Game:
     """Run the next ``ticks`` ticks.
 
     Busy ticks run one transaction each. A stretch of quiet ticks (no month
     start, no event due, nothing waiting for the overnight batch) has nothing
     to do but be logged, so it is logged in one transaction; the result is
     identical to running those ticks one by one.
+
+    With ``stop_on_pause``, a tick whose notices match the auto-pause rules ends
+    the advance there (the player asked to be stopped for such things).
     """
     if ticks < 0:
         raise ClockError("Cannot go back in time")
@@ -72,9 +76,13 @@ def advance(game: Game, ticks: int) -> Game:
         quiet_until = min(next_busy_tick(game) - 1, target)
         if quiet_until > game.current_tick:
             _log_quiet_ticks(game.pk, game.current_tick + 1, quiet_until)
-        else:
-            run_tick(game.pk, game.current_tick + 1)
+            game.refresh_from_db()
+            continue
+        tick = game.current_tick + 1
+        run_tick(game.pk, tick)
         game.refresh_from_db()
+        if stop_on_pause and Notice.objects.filter(game=game, tick=tick, paused=True).exists():
+            break
     return game
 
 
@@ -83,6 +91,8 @@ def next_busy_tick(game: Game) -> int:
     cal = calendar(game)
     current = game.current_tick
     candidates = [next_month_tick(cal, current)]
+    # Each working day starts with a look round (overdue data and invoices, cash, deadlines).
+    candidates.append(((current - 1) // TICKS_PER_DAY + 1) * TICKS_PER_DAY + 1)
     if cal.is_first_tick_of_month(current + 1):
         candidates.append(current + 1)
     pending = (
@@ -131,9 +141,12 @@ def run_tick(game_id: int, tick: int) -> bool:
             raise ClockError(f"Tick {tick} cannot run after tick {game.current_tick}")
         cal = calendar(game)
         processed = 0
+        feed = Feed(game, tick, cal.tick_start(tick))
 
         if cal.is_first_tick_of_month(tick):
-            _schedule_month(game, cal, tick)
+            _schedule_month(game, cal, tick, feed)
+        if (tick - 1) % TICKS_PER_DAY == 0:
+            feed.morning(cal.tick_start(tick).date())
 
         due = ScheduledEvent.objects.filter(
             game=game, status=EventStatus.PENDING, due_tick__lte=tick
@@ -141,7 +154,7 @@ def run_tick(game_id: int, tick: int) -> bool:
         handled = []
         memo: dict[object, Any] = {}  # lookups that cannot change within a tick
         for event in due:
-            _handle(game, event, cal.tick_start(tick), memo)
+            _handle(game, event, cal.tick_start(tick), memo, feed)
             event.status = EventStatus.DONE
             event.processed_tick = tick
             handled.append(event)
@@ -158,15 +171,21 @@ def run_tick(game_id: int, tick: int) -> bool:
             )
 
         if cal.is_last_tick_of_day(tick):
-            processed += _overnight_batch(game, cal.tick_end(tick))
+            processed += _overnight_batch(game, cal.tick_end(tick), feed)
 
         if cal.is_last_tick_of_month(tick):
-            run_payroll(game.organization, cal.tick_start(tick).date(), cal.tick_end(tick))
+            payday = cal.tick_start(tick).date()
+            gross = run_payroll(game.organization, payday, cal.tick_end(tick))
+            if gross:
+                feed.money_out(
+                    "PAYROLL_PAID", f"Salaries paid for {payday:%B}", f"Gross pay {money(gross)}."
+                )
             processed += 1
 
         # Review cases opened this tick (by the batch or by decisions) become work items.
         sync_work_items(game, tick)
 
+        feed.save()
         TickLog.objects.create(
             game=game, tick=tick, sim_time=cal.tick_start(tick), events_processed=processed
         )
@@ -184,7 +203,7 @@ def _next_sequence(game: Game) -> int:
     return (game.events.aggregate(n=Max("sequence"))["n"] or 0) + 1
 
 
-def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
+def _schedule_month(game: Game, cal: Calendar, tick: int, feed: Feed) -> None:
     """At the start of a month: the world's month, last month's files, this month's applications.
 
     The world lives through the coming month now (its truth stays hidden until
@@ -212,7 +231,7 @@ def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
         ensure_applications(world, this_month)
         sequence = schedule_applications(game, cal, tick, this_month, sequence)
 
-    sequence = bookkeeping.month_start(game, cal, tick, sequence)
+    sequence = bookkeeping.month_start(game, cal, tick, sequence, feed)
 
     for institution in game.organization.institutions.filter(is_active=True).order_by(
         "institution_code"
@@ -239,12 +258,14 @@ def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
         sequence += 1
 
 
-def _handle(game: Game, event: ScheduledEvent, at: datetime, memo: dict[object, Any]) -> None:
+def _handle(
+    game: Game, event: ScheduledEvent, at: datetime, memo: dict[object, Any], feed: Feed
+) -> None:
     if event.event_type == EventType.CREDIT_APPLICATION:
-        handle_application(game, event.payload, at, memo)
+        handle_application(game, event.payload, at, memo, feed)
         return
     if event.event_type in bookkeeping.FINANCE_EVENTS:
-        bookkeeping.handle(game, event, at)
+        bookkeeping.handle(game, event, at, feed)
         return
     if event.event_type == EventType.PROVIDER_FILES_ARRIVE:
         world_sub = ProviderSubmission.objects.get(
@@ -252,18 +273,19 @@ def _handle(game: Game, event: ScheduledEvent, at: datetime, memo: dict[object, 
             lender__code=event.payload["lender"],
             period=event.payload["period"],
         )
-        deliver(game, world_sub, datetime.fromisoformat(event.payload["arrival"]))
+        submission = deliver(game, world_sub, datetime.fromisoformat(event.payload["arrival"]))
+        feed.files_arrived(submission)
     # WORLD_ADVANCED is a record only: the work was done when it was scheduled.
 
 
-def _overnight_batch(game: Game, at: datetime) -> int:
+def _overnight_batch(game: Game, at: datetime, feed: Feed) -> int:
     """Process every submission received and not yet processed."""
     waiting = Submission.objects.filter(
         organization=game.organization, submission_status=SubmissionStatus.RECEIVED
     ).order_by("received_at", "submission_reference")
     count = 0
-    for submission in waiting:
-        process_submission(submission, at=at)
+    for submission in waiting.select_related("institution"):
+        feed.run_finished(process_submission(submission, at=at))
         count += 1
     return count
 

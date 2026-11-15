@@ -4,6 +4,10 @@
 
 At 1x one tick (15 game minutes) takes 5 real seconds, so a game hour takes
 20 seconds and a working day 3 minutes. Paused games are left alone.
+
+Since P2.2 the open game page drives the clock itself; this worker is for
+running games headless. Both go through ``controls.step``, which refuses a
+tick that comes too soon, so running both does not speed a game up.
 """
 
 from __future__ import annotations

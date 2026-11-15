@@ -6,6 +6,7 @@ import { BriefingPage } from '../pages/BriefingPage'
 import { CustomerPage, CustomersPage } from '../pages/CustomersPage'
 import { DashboardPage } from '../pages/DashboardPage'
 import { EnquiriesPage } from '../pages/EnquiriesPage'
+import { EventsPage } from '../pages/EventsPage'
 import { FinanceLayout, InvoicesPage, LedgerPage, StatementsPage } from '../pages/FinancePage'
 import { GamesPage } from '../pages/GamesPage'
 import { LoginPage } from '../pages/LoginPage'
@@ -66,6 +67,7 @@ const routes = [
             element: <GameLayout />,
             children: [
               { index: true, element: <BriefingPage /> },
+              { path: 'events', element: <EventsPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },
               { path: 'submissions/:reference', element: <SubmissionPage /> },

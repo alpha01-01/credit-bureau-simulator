@@ -35,6 +35,9 @@ class WorkItem(models.Model):
     item_type = models.CharField(max_length=30)
     difficulty = models.FloatField(help_text="0 (obvious) to 1 (very hard)")
     created_tick = models.BigIntegerField()
+    due_tick = models.BigIntegerField(
+        null=True, blank=True, help_text="The decision is due by the end of this tick"
+    )
     status = models.CharField(max_length=15, choices=ItemStatus.choices, default=ItemStatus.OPEN)
     assignee = models.ForeignKey(
         Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name="work_items"

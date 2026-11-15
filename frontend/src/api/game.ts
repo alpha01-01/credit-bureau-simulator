@@ -3,7 +3,7 @@
  * id, so advancing the clock can refresh everything about that game at once.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiGet, apiPost } from './client'
 
@@ -19,7 +19,30 @@ export type Clock = {
   next_event: { tick: number; at: string }
   pending_events: number
   reporting_data_through: string
+  pause_rules: PauseRules
+  stopped_by: Notice | null
+  latest_notice: number | null
 }
+
+export type Severity = 'INFO' | 'WARNING' | 'CRITICAL'
+
+export type PauseRules = { severities: Severity[]; deadlines: boolean }
+
+/** One entry in the event feed (P2.2). */
+export type Notice = {
+  id: number
+  tick: number
+  at: string
+  kind: string
+  severity: Severity
+  title: string
+  detail: string
+  drill: Drill | null
+  deadline: boolean
+  paused: boolean
+}
+
+export type FeedPage = { notices: Notice[]; more: boolean }
 
 export type GameSummary = {
   id: number
@@ -299,6 +322,21 @@ export function useGame(id: number) {
       if (data.setup_status === 'PREPARING') return 3000
       return data.clock?.status === 'RUNNING' ? 2000 : false
     },
+  })
+}
+
+export function useFeed(id: number, severity: Severity | undefined) {
+  return useInfiniteQuery({
+    queryKey: [id, 'feed', severity ?? 'all'],
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams()
+      if (severity) query.set('severity', severity)
+      if (pageParam) query.set('before', String(pageParam))
+      const rest = query.toString()
+      return apiGet<FeedPage>(`${game(id)}/feed/${rest ? `?${rest}` : ''}`)
+    },
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.more ? last.notices[last.notices.length - 1]?.id : undefined),
   })
 }
 

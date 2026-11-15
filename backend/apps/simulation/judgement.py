@@ -26,6 +26,7 @@ from apps.world.generation.rng import stream
 from apps.world.models import Lender, LenderCustomer, ProviderFileRow
 from apps.world.provider_files.truth import load_truth
 
+from .feed import due_tick
 from .models import Delivery, Game
 
 Borrower = tuple[str, int]  # ("person" | "business", world id)
@@ -118,6 +119,7 @@ def sync_work_items(game: Game, tick: int) -> int:
                 item_type=case.case_type,
                 difficulty=round(difficulty, 3),
                 created_tick=tick,
+                due_tick=due_tick(tick),
                 correct_decision=correct,
                 correct_basis=basis[:300],
             )

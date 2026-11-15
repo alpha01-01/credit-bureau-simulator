@@ -3,10 +3,13 @@ import { NavLink, Outlet } from 'react-router'
 import { useGame } from '../api/game'
 import { ClockBar } from '../components/ClockBar'
 import { Failed, Loading } from '../components/ui'
+import { hasUnseen } from '../lib/seen'
 import { useGameId } from './useGameId'
+import { useLiveClock } from './useLiveClock'
 
 const NAV = [
   ['', 'Briefing'],
+  ['events', 'Events'],
   ['dashboard', 'Dashboard'],
   ['submissions', 'Submissions'],
   ['queue', 'Work queue'],
@@ -18,6 +21,7 @@ const NAV = [
 export function GameLayout() {
   const gameId = useGameId()
   const game = useGame(gameId)
+  useLiveClock(gameId, game.data?.clock ?? null)
 
   if (game.isPending) return <Loading what="the game" />
   if (game.isError) return <Failed error={game.error} />
@@ -58,6 +62,11 @@ export function GameLayout() {
               }
             >
               {label}
+              {path === 'events' && hasUnseen(gameId, data.clock?.latest_notice ?? null) && (
+                <span className="ml-1 text-amber-500" aria-label="new events">
+                  •
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

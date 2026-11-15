@@ -39,6 +39,7 @@ from apps.workitems.models import WorkItem
 from .models import (
     EnquiryJudgement,
     Game,
+    Notice,
     PlayerAction,
     ScheduledEvent,
     SubscriberView,
@@ -64,7 +65,7 @@ def fingerprint(game: Game) -> str:
         h,
         "game",
         [(game.clock_start, game.current_tick, game.status, game.speed,
-          game.organization.rejection_policy)],
+          game.organization.rejection_policy, game.pause_severities, game.pause_on_deadlines)],
     )  # fmt: skip
     _section(
         h,
@@ -80,6 +81,14 @@ def fingerprint(game: Game) -> str:
         .order_by("sequence")
         .values_list("sequence", "event_type", "due_tick", "payload", "status", "processed_tick"),
     )
+    _section(
+        h,
+        "notices",
+        Notice.objects.filter(game=game)
+        .order_by("tick", "pk")
+        .values_list("tick", "sim_time", "kind", "severity", "title", "detail", "drill",
+                     "is_deadline", "paused"),
+    )  # fmt: skip
     _section(
         h,
         "actions",
@@ -262,7 +271,7 @@ def fingerprint(game: Game) -> str:
         WorkItem.objects.filter(organization_id=org)
         .order_by("item_number")
         .values_list(
-            "item_number", "item_type", "difficulty", "created_tick", "status",
+            "item_number", "item_type", "difficulty", "created_tick", "due_tick", "status",
             "assignee__employee_number", "started_tick", "minutes_remaining", "correct_decision",
             "resolved_tick", "resolved_by", "decision", "is_correct", "confidence", "explanation",
         ),
@@ -305,7 +314,7 @@ def fingerprint(game: Game) -> str:
         .order_by("subscriber_code")
         .values_list(
             "subscriber_code", "perceived_value", "opportunities", "enquiries", "hits",
-            "wrong_person",
+            "wrong_person", "at_risk",
         ),
     )  # fmt: skip
     _section(

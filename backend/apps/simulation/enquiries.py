@@ -24,6 +24,7 @@ from apps.world.models import Lender, Loan, LoanApplication
 
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar
 from .demand import REFERENCE_PRICE, p_enquire, update_perception
+from .feed import AT_RISK, RECOVERED, Feed
 from .judgement import customer_borrower
 from .models import EnquiryJudgement, EventType, Game, ScheduledEvent, SubscriberView
 
@@ -89,7 +90,11 @@ def schedule_applications(game: Game, cal: Calendar, tick: int, period: date, se
 
 
 def handle_application(
-    game: Game, payload: dict[str, object], at: datetime, memo: dict[object, Any] | None = None
+    game: Game,
+    payload: dict[str, object],
+    at: datetime,
+    memo: dict[object, Any] | None = None,
+    feed: Feed | None = None,
 ) -> Enquiry | None:
     """One loan application: the lender may check the bureau, and judges what it gets back.
 
@@ -160,6 +165,15 @@ def handle_application(
     view.hits += int(hit)
     view.wrong_person += int(outcome == "WRONG_PERSON")
     view.perceived_value = round(update_perception(view.perceived_value, outcome), 6)
+    if feed is not None:
+        if outcome == "WRONG_PERSON":
+            feed.wrong_person(subscriber.subscriber_name, enquiry.enquiry_reference)
+        if not view.at_risk and view.perceived_value < AT_RISK:
+            view.at_risk = True
+            feed.subscriber_mood(subscriber.subscriber_name, at_risk=True)
+        elif view.at_risk and view.perceived_value > RECOVERED:
+            view.at_risk = False
+            feed.subscriber_mood(subscriber.subscriber_name, at_risk=False)
     view.save()
     return enquiry
 
