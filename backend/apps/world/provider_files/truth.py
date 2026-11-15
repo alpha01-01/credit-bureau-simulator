@@ -176,13 +176,20 @@ def previous_month_end(period: date) -> date:
 
 
 def load_truth(
-    world_id: int, lender_id: int, lender_code: str, period: date, kind: FileKind
+    world_id: int,
+    lender_id: int,
+    lender_code: str,
+    period: date,
+    kind: FileKind,
+    loan_ids: list[int] | None = None,
 ) -> list[TruthRecord]:
-    params: dict[str, int | date] = {
+    """The provider's true records for a month; or only those of ``loan_ids``."""
+    params: dict[str, Any] = {
         "world": world_id,
         "lender": lender_id,
         "period": period,
         "previous": previous_month_end(period),
+        "loans": loan_ids,
     }
     world = World.objects.get(pk=world_id)
     if kind in EVENT_KINDS:
@@ -191,6 +198,9 @@ def load_truth(
     else:
         sql = _INDIVIDUAL_SQL if kind is FileKind.INDIVIDUAL else _COMMERCIAL_SQL
         build = _record
+    if loan_ids is not None:
+        alias = "e" if kind in EVENT_KINDS else "m"
+        sql = sql.replace(" ORDER BY", f" AND {alias}.loan_id = ANY(%(loans)s) ORDER BY", 1)
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
         rows = cursor.fetchall()

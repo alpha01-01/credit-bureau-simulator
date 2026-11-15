@@ -172,19 +172,21 @@ def _triage_answer(
     record = case.record
     submission = record.run.submission
     code = submission.institution.institution_code
-    key = (code, submission.reporting_period, record.file.file_kind)
-    if key not in cache:
-        lender = Lender.objects.get(world=game.world, code=code)
-        cache[key] = {
-            r.loan_id: r.values
-            for r in load_truth(
-                game.world.pk, lender.pk, code, submission.reporting_period, FileKind(key[2])
-            )
-        }
     delivery = Delivery.objects.get(game=game, bureau_file_id=record.file_id)
     loan_id = ProviderFileRow.objects.get(
         file_id=delivery.world_file_id, row_number=record.source_row_number
     ).loan_id
+    key = (code, submission.reporting_period, record.file.file_kind)
+    if key not in cache:
+        cache[key] = {}
+    if loan_id not in cache[key]:
+        # Only this record's truth: rebuilding the provider's whole month is far slower.
+        lender = Lender.objects.get(world=game.world, code=code)
+        for r in load_truth(
+            game.world.pk, lender.pk, code, submission.reporting_period, FileKind(key[2]),
+            loan_ids=[loan_id],
+        ):  # fmt: skip
+            cache[key][r.loan_id] = r.values
     truth = cache[key][loan_id]
     wrong = {f: (v, truth.get(f)) for f, v in case.proposal.items() if truth.get(f) != v}
     if not wrong:

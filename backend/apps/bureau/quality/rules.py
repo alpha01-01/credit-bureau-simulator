@@ -26,6 +26,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from functools import lru_cache
 
 from apps.standards.rulebook import DATA_STANDARDS, DataStandard
 from apps.standards.submission_template import (
@@ -115,6 +116,9 @@ class Issue:
         return RULES[self.rule_code]
 
 
+# Pure functions of one value: providers repeat the same dates, amounts and numbers
+# across thousands of rows, so their results are remembered (P2.1).
+@lru_cache(maxsize=1 << 16)
 def parse_date(value: str) -> date | None:
     if not DATE.fullmatch(value):
         return None
@@ -127,6 +131,7 @@ def parse_date(value: str) -> date | None:
 # --- Cleansing ------------------------------------------------------------------------
 
 
+@lru_cache(maxsize=1 << 16)
 def normalise_phone(value: str) -> str:
     """C001: bring a Ghanaian mobile number to the 10-digit 0XXXXXXXXX form, if possible."""
     digits = _PHONE_NOISE.sub("", value)
@@ -139,6 +144,7 @@ def normalise_phone(value: str) -> str:
     return digits if MOBILE.fullmatch(digits) else value
 
 
+@lru_cache(maxsize=1 << 16)
 def normalise_date(value: str) -> str:
     """C002: dates whose meaning is certain become YYYYMMDD.
 
@@ -159,6 +165,7 @@ def normalise_date(value: str) -> str:
     return candidate if parse_date(candidate) is not None else value
 
 
+@lru_cache(maxsize=1 << 16)
 def normalise_amount(value: str) -> str:
     """C003: separators, currency and decimals removed; rounded to whole units."""
     cleaned = _AMOUNT_NOISE.sub("", value.strip()).replace(",", "")
