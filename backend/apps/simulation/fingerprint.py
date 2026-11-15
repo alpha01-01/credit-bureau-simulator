@@ -37,6 +37,8 @@ from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 
 from .models import (
+    Consequence,
+    DataQualityReview,
     EnquiryJudgement,
     Game,
     Notice,
@@ -89,6 +91,22 @@ def fingerprint(game: Game) -> str:
         .values_list("tick", "sim_time", "kind", "severity", "title", "detail", "drill",
                      "is_deadline", "paused"),
     )  # fmt: skip
+    _section(
+        h,
+        "consequences",
+        Consequence.objects.filter(game=game)
+        .order_by("tick", "pk")
+        .values_list("tick", "effect", "enquiry__enquiry_reference", "subscriber_code",
+                     "accounts", "cause", "work_item__item_number", "provider",
+                     "provider_customer", "detail"),
+    )  # fmt: skip
+    _section(
+        h,
+        "reviews",
+        DataQualityReview.objects.filter(game=game)
+        .order_by("period")
+        .values_list("period", "tick", "figures", "refs"),
+    )
     _section(
         h,
         "actions",

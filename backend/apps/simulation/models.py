@@ -126,6 +126,60 @@ class Notice(models.Model):
         return f"{self.game_id}@{self.tick} {self.severity} {self.title}"
 
 
+class Consequence(models.Model):
+    """One link in a consequence chain (P2.3; Document 07, Section 8.5).
+
+    A report delivered to a subscriber held another person's accounts (a false
+    merge) or missed some of the applicant's own (a false split). ``cause`` says
+    how the wrong link was made: a reviewer's decision (``work_item``) or the
+    automatic matching rules. The debrief replays these for the player.
+    """
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="consequences")
+    tick = models.BigIntegerField()
+    sim_time = models.DateTimeField()
+    effect = models.CharField(max_length=30, help_text="MIXED_REPORT or INCOMPLETE_REPORT")
+    enquiry = models.ForeignKey("bureau_core.Enquiry", on_delete=models.CASCADE, related_name="+")
+    subscriber_code = models.CharField(max_length=30)
+    accounts = models.IntegerField(help_text="Accounts shown wrongly, or missing")
+    cause = models.CharField(max_length=20, help_text="DECISION or AUTOMATIC")
+    work_item = models.ForeignKey(
+        "workitems.WorkItem", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    provider = models.CharField(max_length=30, help_text="Institution code of the wrong link")
+    provider_customer = models.CharField(max_length=50, help_text="Its customer number")
+    detail = models.CharField(max_length=300)
+
+    class Meta:
+        indexes = [models.Index(fields=["game", "tick"])]
+
+    def __str__(self) -> str:
+        return f"{self.game_id}@{self.tick} {self.effect} <- {self.cause}"
+
+
+class DataQualityReview(models.Model):
+    """The monthly Data Quality Review: the hidden truth, revealed (P2.3; Section 11.2).
+
+    Built at the end of each month and kept as it was then. ``figures`` holds the
+    numbers; ``refs`` the natural keys of the records behind each figure, for the
+    drill-down (natural keys, so a review survives copying a game).
+    """
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="reviews")
+    period = models.DateField(help_text="Last day of the month reviewed")
+    tick = models.BigIntegerField()
+    figures = models.JSONField(default=dict)
+    refs = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "period"], name="review_unique_period")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} review {self.period:%Y-%m}"
+
+
 class CheckpointKind(models.TextChoices):
     MONTH_END = "MONTH_END", "Month-end"
     ON_DEMAND = "ON_DEMAND", "On demand"

@@ -11,6 +11,7 @@ import { FinanceLayout, InvoicesPage, LedgerPage, StatementsPage } from '../page
 import { GamesPage } from '../pages/GamesPage'
 import { LoginPage } from '../pages/LoginPage'
 import { QueuePage, WorkItemPage } from '../pages/QueuePage'
+import { ReviewPage, ReviewsPage } from '../pages/ReviewPage'
 import { SubmissionPage, SubmissionsPage } from '../pages/SubmissionsPage'
 import { GameLayout } from './GameLayout'
 
@@ -68,6 +69,8 @@ const routes = [
             children: [
               { index: true, element: <BriefingPage /> },
               { path: 'events', element: <EventsPage /> },
+              { path: 'reviews', element: <ReviewsPage /> },
+              { path: 'reviews/:period', element: <ReviewPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },
               { path: 'submissions/:reference', element: <SubmissionPage /> },

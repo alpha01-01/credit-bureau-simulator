@@ -44,6 +44,97 @@ export type Notice = {
 
 export type FeedPage = { notices: Notice[]; more: boolean }
 
+/** A share estimated from a sample, with its 95% margin of error. */
+export type Estimate = { share: number | null; margin: number | null; sample: number }
+
+/** What the bureau can see of its data assets (P2.3). */
+export type DataAssets = {
+  source: 'month_end' | 'now'
+  as_of: string
+  coverage: { period: string; active_borrowers: number; covered: number; share: number | null }
+  accounts: number
+  depth_months: number | null
+  freshness_days: number | null
+  open_accounts: number
+  audit: { accuracy: Estimate; one_person: Estimate }
+}
+
+type Tally = { total: number; right: number }
+
+export type ReviewSummary = {
+  period: string
+  match: Tally & { false_merges: number; false_splits: number; other_wrong: number }
+  rejected: { total: number; genuine: number }
+  consequences: number
+}
+
+export type Chain = {
+  at: string
+  effect: 'MIXED_REPORT' | 'INCOMPLETE_REPORT'
+  enquiry: string
+  subscriber: string
+  accounts: number
+  cause: 'DECISION' | 'AUTOMATIC'
+  work_item: number | null
+  provider: string
+  provider_customer: string
+  detail: string
+}
+
+/** The monthly Data Quality Review: the truth revealed. */
+export type Review = {
+  period: string
+  drill: string[]
+  figures: {
+    period: string
+    match: Tally & {
+      false_merges: number
+      false_splits: number
+      other_wrong: number
+      by: Record<string, Tally>
+    }
+    triage: Tally & {
+      genuine_returned: number
+      wrongly_loaded: number
+      other_wrong: number
+      by: Record<string, Tally>
+    }
+    rejected: {
+      total: number
+      genuine: number
+      rules: { rule: string; description: string; records: number; genuine: number }[]
+    }
+    assets: {
+      visible: Omit<DataAssets, 'source'>
+      truth: {
+        accuracy: { accounts: number; right: number; share: number | null }
+        identity: {
+          customers: number
+          false_merges: number
+          merge_rate: number | null
+          people: number
+          false_splits: number
+          split_rate: number | null
+        }
+      }
+    }
+    consequences: {
+      mixed_reports: number
+      incomplete_reports: number
+      from_decisions: number
+      automatic: number
+      chains: Chain[]
+    }
+  }
+}
+
+export type DrillRow = Record<string, unknown>
+export type ReviewDrill = {
+  key: string
+  kind: 'work_items' | 'records' | 'consequences'
+  rows: DrillRow[]
+}
+
 export type GameSummary = {
   id: number
   bureau: string
@@ -337,6 +428,38 @@ export function useFeed(id: number, severity: Severity | undefined) {
     },
     initialPageParam: 0,
     getNextPageParam: (last) => (last.more ? last.notices[last.notices.length - 1]?.id : undefined),
+  })
+}
+
+export function useDataAssets(id: number) {
+  return useQuery({
+    queryKey: [id, 'data-assets'],
+    queryFn: () => apiGet<DataAssets>(`${game(id)}/data-assets/`),
+  })
+}
+
+export function useReviews(id: number) {
+  return useQuery({
+    queryKey: [id, 'reviews'],
+    queryFn: () => apiGet<ReviewSummary[]>(`${game(id)}/reviews/`),
+  })
+}
+
+export function useReview(id: number, period: string) {
+  return useQuery({
+    queryKey: [id, 'review', period],
+    queryFn: () => apiGet<Review>(`${game(id)}/reviews/${period}/`),
+  })
+}
+
+export function useReviewDrill(id: number, period: string, key: string | null) {
+  return useQuery({
+    queryKey: [id, 'review', period, 'drill', key],
+    queryFn: () =>
+      apiGet<ReviewDrill>(
+        `${game(id)}/reviews/${period}/drill/?key=${encodeURIComponent(key ?? '')}`,
+      ),
+    enabled: key !== null,
   })
 }
 

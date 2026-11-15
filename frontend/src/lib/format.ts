@@ -60,3 +60,8 @@ export function formatClock(clock: { date: string; time: string }): string {
   })
   return `${date} · ${clock.time}`
 }
+
+export function months(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—'
+  return `${value} ${value === 1 ? 'month' : 'months'}`
+}

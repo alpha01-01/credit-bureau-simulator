@@ -14,8 +14,10 @@ Players may only see and drive their own games.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -25,15 +27,16 @@ from rest_framework.response import Response
 from apps.bureau.core.models import AccountObservation, Enquiry
 from apps.bureau.quality.models import ALLOWED_DECISIONS
 from apps.bureau.quality.rules import POLICIES
+from apps.bureau.submissions.models import StagingRecord
 from apps.bureau.submissions.review import ReviewError
 from apps.finance import statements
 from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 from apps.workitems.work import WorkError
 
-from . import controls
+from . import assets, controls
 from .engine import ClockError
-from .models import Game
+from .models import DataQualityReview, Game
 
 
 def _game(request: Request, game_id: int) -> Game:
@@ -362,3 +365,140 @@ def finance(request: Request, game_id: int) -> Response:
             "cash": statements.cash_position(org, today),
         }
     )
+
+
+# --- Data assets and the Data Quality Review (P2.3) --------------------------------------
+#
+#   GET /api/v1/games/<id>/data-assets/                 what the player sees and estimates
+#   GET /api/v1/games/<id>/reviews/                     the monthly reviews, newest first
+#   GET /api/v1/games/<id>/reviews/<YYYY-MM>/           one review: the truth revealed
+#   GET /api/v1/games/<id>/reviews/<YYYY-MM>/drill/?key=match.false_merge
+#                                                       the records behind one figure
+
+
+@api_view(["GET"])
+def data_assets(request: Request, game_id: int) -> Response:
+    """The latest month-end figures; before the first month ends, worked out now."""
+    game = _game(request, game_id)
+    latest = game.reviews.order_by("-period").first()
+    if latest is not None:
+        return Response({"source": "month_end", **latest.figures["assets"]["visible"]})
+    today = controls.state(game).now.date()
+    return Response({"source": "now", **assets.visible_assets(game, today)})
+
+
+@api_view(["GET"])
+def reviews(request: Request, game_id: int) -> Response:
+    game = _game(request, game_id)
+    return Response(
+        [
+            {
+                "period": f"{r.period:%Y-%m}",
+                "match": r.figures["match"],
+                "rejected": {k: r.figures["rejected"][k] for k in ("total", "genuine")},
+                "consequences": r.figures["consequences"]["mixed_reports"]
+                + r.figures["consequences"]["incomplete_reports"],
+            }
+            for r in game.reviews.order_by("-period")
+        ]
+    )
+
+
+def _review(game: Game, period: str) -> DataQualityReview:
+    try:
+        month = datetime.strptime(period, "%Y-%m").date()
+    except ValueError as exc:
+        raise Http404("No such month") from exc
+    return get_object_or_404(
+        DataQualityReview, game=game, period__year=month.year, period__month=month.month
+    )
+
+
+@api_view(["GET"])
+def review(request: Request, game_id: int, period: str) -> Response:
+    game = _game(request, game_id)
+    found = _review(game, period)
+    return Response(
+        {
+            "period": f"{found.period:%Y-%m}",
+            "figures": found.figures,
+            "drill": sorted(k for k, v in found.refs.items() if v),
+        }
+    )
+
+
+@api_view(["GET"])
+def review_drill(request: Request, game_id: int, period: str) -> Response:
+    """The records behind one figure of a review."""
+    game = _game(request, game_id)
+    found = _review(game, period)
+    key = request.query_params.get("key", "")
+    if key not in found.refs:
+        return _error(ValueError(f"No figure {key!r} in this review"))
+    refs = found.refs[key]
+    if key.startswith(("match.", "triage.")):
+        return Response({"key": key, "kind": "work_items", "rows": _item_rows(game, refs)})
+    if key.startswith("rejected."):
+        return Response({"key": key, "kind": "records", "rows": _record_rows(game, refs)})
+    chains = found.figures["consequences"]["chains"]
+    return Response({"key": key, "kind": "consequences", "rows": chains})
+
+
+def _item_rows(game: Game, numbers: list[int]) -> list[dict[str, Any]]:
+    items = (
+        WorkItem.objects.filter(organization=game.organization, item_number__in=numbers)
+        .select_related("case__record__run__submission", "assignee")
+        .order_by("item_number")
+    )
+    return [
+        {
+            "item": i.item_number,
+            "type": i.item_type,
+            "decision": i.decision,
+            "correct_decision": i.correct_decision,
+            "correct": i.is_correct,
+            "resolved_by": i.resolved_by,
+            "employee": f"{i.assignee.first_name} {i.assignee.last_name}" if i.assignee else None,
+            "why_right": i.correct_basis,
+            "submission": i.case.record.run.submission.submission_reference,
+            "row": i.case.record.source_row_number,
+        }
+        for i in items
+    ]
+
+
+def _record_rows(game: Game, refs: list[list[Any]]) -> list[dict[str, Any]]:
+    wanted = {(r[0], r[1], int(r[2])) for r in refs}
+    records = StagingRecord.objects.filter(
+        run__submission__organization=game.organization,
+        run__submission__submission_reference__in={r[0] for r in wanted},
+        source_row_number__in={r[2] for r in wanted},
+    ).select_related("run__submission", "file")
+    rows = []
+    for record in records:
+        key = (record.run.submission.submission_reference, record.file.file_name,
+               record.source_row_number)  # fmt: skip
+        if key not in wanted:
+            continue
+        issues = record.issues.filter(severity="ERROR").order_by("rule_code")
+        values = record.cleansed
+        rows.append(
+            {
+                "submission": key[0],
+                "file": key[1],
+                "row": key[2],
+                "name": " ".join(
+                    v
+                    for v in (
+                        values.get("FirstName"),
+                        values.get("Surname"),
+                        values.get("BusinessName"),
+                    )
+                    if v
+                ),
+                "errors": [
+                    {"rule": i.rule_code, "field": i.field, "value": i.value} for i in issues
+                ],
+            }
+        )
+    return sorted(rows, key=lambda r: (r["submission"], r["file"], r["row"]))
