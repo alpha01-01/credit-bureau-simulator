@@ -62,7 +62,9 @@ def preload_history(
             "institution_code"
         ):
             lender = Lender.objects.get(world=game.world, code=institution.institution_code)
-            world_sub = ProviderSubmission.objects.filter(lender=lender, period=period).first()
+            world_sub = ProviderSubmission.objects.filter(
+                lender=lender, period=period, variant=""
+            ).first()
             if world_sub is None:
                 world_sub = generate_submission(game.world, lender, period).submission
             if not world_sub.files.exists():

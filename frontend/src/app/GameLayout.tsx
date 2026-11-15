@@ -12,6 +12,7 @@ const NAV = [
   ['events', 'Events'],
   ['dashboard', 'Dashboard'],
   ['submissions', 'Submissions'],
+  ['providers', 'Providers'],
   ['queue', 'Work queue'],
   ['rules', 'Rules'],
   ['customers', 'Customers'],

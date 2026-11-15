@@ -123,13 +123,13 @@ def layout_for(
     return Layout.standard(kind, standard)
 
 
-def submission_dir(world_id: int, lender_code: str, period: date) -> Path:
+def submission_dir(world_id: int, lender_code: str, period: date, variant: str = "") -> Path:
     return (
         Path(settings.STORAGE_ROOT)
         / "provider_files"
         / f"world_{world_id}"
         / lender_code
-        / f"{period:%Y%m}"
+        / (f"{period:%Y%m}-{variant}" if variant else f"{period:%Y%m}")
     )
 
 
@@ -151,6 +151,7 @@ def generate_submission(
     profile: DataQualityProfile | None = None,
     replace: bool = False,
     drift_from: date | None = None,
+    variant: str = "",
 ) -> SubmissionResult:
     """Produce, store and record one provider's submission for one month.
 
@@ -168,7 +169,7 @@ def generate_submission(
             lender.code, lender.lender_type, float(lender.profile.get("sophistication", 0.5))
         )
 
-    existing = ProviderSubmission.objects.filter(lender=lender, period=period)
+    existing = ProviderSubmission.objects.filter(lender=lender, period=period, variant=variant)
     if existing.exists():
         if not replace:
             raise FileExistsError(f"{lender.code} {period:%Y-%m} has already been generated")
@@ -186,7 +187,7 @@ def generate_submission(
         rng = stream(world.seed, f"provider-rows:{lender.code}:{kind.value}", month_index(period))
         rendered[kind] = render(kind, period, records, profile, rng, layout)
 
-    directory = submission_dir(world.pk, lender.code, period)
+    directory = submission_dir(world.pk, lender.code, period, variant)
     shutil.rmtree(directory, ignore_errors=True)
     directory.mkdir(parents=True, exist_ok=True)
 
@@ -198,6 +199,7 @@ def generate_submission(
             due_date=plan.due_date,
             arrival_date=plan.arrival_date,
             profile=profile.snapshot(),
+            variant=variant,
             template_version=DATA_STANDARDS.at(period).version,
         )
         defects: list[tuple[int | None, Defect]] = []

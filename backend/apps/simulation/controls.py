@@ -25,6 +25,7 @@ from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
+from . import providers
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
@@ -259,6 +260,35 @@ def send_feedback(game: Game, reference: str) -> FeedbackReport:
     return send_report(submission, at)
 
 
+def _provider(game: Game, code: str) -> str:
+    if not game.organization.institutions.filter(institution_code=code).exists():
+        raise ClockError(f"No provider {code}")
+    return code
+
+
+def train_provider(game: Game, code: str) -> Game:
+    """Pay for a data-quality training session for a provider's staff (P2.6)."""
+    _provider(game, code)
+    cal = calendar(game)
+    at = cal.tick_end(game.current_tick) if game.current_tick else cal.tick_start(1)
+    with transaction.atomic():
+        try:
+            providers.train(game, code, at.date(), at)
+        except providers.RelationshipError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "TRAIN_PROVIDER", {"provider": code})
+    return game
+
+
+def penalise_provider(game: Game, code: str) -> Game:
+    """Impose an SLA penalty on a provider for late or poor data (P2.6)."""
+    _provider(game, code)
+    with transaction.atomic():
+        providers.penalise(game, code)
+        record(game, "PENALISE_PROVIDER", {"provider": code})
+    return game
+
+
 TOOLING_LEVELS = {
     "BASIC": "Identifiers only",
     "STANDARD": "Fuzzy matching on name and date of birth",
@@ -394,6 +424,10 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             )
         case "SEND_FEEDBACK":
             send_feedback(target, str(action.payload["submission"]))
+        case "TRAIN_PROVIDER":
+            target = train_provider(target, str(action.payload["provider"]))
+        case "PENALISE_PROVIDER":
+            target = penalise_provider(target, str(action.payload["provider"]))
         case "SET_PAUSE_RULES":
             target = set_pause_rules(
                 target, list(action.payload["severities"]), bool(action.payload["deadlines"])

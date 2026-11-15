@@ -20,19 +20,29 @@ from typing import Any
 from django.db import transaction
 from django.db.models import Max
 
-from apps.bureau.submissions.models import Submission, SubmissionStatus
+from apps.bureau.core.models import (
+    AccountObservation,
+    CreditAccount,
+    Customer,
+    CustomerContact,
+    CustomerIdentifier,
+    ProviderCustomerLink,
+)
+from apps.bureau.quality.models import TransformationLog, ValidationIssue
+from apps.bureau.submissions.models import StagingRecord, Submission, SubmissionStatus
 from apps.bureau.submissions.pipeline import process_submission
 from apps.finance.events import run_payroll
 from apps.standards.calendar import next_working_day
+from apps.workitems.models import WorkItem
 from apps.workitems.work import has_work, work_tick
 from apps.world.generation.advance import extend_world
 from apps.world.generation.applications import ensure_applications
+from apps.world.generation.persist import analyze
 from apps.world.generation.rng import stream
 from apps.world.models import Lender, ProviderSubmission
-from apps.world.provider_files import generate_submission
 from apps.world.provider_files import month_end as period_end
 
-from . import bookkeeping
+from . import bookkeeping, providers
 from .bridge import deliver
 from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
@@ -50,6 +60,12 @@ from .models import (
     TickLog,
 )
 from .review import build_review
+
+# The bureau tables a month of files fills, and the month-end summaries read.
+MONTH_END_TABLES = (
+    AccountObservation, CreditAccount, Customer, CustomerContact, CustomerIdentifier,
+    ProviderCustomerLink, StagingRecord, TransformationLog, ValidationIssue, WorkItem,
+)  # fmt: skip
 
 
 class ClockError(Exception):
@@ -196,6 +212,10 @@ def run_tick(game_id: int, tick: int) -> bool:
         sync_work_items(game, tick)
 
         if cal.is_last_tick_of_month(tick):
+            # A month's files have been loaded since the planner last looked: refresh its
+            # statistics (a sample; it sees this transaction's rows) before the month-end
+            # summaries, which otherwise can take minutes over a plan for empty tables.
+            analyze(*MONTH_END_TABLES)
             today = cal.tick_start(tick).date()
             period = period_end(today.year, today.month)
             build_review(game, cal, period, tick)
@@ -261,13 +281,13 @@ def _schedule_month(game: Game, cal: Calendar, tick: int, feed: Feed) -> None:
     ):
         code = institution.institution_code
         lender = Lender.objects.get(world=world, code=code)
-        world_sub = ProviderSubmission.objects.filter(lender=lender, period=period).first()
-        if world_sub is None:
-            world_sub = generate_submission(world, lender, period).submission
+        # The provider answers for last month: better files, or slower ones (P2.6).
+        relation = providers.month_update(game, code, period, cal.tick_start(tick))
+        world_sub = providers.submission_for(game, lender, period, relation.quality)
         if not world_sub.files.exists():
             continue
         slot = int(stream(world.seed, f"arrival-slot:{code}:{period:%Y%m}").integers(TICKS_PER_DAY))
-        arrival_day = next_working_day(world_sub.arrival_date)
+        arrival_day = next_working_day(providers.arrival(world_sub, relation.goodwill))
         arrival = datetime.combine(arrival_day, DAY_START, tzinfo=UTC) + timedelta(
             minutes=TICK_MINUTES * slot
         )
@@ -276,7 +296,12 @@ def _schedule_month(game: Game, cal: Calendar, tick: int, feed: Feed) -> None:
             event_type=EventType.PROVIDER_FILES_ARRIVE,
             due_tick=max(cal.tick_at(arrival), tick),
             sequence=sequence,
-            payload={"lender": code, "period": period.isoformat(), "arrival": arrival.isoformat()},
+            payload={
+                "lender": code,
+                "period": period.isoformat(),
+                "arrival": arrival.isoformat(),
+                "variant": world_sub.variant,
+            },
         )
         sequence += 1
 
@@ -295,6 +320,7 @@ def _handle(
             lender__world=game.world,
             lender__code=event.payload["lender"],
             period=event.payload["period"],
+            variant=event.payload.get("variant", ""),
         )
         submission = deliver(game, world_sub, datetime.fromisoformat(event.payload["arrival"]))
         feed.files_arrived(submission)

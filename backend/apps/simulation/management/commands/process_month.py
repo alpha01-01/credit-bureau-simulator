@@ -54,7 +54,9 @@ class Command(BaseCommand):
 
         for code in options["lender"] or REPORTING_PROVIDERS:
             lender = Lender.objects.get(world=world, code=code)
-            world_sub = ProviderSubmission.objects.filter(lender=lender, period=period).first()
+            world_sub = ProviderSubmission.objects.filter(
+                lender=lender, period=period, variant=""
+            ).first()
             if world_sub is None:
                 world_sub = generate_submission(world, lender, period).submission
             if Delivery.objects.filter(game=game, world_submission=world_sub).exists():

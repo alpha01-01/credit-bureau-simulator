@@ -55,6 +55,7 @@ from .models import (
     Game,
     Notice,
     PlayerAction,
+    ProviderRelationship,
     ScheduledEvent,
     SubscriberView,
     TickLog,
@@ -127,6 +128,14 @@ def fingerprint(game: Game) -> str:
         .order_by("tick", "pk")
         .values_list("tick", "sim_time", "kind", "severity", "title", "detail", "drill",
                      "is_deadline", "paused"),
+    )  # fmt: skip
+    _section(
+        h,
+        "providers",
+        ProviderRelationship.objects.filter(game=game)
+        .order_by("provider_code")
+        .values_list("provider_code", "quality", "progress", "goodwill", "trainings",
+                     "penalties", "updated_at", "history"),
     )  # fmt: skip
     _section(
         h,

@@ -180,6 +180,39 @@ class DataQualityReview(models.Model):
         return f"{self.game_id} review {self.period:%Y-%m}"
 
 
+class ProviderRelationship(models.Model):
+    """How one provider is getting on with this game's bureau (P2.6; Document 07, Section 6.5).
+
+    Hidden from the bureau, like a subscriber's view of it: the bureau sees the files
+    and how the provider behaves. ``quality`` is how many steps the provider's data
+    has improved (0: as usual); ``progress`` builds towards the next step from
+    feedback, training and penalties; ``goodwill`` is its willingness to cooperate.
+    ``trainings`` and ``penalties`` are those given since the last monthly update.
+    """
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="provider_relations")
+    provider_code = models.CharField(max_length=30)
+    quality = models.PositiveSmallIntegerField(default=0)
+    progress = models.FloatField(default=0.0)
+    goodwill = models.FloatField(default=0.7)
+    trainings = models.PositiveSmallIntegerField(default=0)
+    penalties = models.PositiveSmallIntegerField(default=0)
+    updated_at = models.DateTimeField(
+        null=True, blank=True, help_text="Last monthly update, game time"
+    )
+    history = models.JSONField(default=list, help_text="Monthly: period, quality, goodwill, why")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["game", "provider_code"], name="relation_unique_provider"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} {self.provider_code}: q{self.quality} g{self.goodwill:.2f}"
+
+
 class CheckpointKind(models.TextChoices):
     MONTH_END = "MONTH_END", "Month-end"
     ON_DEMAND = "ON_DEMAND", "On demand"
