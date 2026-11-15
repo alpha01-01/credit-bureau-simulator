@@ -24,9 +24,15 @@ from typing import Any
 
 from django.db import connection, models
 
-from apps.bureau.quality.models import CaseType, Decision, ValidationIssue
+from apps.bureau.quality.models import (
+    CaseType,
+    CleansingRule,
+    Decision,
+    TransformationLog,
+    ValidationIssue,
+)
 from apps.bureau.quality.models import Severity as IssueSeverity
-from apps.bureau.quality.rules import RULES
+from apps.bureau.quality.rules import RELAXED, RULES
 from apps.bureau.submissions.models import (
     ProcessingRun,
     RecordStatus,
@@ -41,7 +47,7 @@ from . import assets
 from .clock import Calendar
 from .models import Consequence, DataQualityReview, Delivery, Game
 
-REVIEW_FORMAT = "2"  # 2: matching (P2.4)
+REVIEW_FORMAT = "3"  # 2: matching (P2.4); 3: own rules (P2.5)
 DESCRIPTIONS = {"DUPLICATE": "Discarded as a repeat of another row in the same submission"}
 
 
@@ -77,6 +83,7 @@ def build_review(game: Game, cal: Calendar, period: date, tick: int) -> DataQual
             datetime.combine(period + timedelta(days=1), time(0), tzinfo=UTC),
         ),
     }
+    figures["rules"] = _own_rules(game, period, refs)
     figures["consequences"] = _consequences(game, first, tick, refs)
     review, _ = DataQualityReview.objects.update_or_create(
         game=game, period=period, defaults={"tick": tick, "figures": figures, "refs": refs}
@@ -208,6 +215,91 @@ def _rejected(game: Game, period: date, refs: dict[str, list[Any]]) -> dict[str,
         "total": sum(r["records"] for r in listed),
         "genuine": sum(r["genuine"] for r in listed),
         "rules": listed,
+    }
+
+
+# --- The bureau's own rules (P2.5) ------------------------------------------------------
+
+# Each change a bureau-written rule made, beside the true value: the defect ledger
+# holds the true value of every cell the provider got wrong; any other cell was right
+# as sent, so a rule that changed it made it wrong.
+_RULE_CHANGES = f"""
+SELECT t.rule_code, s.submission_reference, f.file_name, sr.source_row_number, t.field,
+       t.value_after = COALESCE(d.true_value, t.value_before) AS right
+FROM {_t(TransformationLog)} t
+JOIN {_t(StagingRecord)} sr ON sr.id = t.record_id
+JOIN {_t(ProcessingRun)} r ON r.id = sr.run_id
+JOIN {_t(Submission)} s ON s.id = r.submission_id
+JOIN {_t(SubmissionFile)} f ON f.id = sr.file_id
+JOIN {_t(Delivery)} dl ON dl.game_id = %(game)s AND dl.bureau_file_id = f.id
+LEFT JOIN {_t(FileDefect)} d ON d.file_id = dl.world_file_id
+     AND d.row_number = sr.source_row_number AND d.field = t.field
+WHERE s.organization_id = %(org)s AND t.rule_code LIKE 'U%%'
+  AND r.completed_at >= %(start)s AND r.completed_at < %(end)s
+ORDER BY t.rule_code, s.submission_reference, f.file_name, sr.source_row_number
+"""
+
+# Records loaded although a relaxed rule found a problem; wrong when the provider's
+# value really was wrong.
+_RELAXED_LOADS = f"""
+SELECT vi.rule_code, s.submission_reference, f.file_name, sr.source_row_number, vi.field,
+       NOT EXISTS (SELECT 1 FROM {_t(FileDefect)} d
+                    WHERE d.file_id = dl.world_file_id AND d.row_number = sr.source_row_number
+                      AND d.field = vi.field) AS right
+FROM {_t(ValidationIssue)} vi
+JOIN {_t(StagingRecord)} sr ON sr.id = vi.record_id
+JOIN {_t(ProcessingRun)} r ON r.id = sr.run_id
+JOIN {_t(Submission)} s ON s.id = r.submission_id
+JOIN {_t(SubmissionFile)} f ON f.id = sr.file_id
+JOIN {_t(Delivery)} dl ON dl.game_id = %(game)s AND dl.bureau_file_id = f.id
+WHERE s.organization_id = %(org)s AND vi.message LIKE %(relaxed)s
+  AND sr.record_status = %(accepted)s
+  AND r.completed_at >= %(start)s AND r.completed_at < %(end)s
+ORDER BY vi.rule_code, s.submission_reference, f.file_name, sr.source_row_number
+"""
+
+
+def _own_rules(game: Game, period: date, refs: dict[str, list[Any]]) -> dict[str, Any]:
+    """What the bureau's own cleansing rules and relaxed checks did this month."""
+    params: dict[str, Any] = {
+        "game": game.pk,
+        "org": game.organization_id,
+        "accepted": RecordStatus.ACCEPTED,
+        "relaxed": RELAXED + "%",
+        "start": datetime.combine(period.replace(day=1), time(0), tzinfo=UTC),
+        "end": datetime.combine(period + timedelta(days=1), time(0), tzinfo=UTC),
+    }
+    cleansing: dict[str, dict[str, Any]] = {}
+    relaxed: dict[str, dict[str, Any]] = {}
+    with connection.cursor() as cursor:
+        for sql, out, prefix in (
+            (_RULE_CHANGES, cleansing, "rule"),
+            (_RELAXED_LOADS, relaxed, "relaxed"),
+        ):
+            cursor.execute(sql, params)
+            for code, reference, file_name, row, field, right in cursor.fetchall():
+                tally = out.setdefault(code, {"code": code, "changes": 0, "right": 0, "fields": []})
+                tally["changes"] += 1
+                tally["right"] += int(right)
+                if field not in tally["fields"]:
+                    tally["fields"].append(field)
+                key = f"{prefix}.{code}.{'right' if right else 'wrong'}"
+                refs.setdefault(key, []).append([reference, file_name, row])
+    for rule in CleansingRule.objects.filter(organization=game.organization).order_by("code"):
+        entry = cleansing.setdefault(
+            rule.code, {"code": rule.code, "changes": 0, "right": 0, "fields": [rule.field]}
+        )
+        entry["description"] = (
+            f"{rule.field}: '{rule.find}' becomes '{rule.replace}'"
+            if rule.action == "REPLACE"
+            else f"{rule.field}: remove '{rule.find}'"
+        ) + (f" ({rule.institution.institution_code} only)" if rule.institution else "")
+        entry["active"] = rule.is_active
+    for code, tally in relaxed.items():
+        tally["description"] = RULES.get(code, code)
+    return {
+        "cleansing": [cleansing[k] for k in sorted(cleansing)],
+        "relaxed": [relaxed[k] for k in sorted(relaxed)],
     }
 
 

@@ -50,6 +50,52 @@ class TransformationLog(models.Model):
         return f"{self.rule_code} {self.field}: {self.value_before} -> {self.value_after}"
 
 
+class RuleAction(models.TextChoices):
+    REPLACE = "REPLACE", "Replace a whole value (letter case ignored)"
+    REMOVE = "REMOVE", "Remove these characters wherever they appear"
+
+
+class CleansingRule(models.Model):
+    """A cleansing rule the bureau wrote itself (P2.5): applied after the built-in ones.
+
+    ``code`` (U01, U02, ...) is how its changes appear in the transformation log.
+    A rule may apply to every provider or to one (``institution``).
+    """
+
+    organization = models.ForeignKey(
+        "org.Organization", on_delete=models.CASCADE, related_name="cleansing_rules"
+    )
+    code = models.CharField(max_length=10)
+    field = models.CharField(max_length=40)
+    action = models.CharField(max_length=10, choices=RuleAction.choices)
+    find = models.CharField(max_length=100)
+    replace = models.CharField(max_length=100, blank=True)
+    institution = models.ForeignKey(
+        "bureau_providers.Institution",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(help_text="Game time")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["organization", "code"], name="cleansing_rule_code")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} {self.field}"
+
+    def apply(self, value: str) -> str:
+        if self.action == RuleAction.REPLACE:
+            return self.replace if value.upper() == self.find.upper() else value
+        for character in self.find:
+            value = value.replace(character, "")
+        return value
+
+
 class CaseType(models.TextChoices):
     MATCH_REVIEW = "MATCH_REVIEW", "Uncertain customer match"
     UNLOADABLE_TRIAGE = "UNLOADABLE_TRIAGE", "Unloadable record with a possible correction"

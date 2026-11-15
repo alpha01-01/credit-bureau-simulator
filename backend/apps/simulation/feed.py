@@ -124,12 +124,20 @@ class Feed:
         name = submission.institution.institution_name
         rejected = submission.files.filter(file_status=FileStatus.REJECTED).count()
         if rejected:
+            unmapped = submission.files.filter(
+                file_status=FileStatus.REJECTED, rejection_reason="T001"
+            ).count()
             self.add(
                 "FILE_REJECTED",
                 Severity.WARNING,
-                f"File rejected: {name}",
+                f"File rejected: {name}" + (" (columns need mapping)" if unmapped else ""),
                 f"{submission.submission_reference}: {rejected} file(s) failed the file checks "
-                "and were not loaded.",
+                "and were not loaded."
+                + (
+                    " The provider changed its layout: map the columns to load it."
+                    if unmapped
+                    else ""
+                ),
                 _submission(submission),
             )
         received = run.records_received

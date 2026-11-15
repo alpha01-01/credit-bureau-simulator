@@ -12,6 +12,7 @@ import { GamesPage } from '../pages/GamesPage'
 import { LoginPage } from '../pages/LoginPage'
 import { QueuePage, WorkItemPage } from '../pages/QueuePage'
 import { ReviewPage, ReviewsPage } from '../pages/ReviewPage'
+import { RulesPage } from '../pages/RulesPage'
 import { SubmissionPage, SubmissionsPage } from '../pages/SubmissionsPage'
 import { GameLayout } from './GameLayout'
 
@@ -70,6 +71,7 @@ const routes = [
               { index: true, element: <BriefingPage /> },
               { path: 'events', element: <EventsPage /> },
               { path: 'reviews', element: <ReviewsPage /> },
+              { path: 'rules', element: <RulesPage /> },
               { path: 'reviews/:period', element: <ReviewPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },

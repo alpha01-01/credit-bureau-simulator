@@ -97,6 +97,26 @@ RULES: dict[str, str] = {
     "Q001": "Returned to the provider by a reviewer",
 }
 
+# Validation rules a bureau may relax (P2.5) to a warning: the record loads as sent and
+# the problem is kept, marked as relaxed, so what relaxing let through can be measured.
+# Blank mandatory fields, unreadable dates and amounts, identifiers and the standard's
+# own conditions always stand. ASSUMPTION A-051.
+RELAXABLE = ("F003", "F006", "F007", "F009", "F011", "F012", "F015")
+RELAX_TO = ("WARNING",)
+RELAXED = "Relaxed by the bureau: "
+
+
+def relax(issues: list[Issue], overrides: dict[str, str]) -> list[Issue]:
+    """The issues as the bureau's own rule settings judge them."""
+    out = []
+    for issue in issues:
+        setting = overrides.get(issue.rule_code) if issue.rule_code in RELAXABLE else None
+        if setting == "WARNING" and issue.severity == "ERROR":
+            issue = Issue(issue.rule_code, issue.field, issue.value, "WARNING", relaxed=True)
+        out.append(issue)
+    return out
+
+
 WHOLE = re.compile(r"\d+")
 DATE = re.compile(r"\d{8}")
 MOBILE = re.compile(r"0\d{9}")
@@ -110,10 +130,12 @@ class Issue:
     field: str = ""
     value: str = ""
     severity: str = "ERROR"
+    relaxed: bool = False  # an error the bureau chose to load anyway (P2.5)
 
     @property
     def message(self) -> str:
-        return RULES[self.rule_code]
+        text = RULES.get(self.rule_code, "A rule written by the bureau")
+        return RELAXED + text if self.relaxed else text
 
 
 # Pure functions of one value: providers repeat the same dates, amounts and numbers

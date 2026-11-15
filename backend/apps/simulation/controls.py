@@ -15,7 +15,13 @@ from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
 
-from apps.bureau.quality.rules import POLICIES
+from apps.bureau.quality.models import CleansingRule, RuleAction
+from apps.bureau.quality.rules import POLICIES, RELAX_TO, RELAXABLE
+from apps.bureau.submissions.feedback import send_report
+from apps.bureau.submissions.mapping import MappingError, save_mapping
+from apps.bureau.submissions.models import FeedbackReport, FileStatus, Submission, SubmissionFile
+from apps.bureau.submissions.pipeline import process_submission
+from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
@@ -147,6 +153,112 @@ def set_rejection_policy(game: Game, policy: str) -> Game:
     return game
 
 
+def map_template(game: Game, reference: str, file_name: str, columns: list[str]) -> Game:
+    """Map a rejected file's columns to the template, keep the mapping, and load the file."""
+    stored = (
+        SubmissionFile.objects.select_related("submission")
+        .filter(
+            submission__organization=game.organization,
+            submission__submission_reference=reference,
+            file_name=file_name,
+        )
+        .first()
+    )
+    if stored is None:
+        raise ClockError(f"No file {file_name} in {reference}")
+    if stored.file_status != FileStatus.REJECTED or stored.rejection_reason != "T001":
+        raise ClockError("Only a file rejected for its columns (T001) can be mapped")
+    cal = calendar(game)
+    at = cal.tick_end(game.current_tick) if game.current_tick else cal.tick_start(1)
+    with transaction.atomic():
+        try:
+            save_mapping(stored, columns, "Player", at)
+        except MappingError as exc:
+            raise ClockError(str(exc)) from exc
+        record(
+            game, "MAP_TEMPLATE", {"submission": reference, "file": file_name, "columns": columns}
+        )
+        process_submission(stored.submission, at=at, files=[stored])
+        sync_work_items(game, game.current_tick)
+    return game
+
+
+def add_cleansing_rule(
+    game: Game, field: str, action: str, find: str, replace: str = "", provider: str = ""
+) -> CleansingRule:
+    """A cleansing rule of the bureau's own, applied to files processed from now on."""
+    known = {
+        f.name for edition in DATA_STANDARDS.editions for fields in edition.fields.values()
+        for f in fields
+    }  # fmt: skip
+    if field not in known:
+        raise ClockError(f"{field!r} is not a template field")
+    if action not in RuleAction.values:
+        raise ClockError(f"Action must be one of {', '.join(RuleAction.values)}")
+    if not find or len(find) > 100 or len(replace) > 100:
+        raise ClockError("Say what to find (up to 100 characters)")
+    institution = None
+    if provider:
+        institution = game.organization.institutions.filter(institution_code=provider).first()
+        if institution is None:
+            raise ClockError(f"No provider {provider}")
+    record(game, "ADD_CLEANSING_RULE", {"field": field, "action": action, "find": find,
+                                        "replace": replace, "provider": provider})  # fmt: skip
+    cal = calendar(game)
+    count = CleansingRule.objects.filter(organization=game.organization).count()
+    return CleansingRule.objects.create(
+        organization=game.organization,
+        code=f"U{count + 1:02d}",
+        field=field,
+        action=action,
+        find=find,
+        replace=replace,
+        institution=institution,
+        created_at=cal.tick_end(game.current_tick) if game.current_tick else cal.tick_start(1),
+    )
+
+
+def set_cleansing_rule_active(game: Game, code: str, active: bool) -> CleansingRule:
+    rule = CleansingRule.objects.filter(organization=game.organization, code=code).first()
+    if rule is None:
+        raise ClockError(f"No rule {code}")
+    record(game, "SET_CLEANSING_RULE_ACTIVE", {"code": code, "active": bool(active)})
+    rule.is_active = bool(active)
+    rule.save(update_fields=["is_active"])
+    return rule
+
+
+def set_rule_override(game: Game, code: str, setting: str) -> Game:
+    """Relax a validation rule to a warning (load as sent), or restore it (ERROR)."""
+    if code not in RELAXABLE:
+        raise ClockError(f"{code} cannot be relaxed; these can: {', '.join(RELAXABLE)}")
+    if setting not in (*RELAX_TO, "ERROR"):
+        raise ClockError("Setting must be ERROR or WARNING")
+    record(game, "SET_RULE_OVERRIDE", {"code": code, "setting": setting})
+    organization = game.organization
+    overrides = dict(organization.rule_overrides)
+    if setting == "ERROR":
+        overrides.pop(code, None)
+    else:
+        overrides[code] = setting
+    organization.rule_overrides = overrides
+    organization.save(update_fields=["rule_overrides"])
+    return game
+
+
+def send_feedback(game: Game, reference: str) -> FeedbackReport:
+    """Send a provider the feedback report on one of its submissions."""
+    submission = Submission.objects.filter(
+        organization=game.organization, submission_reference=reference
+    ).first()
+    if submission is None:
+        raise ClockError(f"No submission {reference}")
+    record(game, "SEND_FEEDBACK", {"submission": reference})
+    cal = calendar(game)
+    at = cal.tick_end(game.current_tick) if game.current_tick else cal.tick_start(1)
+    return send_report(submission, at)
+
+
 TOOLING_LEVELS = {
     "BASIC": "Identifiers only",
     "STANDARD": "Fuzzy matching on name and date of birth",
@@ -259,6 +371,29 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             )
         case "SET_MATCHING_TOOLING":
             target = set_matching_tooling(target, str(action.payload["level"]))
+        case "MAP_TEMPLATE":
+            target = map_template(
+                target,
+                str(action.payload["submission"]),
+                str(action.payload["file"]),
+                [str(c) for c in action.payload["columns"]],
+            )
+        case "ADD_CLEANSING_RULE":
+            p = action.payload
+            add_cleansing_rule(
+                target, str(p["field"]), str(p["action"]), str(p["find"]), str(p["replace"]),
+                str(p["provider"]),
+            )  # fmt: skip
+        case "SET_CLEANSING_RULE_ACTIVE":
+            set_cleansing_rule_active(
+                target, str(action.payload["code"]), bool(action.payload["active"])
+            )
+        case "SET_RULE_OVERRIDE":
+            target = set_rule_override(
+                target, str(action.payload["code"]), str(action.payload["setting"])
+            )
+        case "SEND_FEEDBACK":
+            send_feedback(target, str(action.payload["submission"]))
         case "SET_PAUSE_RULES":
             target = set_pause_rules(
                 target, list(action.payload["severities"]), bool(action.payload["deadlines"])

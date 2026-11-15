@@ -188,12 +188,17 @@ def render(
 
     rows: list[_Row] = []
     omitted: list[Defect] = []
+    # Codes written as words come from a stream of their own, so every other draw (and
+    # so every other row) stays as it was before they were added.
+    words = rng.spawn(1)[0] if profile.code_words > 0 and records else None
     for record in records:
         if rng.random() < profile.omit_account:
             omitted.append(Defect("OMITTED_ACCOUNT", loan_id=record.loan_id))
             continue
         row = _Row(record.loan_id, dict(record.values))
         _apply_row_defects(row, record, kind, period, profile, rng, identifiers, blank_weights)
+        if words is not None:
+            _code_word(row, profile, words)
         rows.append(row)
 
     rows = _insert_duplicates(rows, kind, profile, rng)
@@ -313,6 +318,21 @@ def _apply_row_defects(
             value = row.values[name]
             if value.startswith("0") and value.isdigit():
                 change(name, value[1:], "PHONE_FORMAT")
+
+
+# A code as a lender's own system writes it.
+CODE_WORDS = {"Gender": {"M": ("Male", "MALE", "male"), "F": ("Female", "FEMALE", "female")}}
+
+
+def _code_word(row: _Row, profile: DataQualityProfile, rng: np.random.Generator) -> None:
+    if rng.random() >= profile.code_words:
+        return
+    for name, words in CODE_WORDS.items():
+        value = row.values.get(name, "")
+        if value in words and not any(d.field == name for d in row.defects):
+            word = words[value][int(rng.integers(len(words[value])))]
+            row.values[name] = word
+            row.defects.append(Defect("CODE_WORD", name, value, word))
 
 
 def _insert_duplicates(

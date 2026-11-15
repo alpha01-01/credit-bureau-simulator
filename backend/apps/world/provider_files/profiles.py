@@ -52,6 +52,9 @@ class DataQualityProfile:
     duplicate_row: float = 0.0
     # Share of repeated rows resent with the name retyped: near-duplicates (P2.4, A-049).
     near_duplicate: float = 0.5
+    # Share of rows with a code written as a word in the lender's own system, e.g. Gender
+    # "Male" for M (P2.5, A-052). A bureau can fix these with a cleansing rule of its own.
+    code_words: float = 0.0
     omit_account: float = 0.0
     # Excel drops the leading zero of phone numbers typed as numbers.
     phones_as_numbers: bool = False  # the extract went through Excel: leading zeros lost
@@ -81,6 +84,7 @@ AVERAGE = DataQualityProfile(
     name_swap=0.004, wrong_identifier=0.002, stale_values=0.008, inconsistent_status=0.004,
     date_format=0.005, future_date=0.001, duplicate_row=0.004, omit_account=0.004,
     template_drift=0.03, late_rate=0.15, late_days_max=10, arrival_days=(6, 10),
+    code_words=0.02,
 )  # fmt: skip
 
 POOR = DataQualityProfile(
@@ -88,7 +92,7 @@ POOR = DataQualityProfile(
     name_typo=0.025, name_swap=0.01, wrong_identifier=0.005, stale_values=0.02,
     inconsistent_status=0.01, date_format=0.015, future_date=0.003, duplicate_row=0.01,
     omit_account=0.01, phones_as_numbers=True, template_drift=0.06, late_rate=0.35,
-    late_days_max=20, arrival_days=(8, 10),
+    late_days_max=20, arrival_days=(8, 10), code_words=0.08,
 )  # fmt: skip
 
 # Digital lenders: system-generated files (clean structure) but thin KYC.
