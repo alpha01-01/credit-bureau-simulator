@@ -18,6 +18,7 @@ const NAV = [
   ['disputes', 'Disputes'],
   ['customers', 'Customers'],
   ['enquiries', 'Enquiries'],
+  ['subscribers', 'Subscribers'],
   ['finance', 'Finance'],
   ['reviews', 'Reviews'],
 ] as const

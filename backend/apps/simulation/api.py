@@ -30,15 +30,17 @@ from apps.bureau.quality.rules import POLICIES, RELAXABLE, RULES
 from apps.bureau.submissions.feedback import as_csv, build_report
 from apps.bureau.submissions.models import StagingRecord, Submission
 from apps.bureau.submissions.review import ReviewError
+from apps.commercial.models import Subscriber
 from apps.finance import statements
 from apps.finance.events import MATCHING_TOOLING_COST
 from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 from apps.workitems.work import WorkError
 
-from . import assets, compliance, controls, providers
+from . import assets, compliance, controls, lending, providers
 from .engine import ClockError
 from .models import DataQualityReview, Game
+from .reputation import reputation
 
 
 def _game(request: Request, game_id: int) -> Game:
@@ -166,6 +168,34 @@ def feedback(request: Request, game_id: int, reference: str) -> HttpResponse:
         return response
     sent = submission.feedback_reports.order_by("-sent_at", "-pk").values_list("sent_at", flat=True)
     return Response({**report, "sent": list(sent)})
+
+
+@api_view(["GET"])
+def market(request: Request, game_id: int) -> Response:
+    """Reputation with each audience, and the subscribers' contracts (P2.8)."""
+    game = _game(request, game_id)
+    now = controls.state(game).now
+    since = now - timedelta(days=91)
+    rows = []
+    for s in Subscriber.objects.filter(organization=game.organization).order_by("subscriber_code"):
+        contracts = list(s.contracts.order_by("start_date"))
+        current = next((c for c in reversed(contracts) if c.end_date is None), None)
+        recent = Enquiry.objects.filter(subscriber=s, enquired_at__gte=since)
+        rows.append(
+            {
+                "code": s.subscriber_code,
+                "name": s.subscriber_name,
+                "active": s.is_active,
+                "since": s.since,
+                "price": str(current.unit_price) if current else None,
+                "renews_on": lending.renewal_date(current, game.clock_start) if current else None,
+                "left_on": contracts[-1].end_date if contracts and not s.is_active else None,
+                "renewals": max(len(contracts) - 1, 0),
+                "enquiries_3m": recent.count(),
+                "hits_3m": recent.filter(outcome="HIT").count(),
+            }
+        )
+    return Response({"reputation": reputation(game, now), "subscribers": rows})
 
 
 @api_view(["GET"])

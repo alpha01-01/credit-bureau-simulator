@@ -103,6 +103,7 @@ export function ReviewPage() {
       <Assets r={r} />
       <Matching r={r} />
       <OwnRules r={r} fig={fig} />
+      <Lending r={r} />
       <Chains r={r} gameId={gameId} fig={fig} />
       {shown && <DrillPanel gameId={gameId} period={period} k={shown} />}
     </Page>
@@ -329,6 +330,47 @@ function Assets({ r }: { r: Review }) {
             <Td>{asset}</Td>
             <Td>{seen}</Td>
             <Td>{truth}</Td>
+          </tr>
+        ))}
+      </Table>
+    </Card>
+  )
+}
+
+/** What lenders did with the reports, and how their lending turned out (P2.8). */
+function Lending({ r }: { r: Review }) {
+  const books = r.figures.lending
+  if (!books || books.length === 0) return null
+  return (
+    <Card title="What lenders did with your reports">
+      <p className="mb-2 text-sm text-slate-600">
+        Lenders decline applicants whose report shows arrears. Since the game began: the loans each
+        made, how many fell 30 or more days behind, and how many defaulted (90 days or written off);
+        and the applicants your reports stopped. Their usual rate is every loan they made in the
+        world.
+      </p>
+      <Table
+        head={[
+          'Lender',
+          'Loans made',
+          'Fell behind',
+          'Their usual rate',
+          'Defaulted',
+          'Declined',
+          'Of whom fell behind',
+        ]}
+      >
+        {books.map((b) => (
+          <tr key={b.subscriber}>
+            <Td>{b.subscriber}</Td>
+            <Td right>{count(b.lent)}</Td>
+            <Td right>
+              {count(b.fell_behind)} ({percent(b.behind_rate)})
+            </Td>
+            <Td right>{percent(b.usual_rate)}</Td>
+            <Td right>{count(b.defaulted)}</Td>
+            <Td right>{count(b.declined)}</Td>
+            <Td right>{count(b.declined_fell_behind)}</Td>
           </tr>
         ))}
       </Table>
