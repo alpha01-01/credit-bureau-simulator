@@ -42,6 +42,7 @@ from apps.workitems.models import WorkItem
 from apps.world.generation.persist import delete_world
 
 from .models import (
+    Checkpoint,
     Delivery,
     EnquiryJudgement,
     Game,
@@ -117,6 +118,7 @@ _ORDER: tuple[tuple[type[Model], str], ...] = (
     (ScheduledEvent, "game_id = %(game)s"),
     (TickLog, "game_id = %(game)s"),
     (PlayerAction, "game_id = %(game)s"),
+    (Checkpoint, "game_id = %(game)s"),
     (HistoryTemplate, "game_id = %(game)s"),
     (Game, "id = %(game)s"),
     (Employee, "organization_id = %(org)s"),
@@ -135,27 +137,35 @@ def delete_game(game: Game) -> None:
 
 
 @contextmanager
-def game_scope(cursor: Any, params: dict[str, Any]) -> Iterator[None]:
-    """Gather the game's run and record ids for the ``_ORDER`` conditions to use."""
-    cursor.execute("DROP TABLE IF EXISTS scope_runs, scope_records")
+def game_scope(
+    cursor: Any, params: dict[str, Any], *, records_view: bool = False
+) -> Iterator[None]:
+    """Gather the game's run and record ids for the ``_ORDER`` conditions to use.
+
+    Deleting and copying go through every staging record, so their ids are stored.
+    A reader that only counts (``records_view``) gets a view instead, which costs
+    nothing to set up. Both are created in the caller's transaction, so an error
+    that rolls it back removes them too.
+    """
     cursor.execute(
         "CREATE TEMP TABLE scope_runs AS SELECT id FROM "
         + _table(ProcessingRun)
         + f" WHERE submission_id IN ({_SUBMISSIONS})",
         params,
     )
-    cursor.execute(
-        "CREATE TEMP TABLE scope_records AS SELECT id FROM "
-        + _table(StagingRecord)
-        + " WHERE run_id IN (SELECT id FROM scope_runs)"
-    )
     cursor.execute("ANALYZE scope_runs")
-    cursor.execute("ANALYZE scope_records")
+    records = f"SELECT id FROM {_table(StagingRecord)} WHERE run_id IN (SELECT id FROM scope_runs)"
+    if records_view:
+        cursor.execute("CREATE TEMP VIEW scope_records AS " + records)
+    else:
+        cursor.execute("CREATE TEMP TABLE scope_records AS " + records)
+        cursor.execute("ANALYZE scope_records")
     try:
         yield
     finally:
         # Dropped now, not at commit: a caller's transaction may handle several games.
-        cursor.execute("DROP TABLE IF EXISTS scope_runs, scope_records")
+        cursor.execute(f"DROP {'VIEW' if records_view else 'TABLE'} scope_records")
+        cursor.execute("DROP TABLE scope_runs")
 
 
 def delete_world_with_games(world_id: int) -> None:

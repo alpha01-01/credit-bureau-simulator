@@ -34,10 +34,11 @@ from apps.world.provider_files import month_end as period_end
 
 from . import bookkeeping
 from .bridge import deliver
+from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
 from .enquiries import handle_application, schedule_applications
 from .judgement import rng_for, sync_work_items
-from .models import EventStatus, EventType, Game, ScheduledEvent, TickLog
+from .models import CheckpointKind, EventStatus, EventType, Game, ScheduledEvent, TickLog
 
 
 class ClockError(Exception):
@@ -171,6 +172,8 @@ def run_tick(game_id: int, tick: int) -> bool:
         )
         game.current_tick = tick
         game.save(update_fields=["current_tick"])
+        if cal.is_last_tick_of_month(tick):
+            take_checkpoint(game, CheckpointKind.MONTH_END, cal.tick_end(tick))
         return True
 
 

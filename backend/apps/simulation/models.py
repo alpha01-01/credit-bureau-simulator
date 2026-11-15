@@ -80,6 +80,39 @@ class HistoryTemplate(models.Model):
         return f"World {self.world_id}, {self.months} months"
 
 
+class CheckpointKind(models.TextChoices):
+    MONTH_END = "MONTH_END", "Month-end"
+    ON_DEMAND = "ON_DEMAND", "On demand"
+
+
+class Checkpoint(models.Model):
+    """A named point in a game, with a summary of the bureau's state there (P2.1).
+
+    Document 07, Section 12.3: taken at each month-end and on demand. The game is
+    deterministic, so the checkpoint does not store the state itself: replaying the
+    first ``action_count`` actions on a fresh game up to ``tick`` reproduces it, and
+    ``summary`` (row counts and money totals, cheap to take) shows that it did. For
+    testing and bug reports, not player-facing time travel.
+    """
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="checkpoints")
+    tick = models.BigIntegerField(help_text="The last tick completed")
+    sim_time = models.DateTimeField(help_text="End of that tick, game time")
+    kind = models.CharField(max_length=10, choices=CheckpointKind.choices)
+    label = models.CharField(max_length=100, blank=True)
+    action_count = models.IntegerField(help_text="Actions in the log when it was taken")
+    code_version = models.CharField(max_length=60)
+    summary = models.JSONField(default=dict)
+    digest = models.CharField(max_length=64, help_text="SHA-256 of the summary")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["game", "tick"])]
+
+    def __str__(self) -> str:
+        return f"{self.game_id}@{self.tick} {self.kind} {self.label}".rstrip()
+
+
 class TickLog(models.Model):
     """One row per completed tick: what makes ticks idempotent."""
 
