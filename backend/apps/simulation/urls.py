@@ -23,6 +23,9 @@ urlpatterns = [
     path("games/<int:game_id>/clock/resume/", api.clock_resume, name="clock-resume"),
     path("games/<int:game_id>/clock/speed/", api.clock_speed, name="clock-speed"),
     path("games/<int:game_id>/clock/advance/", api.clock_advance, name="clock-advance"),
+    path("games/<int:game_id>/clock/step/", api.clock_step, name="clock-step"),
+    path("games/<int:game_id>/clock/pause-rules/", api.clock_pause_rules, name="pause-rules"),
+    path("games/<int:game_id>/feed/", api.feed, name="feed"),
     path("games/<int:game_id>/work-items/", api.work_items, name="work-items"),
     path("games/<int:game_id>/work-items/<int:number>/", api.work_item, name="work-item"),
     path(

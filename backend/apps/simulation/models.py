@@ -23,6 +23,16 @@ class GameStatus(models.TextChoices):
 SPEEDS = (1, 2, 4, 8)
 
 
+class Severity(models.TextChoices):
+    INFO = "INFO", "Information"
+    WARNING = "WARNING", "Warning"
+    CRITICAL = "CRITICAL", "Critical"
+
+
+def default_pause_severities() -> list[str]:
+    return [Severity.CRITICAL.value]
+
+
 class Game(models.Model):
     """A bureau playing in a world, and its clock (Document 07, Section 5).
 
@@ -48,6 +58,16 @@ class Game(models.Model):
         max_length=10, default="READY", help_text="PREPARING while history is pre-loaded"
     )
     setup_message = models.CharField(max_length=200, blank=True)
+    # Auto-pause rules (Document 07, Section 5.2), set by the player.
+    pause_severities = models.JSONField(
+        default=default_pause_severities, help_text="Notice severities that pause the clock"
+    )
+    pause_on_deadlines = models.BooleanField(
+        default=True, help_text="Pause when work is due today and no one has taken it"
+    )
+    last_step_at = models.DateTimeField(
+        null=True, blank=True, help_text="Wall-clock time of the last real-time tick"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
@@ -78,6 +98,32 @@ class HistoryTemplate(models.Model):
 
     def __str__(self) -> str:
         return f"World {self.world_id}, {self.months} months"
+
+
+class Notice(models.Model):
+    """One entry in the game's event feed: what just happened (P2.2).
+
+    Notices are written by the simulation while ticks run, so a replay writes
+    the same ones. ``paused`` marks a notice that stopped the clock under the
+    player's auto-pause rules.
+    """
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="notices")
+    tick = models.BigIntegerField()
+    sim_time = models.DateTimeField(help_text="Game time")
+    kind = models.CharField(max_length=40)
+    severity = models.CharField(max_length=10, choices=Severity.choices)
+    title = models.CharField(max_length=200)
+    detail = models.CharField(max_length=500, blank=True)
+    drill = models.JSONField(default=dict, help_text="Where the Why? link leads")
+    is_deadline = models.BooleanField(default=False)
+    paused = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [models.Index(fields=["game", "tick"])]
+
+    def __str__(self) -> str:
+        return f"{self.game_id}@{self.tick} {self.severity} {self.title}"
 
 
 class CheckpointKind(models.TextChoices):
@@ -210,6 +256,9 @@ class SubscriberView(models.Model):
     enquiries = models.IntegerField(default=0)
     hits = models.IntegerField(default=0)
     wrong_person = models.IntegerField(default=0)
+    at_risk = models.BooleanField(
+        default=False, help_text="Has complained and is reconsidering; cleared when it recovers"
+    )
 
     class Meta:
         constraints = [

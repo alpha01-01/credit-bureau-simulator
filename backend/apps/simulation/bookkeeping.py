@@ -29,6 +29,7 @@ from apps.standards.rulebook import TAX_RULES
 from apps.world.generation.rng import stream
 
 from .clock import Calendar, previous_month_end
+from .feed import Feed
 from .models import EventType, Game, ScheduledEvent
 
 PAYMENT_TIME = time(10, 0)
@@ -46,7 +47,7 @@ def last_working_day(day: date) -> date:
     return candidate
 
 
-def month_start(game: Game, cal: Calendar, tick: int, sequence: int) -> int:
+def month_start(game: Game, cal: Calendar, tick: int, sequence: int, feed: Feed) -> int:
     """Post the month's opening costs and bill last month. Returns the next event sequence."""
     at = cal.tick_start(tick)
     today = at.date()
@@ -58,6 +59,7 @@ def month_start(game: Game, cal: Calendar, tick: int, sequence: int) -> int:
     # revenue (and the VAT on it) belongs to that month, as accrual accounting requires.
     previous_end = previous_month_end(today)
     invoices = invoice_usage(org, previous_end.replace(day=1), previous_end, previous_end, at)
+    feed.invoices_issued(invoices, previous_end)
     events = []
     for invoice in invoices:
         paid_on = _payment_date(game, invoice)
@@ -102,17 +104,24 @@ def _payment_date(game: Game, invoice: Invoice) -> date:
     return next_working_day(invoice.issue_date + timedelta(days=days))
 
 
-def handle(game: Game, event: ScheduledEvent, at: datetime) -> None:
+def handle(game: Game, event: ScheduledEvent, at: datetime, feed: Feed) -> None:
     org = game.organization
     if event.event_type == EventType.SUBSCRIBER_PAYMENT:
-        invoice = Invoice.objects.get(organization=org, invoice_number=event.payload["invoice"])
+        invoice = Invoice.objects.select_related("subscriber").get(
+            organization=org, invoice_number=event.payload["invoice"]
+        )
         amount = outstanding(invoice)
         if amount > 0:
             receive_payment(invoice, amount, date.fromisoformat(event.payload["paid_on"]), at)
+            feed.payment_received(invoice, amount)
     elif event.event_type == EventType.PAYROLL_TAX_REMITTANCE:
         remit_payroll_taxes(org, date.fromisoformat(event.payload["on"]), at)
+        feed.money_out(
+            "TAXES_PAID", "PAYE and SSNIT paid over", "Last month's payroll taxes, on time."
+        )
     elif event.event_type == EventType.VAT_RETURN:
         file_vat(org, date.fromisoformat(event.payload["on"]), at)
+        feed.money_out("TAXES_PAID", "VAT return filed and paid", "VAT and levies for the month.")
 
 
 FINANCE_EVENTS = {

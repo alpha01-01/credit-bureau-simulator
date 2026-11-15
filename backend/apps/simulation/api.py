@@ -5,6 +5,9 @@
     POST /api/v1/games/<id>/clock/resume/
     POST /api/v1/games/<id>/clock/speed/      {"speed": 1|2|4|8}
     POST /api/v1/games/<id>/clock/advance/    {"unit": "hour"|"day"|"next_event", "count": 1}
+    POST /api/v1/games/<id>/clock/step/       one real-time tick, if one is due (P2.2)
+    POST /api/v1/games/<id>/clock/pause-rules/  {"severities": [...], "deadlines": true}
+    GET  /api/v1/games/<id>/feed/             notices, newest first (?severity=, ?before=)
 
 Players may only see and drive their own games.
 """
@@ -80,6 +83,50 @@ def clock_advance(request: Request, game_id: int) -> Response:
         return _ok(controls.advance_by(game, unit, count))
     except (ClockError, ValueError, TypeError) as exc:
         return _error(exc)
+
+
+@api_view(["POST"])
+def clock_step(request: Request, game_id: int) -> Response:
+    return _ok(controls.step(_game(request, game_id)))
+
+
+@api_view(["POST"])
+def clock_pause_rules(request: Request, game_id: int) -> Response:
+    game = _game(request, game_id)
+    severities = request.data.get("severities", [])
+    if not isinstance(severities, list):
+        return _error(ValueError("severities must be a list"))
+    try:
+        return _ok(
+            controls.set_pause_rules(
+                game, [str(s) for s in severities], bool(request.data.get("deadlines", True))
+            )
+        )
+    except ClockError as exc:
+        return _error(exc)
+
+
+FEED_PAGE = 100
+
+
+@api_view(["GET"])
+def feed(request: Request, game_id: int) -> Response:
+    """The event feed, newest first, a page at a time."""
+    game = _game(request, game_id)
+    notices = game.notices.order_by("-pk")
+    if severity := request.query_params.get("severity"):
+        notices = notices.filter(severity=severity)
+    if before := request.query_params.get("before"):
+        if not before.isdigit():
+            return _error(ValueError("before must be a notice id"))
+        notices = notices.filter(pk__lt=int(before))
+    page = list(notices[: FEED_PAGE + 1])
+    return Response(
+        {
+            "notices": [controls.notice_dict(n) for n in page[:FEED_PAGE]],
+            "more": len(page) > FEED_PAGE,
+        }
+    )
 
 
 @api_view(["GET", "POST"])
