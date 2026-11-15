@@ -32,6 +32,8 @@ from django.db import connection
 
 from apps.standards.rulebook import DATA_STANDARDS
 from apps.standards.submission_template import (
+    CHEQUE_KINDS,
+    CONSUMER_KINDS,
     EVENT_KINDS,
     FileKind,
     asset_classification,
@@ -211,6 +213,34 @@ def _project(record: TruthRecord, columns: tuple[str, ...]) -> TruthRecord:
     return TruthRecord(record.loan_id, values, previous)
 
 
+def _business(row: tuple[Any, ...], seed: int) -> dict[str, str]:
+    """The business identity block: registration, sector, name, turnover, address, contact.
+
+    ``row`` is the business columns followed by its owner's (whose phone is the office's).
+    """
+    (b_seq, name, trading, reg_no, tin, registered, sector, size, b_town, revenue) = row[:10]
+    owner_phone = row[17]
+    details = business_details(seed, b_seq, size, sector, b_town)
+    return {
+        "BusRegNum": reg_no,
+        "TINum": tin,
+        "SectorIndCode": details["SectorIndCode"],
+        "SubSecIndCode": details["SubSecIndCode"],
+        "BusType": details["BusType"],
+        "RegistrationDate": format_date(registered),
+        "CommencementDate": format_date(registered),
+        "BusinessName": name,
+        "TradingName": trading,
+        "TurnoverCurrency": "GHS",
+        "TurnoverAmount": whole(revenue * 12),
+        "CurLocAdd1": details["CurLocAdd1"],
+        "CurLocAdd2": details["CurLocAdd2"],
+        "PostAddrLine1": details["PostAddrLine1"],
+        "EmailAddress": "",
+        "OfficeTel1": owner_phone,
+    }
+
+
 def _person(row: tuple[Any, ...], seed: int, period: date) -> dict[str, str]:
     """The consumer identity block: identifiers, person, address, employment, holders."""
     (seq, last, first, middle, born, gender, card, phone, phone2, town, employment,
@@ -253,9 +283,15 @@ _EVENT_JOINS = """
     JOIN world_loan l ON l.id = e.loan_id
     JOIN world_branch br ON br.id = l.branch_id
     JOIN world_lendercustomer c ON c.id = l.customer_id
-    JOIN world_person p ON p.id = c.person_id
+    {borrower_join}
     WHERE e.world_id = %(world)s AND e.lender_id = %(lender)s AND e.period = %(period)s
 """
+_PERSON_JOIN = "JOIN world_person p ON p.id = c.person_id"
+_BUSINESS_JOIN = (
+    "JOIN world_business b ON b.id = c.business_id JOIN world_person p ON p.id = b.owner_id"
+)
+_BUSINESS = """b.seq_no, b.registered_name, b.trading_name, b.registration_number, b.tin,
+    b.registration_date, b.sector, b.size_band, b.town, b.monthly_revenue, """
 
 _CHEQUE_COLUMNS = """ e.loan_id, br.code, c.customer_number, e.account_number,
     e.cheque_number, e.account_opened, e.date_issued, e.date_bounced, e.reason, l.currency,
@@ -265,18 +301,18 @@ _JUDGMENT_COLUMNS = """ e.loan_id, br.code, c.customer_number, l.account_number,
     e.case_reason, l.currency, e.amount, """
 
 _EVENT_SQL = {
-    FileKind.CHEQUE: "SELECT"
-    + _CHEQUE_COLUMNS
+    kind: "SELECT"
+    + (_CHEQUE_COLUMNS if kind in CHEQUE_KINDS else _JUDGMENT_COLUMNS)
+    + ("" if kind in CONSUMER_KINDS else _BUSINESS)
     + _PERSON
-    + " FROM world_dishonouredcheque e"
-    + _EVENT_JOINS
-    + " ORDER BY br.code, e.account_number, e.cheque_number",
-    FileKind.JUDGMENT: "SELECT"
-    + _JUDGMENT_COLUMNS
-    + _PERSON
-    + " FROM world_courtjudgment e"
-    + _EVENT_JOINS
-    + " ORDER BY e.case_number",
+    + (" FROM world_dishonouredcheque e" if kind in CHEQUE_KINDS else " FROM world_courtjudgment e")
+    + _EVENT_JOINS.format(borrower_join=_PERSON_JOIN if kind in CONSUMER_KINDS else _BUSINESS_JOIN)
+    + (
+        " ORDER BY br.code, e.account_number, e.cheque_number"
+        if kind in CHEQUE_KINDS
+        else " ORDER BY e.case_number"
+    )
+    for kind in EVENT_KINDS
 }
 
 
@@ -290,9 +326,13 @@ def _event(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> Tru
         "CustomerID": customer,
         "BranchCode": branch,
     }
-    if kind is FileKind.CHEQUE:
+
+    def subject(rest: tuple[Any, ...]) -> dict[str, str]:
+        return _person(rest, seed, period) if kind in CONSUMER_KINDS else _business(rest, seed)
+
+    if kind in CHEQUE_KINDS:
         (number, opened, issued, bounced, reason, currency, amount) = row[4:11]
-        values |= _person(row[11:], seed, period)
+        values |= subject(row[11:])
         values |= {
             "ChequeNumber": number,
             "AccountOpened": format_date(opened),
@@ -305,7 +345,7 @@ def _event(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> Tru
     else:
         (court, location, court_type, case, filed, case_type, reason, currency,
          amount) = row[4:13]  # fmt: skip
-        values |= _person(row[13:], seed, period)
+        values |= subject(row[13:])
         values |= {
             "CourtName": court,
             "CourtLocation": location,
@@ -353,28 +393,9 @@ def _record(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> Tr
             "G1FirstName": "", "G1NatID": "", "G1Gender": "", "G1DOB": "", "G1Mobile": "",
         }  # fmt: skip
     else:
-        (b_seq, name, trading, reg_no, tin, registered, sector, size, b_town, revenue,
-         _o_seq, o_last, o_first, _o_middle, o_born, o_gender, o_card, o_phone, _o_phone2,
-         _o_town, _o_employment, _o_income) = rest  # fmt: skip
-        details = business_details(seed, b_seq, size, sector, b_town)
-        values |= {
-            "BusRegNum": reg_no,
-            "TINum": tin,
-            "SectorIndCode": details["SectorIndCode"],
-            "SubSecIndCode": details["SubSecIndCode"],
-            "BusType": details["BusType"],
-            "RegistrationDate": format_date(registered),
-            "CommencementDate": format_date(registered),
-            "BusinessName": name,
-            "TradingName": trading,
-            "TurnoverCurrency": "GHS",
-            "TurnoverAmount": whole(revenue * 12),
-            "CurLocAdd1": details["CurLocAdd1"],
-            "CurLocAdd2": details["CurLocAdd2"],
-            "PostAddrLine1": details["PostAddrLine1"],
-            "EmailAddress": "",
-            "OfficeTel1": o_phone,
-        }
+        (_o_seq, o_last, o_first, _o_middle, o_born, o_gender, o_card, o_phone, _o_phone2,
+         _o_town, _o_employment, _o_income) = rest[10:]  # fmt: skip
+        values |= _business(rest, seed)
         # The owner stands as an individual guarantor.
         guarantor = {
             "NatureOfGuarantor": "101", "NameOfComGuarantor": "", "BusRegOfGuarantor": "",

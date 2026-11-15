@@ -17,6 +17,7 @@ import pytest
 from apps.bureau.core.models import CourtJudgment as BureauJudgment
 from apps.bureau.core.models import CreditAccount, CustomerIdentifier, IdentifierType
 from apps.bureau.core.models import DishonouredCheque as BureauCheque
+from apps.bureau.providers.models import Institution
 from apps.bureau.quality.models import ValidationIssue
 from apps.bureau.quality.rules import validate
 from apps.bureau.reports.enquiries import build_report
@@ -117,19 +118,22 @@ def test_events_agree_with_the_credit_history(world: World) -> None:
         "lender", "loan__customer"
     ):
         assert cheque.lender.lender_type in ("COMMERCIAL_BANK", "SAVINGS_AND_LOANS")
-        assert cheque.loan.customer.person_id is not None
         assert cheque.date_issued <= cheque.date_bounced
         assert (cheque.date_bounced.year, cheque.date_bounced.month) == (
             cheque.period.year,
             cheque.period.month,
         )
         assert cheque.reason in ("11", "12")
+    # Both people and businesses bounce cheques and are sued.
+    for model in (DishonouredCheque, CourtJudgment):
+        events = model.objects.filter(world=world)
+        assert events.filter(loan__customer__person__isnull=False).exists()
+        assert events.filter(loan__customer__business__isnull=False).exists()
     # A lender sues over a written-off loan once, not again every month it could.
     sued = list(CourtJudgment.objects.filter(world=world).values_list("loan_id", flat=True))
     assert sued and len(sued) == len(set(sued))
     # Every judgment follows a write-off of the same loan, 2 to 8 months earlier.
     for case in CourtJudgment.objects.filter(world=world).select_related("loan__customer"):
-        assert case.loan.customer.person_id is not None
         written_off = LoanMonth.objects.get(loan_id=case.loan_id, status="WRITTEN_OFF")
         lag = (case.period.year * 12 + case.period.month) - (
             written_off.period.year * 12 + written_off.period.month
@@ -157,13 +161,14 @@ def test_events_agree_with_the_credit_history(world: World) -> None:
 
 
 def _busiest(world: World) -> tuple[Lender, date]:
-    """A lender and month with both bounced cheques and judgments."""
+    """A lender and month with both bounced cheques and judgments of people."""
     for period in reversed(_months(world)):
         ensure_events(world, period)
         for lender in Lender.objects.filter(world=world).order_by("code"):
+            people = {"lender": lender, "period": period, "loan__customer__person__isnull": False}
             if (
-                DishonouredCheque.objects.filter(lender=lender, period=period).exists()
-                and CourtJudgment.objects.filter(lender=lender, period=period).exists()
+                DishonouredCheque.objects.filter(**people).exists()
+                and CourtJudgment.objects.filter(**people).exists()
             ):
                 return lender, period
     raise AssertionError("no month with both kinds of event")
@@ -188,7 +193,8 @@ def test_events_are_reported_loaded_and_shown_on_the_report(world: World) -> Non
 
     # Each event is on the bureau customer of the real person, the same customer who
     # holds that person's credit accounts at the lender.
-    for truth in truth_cheques.select_related("loan__customer__person"):
+    people = truth_cheques.filter(loan__customer__person__isnull=False)
+    for truth in people.select_related("loan__customer__person"):
         loaded = cheques.get(account_number=truth.account_number, cheque_number=truth.cheque_number)
         assert loaded.amount == Decimal(truth.amount)
         assert (loaded.date_issued, loaded.date_bounced) == (truth.date_issued, truth.date_bounced)
@@ -257,7 +263,60 @@ def test_cheque_rules() -> None:
     assert ("F015", "DateBounced") in _errors(_cheque(DateIssued="20251210"))
     assert ("F006", "ReasonReturned") in _errors(_cheque(ReasonReturned="13"))
     assert ("F003", "DateBounced") in _errors(_cheque(DateBounced="20260105"))
-    # The ID rule goes by the date the cheque bounced.
+    # The ID rule goes by the date the cheque was issued (owner's rule).
     assert ("F013", "NatIDNum") in _errors(_cheque(VotersIDNum=""))
-    old = _cheque(VotersIDNum="", DateIssued="20191201", DateBounced="20191205")
-    assert ("F013", "NatIDNum") not in _errors(old)
+    across = _cheque(VotersIDNum="", DateIssued="20191228", DateBounced="20200105")
+    assert ("F013", "NatIDNum") not in _errors(across)
+    later = _cheque(VotersIDNum="", DateIssued="20200102", DateBounced="20200105")
+    assert ("F013", "NatIDNum") in _errors(later)
+
+
+def test_business_events_are_loaded_onto_the_business(world: World) -> None:
+    """BUSD and BUSJ: the business demographics with the same event columns (owner)."""
+    game = start_game(world)
+    found = {FileKind.BUSINESS_CHEQUE: 0, FileKind.BUSINESS_JUDGMENT: 0}
+    for period in reversed(_months(world)):
+        ensure_events(world, period)
+        providers = Institution.objects.filter(organization=game.organization).values(
+            "institution_code"
+        )
+        lenders = Lender.objects.filter(world=world, code__in=providers).order_by("code")
+        for lender in lenders:
+            filters = {
+                "lender": lender,
+                "period": period,
+                "loan__customer__business__isnull": False,
+            }
+            if not (
+                DishonouredCheque.objects.filter(**filters).exists()
+                or CourtJudgment.objects.filter(**filters).exists()
+            ):
+                continue
+            sub = generate_submission(world, lender, period, CLEAN, replace=True).submission
+            for stored in sub.files.filter(kind__in=("BUSD", "BUSJ")):
+                found[FileKind(stored.kind)] += stored.row_count
+            run = process_submission(deliver(game, sub))
+            assert run.records_accepted == run.records_received
+        if all(found.values()):
+            break
+    assert all(found.values()), found
+
+    org = game.organization
+    for truth in DishonouredCheque.objects.filter(
+        world=world, loan__customer__business__isnull=False
+    ).select_related("loan__customer__business"):
+        loaded = BureauCheque.objects.filter(
+            organization=org, account_number=truth.account_number,
+            cheque_number=truth.cheque_number,
+        ).first()  # fmt: skip
+        if loaded is None:
+            continue  # a month not delivered in this test
+        business = truth.loan.customer.business
+        assert business is not None
+        assert loaded.customer.customer_type == "BUSINESS"
+        assert CustomerIdentifier.objects.get(
+            organization=org, identifier_type=IdentifierType.BUSINESS_REGISTRATION,
+            identifier_value=business.registration_number,
+        ).customer_id == loaded.customer_id  # fmt: skip
+    cases = BureauJudgment.objects.filter(organization=org, customer__customer_type="BUSINESS")
+    assert cases.exists() or found[FileKind.BUSINESS_JUDGMENT] == 0
