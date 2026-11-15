@@ -23,11 +23,12 @@ from apps.standards.submission_template import FileKind
 from apps.workitems.models import WorkItem
 from apps.world.generation.identity import COMMON_FIRST_NAMES, FIRST_NAMES, SURNAMES
 from apps.world.generation.rng import stream
-from apps.world.models import Lender, LenderCustomer, ProviderFileRow
+from apps.world.models import Lender, LenderCustomer, Loan, ProviderFileRow
 from apps.world.provider_files.truth import load_truth
 
+from .clock import TICKS_PER_DAY, Calendar
 from .feed import due_tick
-from .models import Delivery, Game
+from .models import Delivery, EnquiryJudgement, Game
 
 Borrower = tuple[str, int]  # ("person" | "business", world id)
 
@@ -93,7 +94,7 @@ def sync_work_items(game: Game, tick: int) -> int:
         ReviewCase.objects.filter(
             organization=game.organization, case_number__gt=last or 0, work_item__isnull=True
         )
-        .select_related("record__file", "record__run__submission__institution")
+        .select_related("record__file", "record__run__submission__institution", "dispute")
         .order_by("case_number")
     )
     if not cases:
@@ -101,7 +102,14 @@ def sync_work_items(game: Game, tick: int) -> int:
     truth_cache: dict[tuple[str, date, str], dict[int, dict[str, str]]] = {}
     items = []
     for case in cases:
-        if case.case_type == CaseType.MATCH_REVIEW:
+        due = due_tick(tick)
+        if case.case_type == CaseType.DISPUTE:
+            correct, basis = _dispute_answer(game, case)
+            difficulty = DISPUTE_DIFFICULTY
+            if case.dispute is not None:  # due by the end of its statutory deadline
+                cal = Calendar(game.clock_start)
+                due = cal.first_tick_of_day(cal.index_of(case.dispute.due_date)) + TICKS_PER_DAY - 1
+        elif case.case_type == CaseType.MATCH_REVIEW:
             correct, basis = _match_answer(game, case)
             score = case.score if case.score is not None else 0.5
             difficulty = float(np.clip(1 - abs(score - 0.6) / 0.45, 0.1, 0.95))
@@ -119,7 +127,7 @@ def sync_work_items(game: Game, tick: int) -> int:
                 item_type=case.case_type,
                 difficulty=round(difficulty, 3),
                 created_tick=tick,
-                due_tick=due_tick(tick),
+                due_tick=due,
                 correct_decision=correct,
                 correct_basis=basis[:300],
             )
@@ -176,6 +184,8 @@ def _borrower(customer: LenderCustomer) -> Borrower:
 
 def _match_answer(game: Game, case: ReviewCase) -> tuple[str, str]:
     record = case.record
+    if record is None:
+        raise ValueError(f"Case {case.case_number} has no record")
     actual = record_borrower(game, record.file_id, record.source_row_number)
     if case.candidate_customer_id is None:
         return Decision.DIFFERENT_CUSTOMER, "no candidate customer"
@@ -192,6 +202,8 @@ def _triage_answer(
     game: Game, case: ReviewCase, cache: dict[tuple[str, date, str], dict[int, dict[str, str]]]
 ) -> tuple[str, str]:
     record = case.record
+    if record is None:
+        raise ValueError(f"Case {case.case_number} has no record")
     submission = record.run.submission
     code = submission.institution.institution_code
     delivery = Delivery.objects.get(game=game, bureau_file_id=record.file_id)
@@ -215,3 +227,32 @@ def _triage_answer(
         return Decision.CORRECT_AND_LOAD, "the proposed corrections restore the true values"
     detail = ", ".join(f"{f}: proposed {p}, true {t}" for f, (p, t) in wrong.items())
     return Decision.RETURN_TO_PROVIDER, f"correction would load wrong data ({detail})"
+
+
+# A dispute is a judgement on evidence the subject brings and the provider confirms;
+# ASSUMPTION A-057: of middling difficulty.
+DISPUTE_DIFFICULTY = 0.45
+
+
+def _dispute_answer(game: Game, case: ReviewCase) -> tuple[str, str]:
+    """Uphold if any disputed account is truly someone else's; else reject."""
+    dispute = case.dispute
+    if dispute is None or dispute.enquiry_id is None:
+        raise ValueError(f"Case {case.case_number} is not a dispute about a report")
+    judgement = EnquiryJudgement.objects.select_related("application").get(
+        enquiry_id=dispute.enquiry_id
+    )
+    app = judgement.application
+    subject: Borrower = (
+        ("person", app.person_id) if app.person_id else ("business", int(app.business_id or 0))
+    )
+    foreign = []
+    for code, number in dispute.accounts:
+        loan = Loan.objects.select_related("customer").get(
+            lender__world=game.world, lender__code=code, account_number=number
+        )
+        if _borrower(loan.customer) != subject:
+            foreign.append(f"{code} {number}")
+    if foreign:
+        return Decision.UPHOLD_DISPUTE, f"not the subject's: {', '.join(foreign)}"
+    return Decision.REJECT_DISPUTE, "every disputed account is the subject's own"

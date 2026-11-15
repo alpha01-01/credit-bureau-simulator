@@ -10,11 +10,12 @@ import {
 import { useGameId } from '../app/useGameId'
 import { MatchingPolicyCard } from '../components/MatchingPolicy'
 import { Badge, Card, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
-import { count, percent } from '../lib/format'
+import { count, dateTime, percent, day as dateOnly } from '../lib/format'
 
 const TYPE_LABEL: Record<string, string> = {
   MATCH_REVIEW: 'Match review',
   UNLOADABLE_TRIAGE: 'Unloadable triage',
+  DISPUTE: 'Dispute',
 }
 
 const BY_LABEL: Record<string, string> = {
@@ -28,6 +29,8 @@ const DECISION_LABEL: Record<string, string> = {
   DIFFERENT_CUSTOMER: 'Different customer: create new',
   CORRECT_AND_LOAD: 'Apply correction and load',
   RETURN_TO_PROVIDER: 'Return to provider',
+  UPHOLD_DISPUTE: 'Uphold: not theirs, correct the report',
+  REJECT_DISPUTE: 'Reject: the accounts are theirs',
 }
 
 export function QueuePage() {
@@ -114,7 +117,13 @@ export function WorkItemPage() {
       title={`${TYPE_LABEL[i.type]} #${i.number}`}
       subtitle={`Difficulty ${percent(i.difficulty)}`}
     >
-      {i.type === 'MATCH_REVIEW' ? <MatchEvidence item={i} /> : <TriageEvidence item={i} />}
+      {i.type === 'DISPUTE' ? (
+        <DisputeEvidence item={i} />
+      ) : i.type === 'MATCH_REVIEW' ? (
+        <MatchEvidence item={i} />
+      ) : (
+        <TriageEvidence item={i} />
+      )}
       {i.explanation && (
         <Card title="Decision recorded">
           <p className="text-sm">{i.explanation}</p>
@@ -174,8 +183,43 @@ function day(value: string | null | undefined) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : value
 }
 
+/** A subject's dispute: their claim, and the accounts on their file (P2.7). */
+function DisputeEvidence({ item }: { item: WorkItemDetail }) {
+  const d = item.dispute
+  if (!d) return null
+  return (
+    <Card title={`Dispute ${d.number} from ${d.subject}`}>
+      <div className="space-y-3 text-sm">
+        <p>&ldquo;{d.claim}&rdquo;</p>
+        <p className="text-slate-600">
+          Received {dateTime(d.received_at)}; must be settled by {dateOnly(d.due_date)}.
+          {d.enquiry && ` It concerns the report sent with enquiry ${d.enquiry}.`}
+        </p>
+        <Table head={['Provider', 'Account', 'Opened', 'Status', '']}>
+          {(item.accounts ?? []).map((a) => (
+            <tr
+              key={`${a.provider}-${a.account}`}
+              className={a.disputed ? 'bg-amber-50' : undefined}
+            >
+              <Td>{a.provider}</Td>
+              <Td>{a.account}</Td>
+              <Td>{dateOnly(a.opened)}</Td>
+              <Td>{a.status}</Td>
+              <Td>{a.disputed && <Badge tone="warn">disputed</Badge>}</Td>
+            </tr>
+          ))}
+        </Table>
+        <p className="text-xs text-slate-500">
+          Upholding moves the disputed accounts, with the provider&apos;s customer they came from,
+          to a customer of their own; every move is recorded as a correction.
+        </p>
+      </div>
+    </Card>
+  )
+}
+
 function MatchEvidence({ item }: { item: WorkItemDetail }) {
-  const r = item.record
+  const r = item.record ?? {}
   const individual = 'FirstName' in r
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -234,7 +278,10 @@ function MatchEvidence({ item }: { item: WorkItemDetail }) {
               <Field label="Registered" value={day(r.RegistrationDate)} />
             </>
           )}
-          <Field label="Provider" value={`${item.provider.name}, customer ${r.CustomerID}`} />
+          <Field
+            label="Provider"
+            value={`${item.provider?.name ?? ''}, customer ${r.CustomerID}`}
+          />
           <Field label="Account" value={r.FacilityAccNum} />
         </dl>
       </Card>
@@ -262,7 +309,7 @@ function MatchEvidence({ item }: { item: WorkItemDetail }) {
 }
 
 function TriageEvidence({ item }: { item: WorkItemDetail }) {
-  const r = item.record
+  const r = item.record ?? {}
   const prev = item.on_file
   return (
     <div className="grid gap-4">
@@ -283,7 +330,7 @@ function TriageEvidence({ item }: { item: WorkItemDetail }) {
         </Table>
       </Card>
       <div className="grid gap-4 md:grid-cols-2">
-        <Card title={`Submitted by ${item.provider.name}`}>
+        <Card title={`Submitted by ${item.provider?.name ?? 'the provider'}`}>
           <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
             <Field label="Account" value={r.FacilityAccNum} />
             <Field label="Status" value={r.FacilityStatusCode} highlight />

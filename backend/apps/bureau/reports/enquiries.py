@@ -28,6 +28,7 @@ from apps.bureau.core.models import (
     Enquiry,
     EnquiryOutcome,
 )
+from apps.bureau.quality.disputes import disputed_accounts
 from apps.org.models import Organization
 from apps.standards.enquiry import PURPOSES
 from apps.standards.submission_template import (
@@ -108,6 +109,7 @@ def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
 
     rows: list[dict[str, Any]] = []
     states: list[tuple[str, Decimal | None, int | None]] = []  # status, balance, days past due
+    disputed = disputed_accounts(customer.organization_id)  # flagged while open (P2.7)
     for account in accounts:
         observations = history.get(account.pk, [])
         latest = observations[-1] if observations else None
@@ -134,6 +136,11 @@ def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
                 "worst_days_past_due_12m": max(
                     (o.days_past_due for o in observations), default=None
                 ),
+                "disputed": (
+                    account.institution.institution_code,
+                    account.facility_account_number,
+                )
+                in disputed,
                 "history": [
                     {"month": f"{o.reporting_date:%Y-%m}", "days_past_due": o.days_past_due}
                     for o in observations

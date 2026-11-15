@@ -21,7 +21,12 @@ import numpy as np
 
 from apps.bureau.quality.models import ALLOWED_DECISIONS, CaseType, Decision
 
-BASE_MINUTES: dict[str, float] = {CaseType.MATCH_REVIEW: 12.0, CaseType.UNLOADABLE_TRIAGE: 6.0}
+# ASSUMPTION A-057: a dispute takes about 45 minutes: the claim, the report, a provider check.
+BASE_MINUTES: dict[str, float] = {
+    CaseType.MATCH_REVIEW: 12.0,
+    CaseType.UNLOADABLE_TRIAGE: 6.0,
+    CaseType.DISPUTE: 45.0,
+}
 COMFORTABLE_ITEMS_PER_DAY = 40
 LEARNING_RATE = 0.003
 
@@ -30,6 +35,8 @@ DECISION_WORDS: dict[str, str] = {
     Decision.DIFFERENT_CUSTOMER: "different customer",
     Decision.CORRECT_AND_LOAD: "correct and load",
     Decision.RETURN_TO_PROVIDER: "return to provider",
+    Decision.UPHOLD_DISPUTE: "uphold the dispute",
+    Decision.REJECT_DISPUTE: "reject the dispute",
 }
 
 

@@ -28,6 +28,7 @@ from apps.bureau.quality.models import (
     CaseType,
     CleansingRule,
     Decision,
+    Dispute,
     TransformationLog,
     ValidationIssue,
 )
@@ -306,6 +307,26 @@ def _own_rules(game: Game, period: date, refs: dict[str, list[Any]]) -> dict[str
 # --- Consequences ------------------------------------------------------------------------
 
 
+def _dispute_of(game: Game, enquiry: str) -> dict[str, Any]:
+    """The dispute a wrong report led to, if its subject disputed it, and its correction."""
+    dispute = (
+        Dispute.objects.filter(organization=game.organization, enquiry__enquiry_reference=enquiry)
+        .order_by("dispute_number")
+        .first()
+    )
+    if dispute is None:
+        return {"dispute": None}
+    return {
+        "dispute": {
+            "number": dispute.dispute_number,
+            "status": dispute.status,
+            "outcome": dispute.outcome,
+            "due_date": dispute.due_date.isoformat(),
+            "corrections": dispute.corrections.count(),
+        }
+    }
+
+
 def _consequences(game: Game, first: int, last: int, refs: dict[str, list[Any]]) -> dict[str, Any]:
     rows = (
         Consequence.objects.filter(game=game, tick__gte=first, tick__lte=last)
@@ -324,6 +345,7 @@ def _consequences(game: Game, first: int, last: int, refs: dict[str, list[Any]])
             "provider": c.provider,
             "provider_customer": c.provider_customer,
             "detail": c.detail,
+            **_dispute_of(game, c.enquiry.enquiry_reference),
         }
         for c in rows
     ]

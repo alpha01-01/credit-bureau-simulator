@@ -21,7 +21,7 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 | R4 | **Matching practice**: which identifiers and fields are used to link customers and accounts, and how uncertain matches are handled | Referencing engine, match-review work items | **Partly received** (cleanser rules, `template-simplification-proposal.md` section 7): facility key, duplicate rule, ID/name/date-of-birth checks, name-token similarity, name-review workflow. Similarity thresholds and matching across providers still needed (A-048) |
 | R5 | **Submission calendar and SLAs**: reporting deadlines, frequency, correction/resubmission practice | Month loop, provider lateness, SLA penalties | **Partly received**: resubmission deadlines (`data-formats.md`, section 2). Reporting deadline still needed |
 | R6 | **Credit Reporting Act, 2007 (Act 726)** (and any amendments) | Handbook, regulator rules | Needed (public) |
-| R7 | **Credit Reporting Regulations, 2020 (L.I. 2394)**, especially dispute resolution (Regs 23–26), consent, access, retention | Dispute workflow and deadlines, consent, retention | Needed (public) |
+| R7 | **Credit Reporting Regulations, 2020 (L.I. 2394)**, especially dispute resolution (Regs 23–26), consent, access, retention | Dispute workflow and deadlines, consent, retention | Needed (public). Regulations 23-26 cover disputes; the text could not be fetched (the public copy refused requests). The game uses a placeholder deadline (A-056) |
 | R8 | **Pricing**: GHS prices for individual reports, business reports, batch enquiries; typical contract structures (pay-per-use, bundles, subscriptions) | Products, billing, demand model | Needed |
 
 ### Priority 2 — needed for Version 1

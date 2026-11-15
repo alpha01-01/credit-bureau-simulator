@@ -213,6 +213,41 @@ class ProviderRelationship(models.Model):
         return f"{self.game_id} {self.provider_code}: q{self.quality} g{self.goodwill:.2f}"
 
 
+class RegulatorFinding(models.Model):
+    """A breach the regulator has recorded against the bureau (P2.7; Section 10.2)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="findings")
+    kind = models.CharField(max_length=40, help_text="e.g. MISSED_DISPUTE_DEADLINE")
+    reference = models.CharField(max_length=60, help_text="What it is about, e.g. a dispute number")
+    raised_at = models.DateTimeField(help_text="Game time")
+    detail = models.CharField(max_length=300)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["game", "kind", "reference"], name="finding_unique_reference"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} {self.kind} {self.reference}"
+
+
+class RegulatorStanding(models.Model):
+    """Where the bureau stands on the regulator's escalation ladder (Section 10.2).
+
+    0 good standing, 1 concern letter, 2 formal directive, 3 financial penalty,
+    4 licence suspended (subscribers cannot enquire).
+    """
+
+    game = models.OneToOneField(Game, on_delete=models.CASCADE, related_name="regulator")
+    level = models.PositiveSmallIntegerField(default=0)
+    history = models.JSONField(default=list, help_text="Each step up or down: when, level, why")
+
+    def __str__(self) -> str:
+        return f"{self.game_id} regulator level {self.level}"
+
+
 class CheckpointKind(models.TextChoices):
     MONTH_END = "MONTH_END", "Month-end"
     ON_DEMAND = "ON_DEMAND", "On demand"
@@ -268,6 +303,7 @@ class EventType(models.TextChoices):
     SUBSCRIBER_PAYMENT = "SUBSCRIBER_PAYMENT", "A subscriber pays an invoice"
     PAYROLL_TAX_REMITTANCE = "PAYROLL_TAX_REMITTANCE", "PAYE and SSNIT are paid over"
     VAT_RETURN = "VAT_RETURN", "VAT and levies are paid to the GRA"
+    DISPUTE_FILED = "DISPUTE_FILED", "A subject disputes their credit report"
 
 
 class EventStatus(models.TextChoices):

@@ -11,9 +11,11 @@ from datetime import datetime
 
 from django.db import transaction
 
+from apps.bureau.quality.disputes import DisputeError, resolve
 from apps.bureau.quality.models import (
     ALLOWED_DECISIONS,
     CaseStatus,
+    CaseType,
     Decision,
     ReviewCase,
     TransformationLog,
@@ -47,7 +49,15 @@ def apply_decision(case: ReviewCase, decision: str, decided_by: str, at: datetim
             raise ReviewError(f"Case {case.case_number} is already resolved")
         if decision not in ALLOWED_DECISIONS[case.case_type]:
             raise ReviewError(f"{decision} is not a decision for a {case.case_type} case")
+        if case.case_type == CaseType.DISPUTE:  # P2.7: no record behind it, a subject's claim
+            try:
+                resolve(case, decision, decided_by, at)
+            except DisputeError as exc:
+                raise ReviewError(str(exc)) from exc
+            return case
 
+        if case.record_id is None:
+            raise ReviewError(f"Case {case.case_number} has no record")
         record = StagingRecord.objects.select_related(
             "file", "run__submission__institution", "run__submission__organization"
         ).get(pk=case.record_id)

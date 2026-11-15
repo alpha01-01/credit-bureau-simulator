@@ -18,6 +18,7 @@ COUNTERS = (
     "last_enquiry_seq",
     "last_journal_seq",
     "last_invoice_seq",
+    "last_dispute_seq",
 )
 
 
@@ -65,6 +66,7 @@ class Organization(models.Model):
     last_enquiry_seq = models.BigIntegerField(default=0)
     last_journal_seq = models.BigIntegerField(default=0)
     last_invoice_seq = models.BigIntegerField(default=0)
+    last_dispute_seq = models.BigIntegerField(default=0)
 
     def __str__(self) -> str:
         return self.name

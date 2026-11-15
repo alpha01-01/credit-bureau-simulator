@@ -256,6 +256,39 @@ export type OwnRules = {
   providers: string[]
 }
 
+export type DisputesData = {
+  disputes: {
+    number: number
+    subject: string
+    claim: string
+    accounts: string[][]
+    received_at: string
+    due_date: string
+    status: 'OPEN' | 'RESOLVED'
+    outcome: string
+    resolved_at: string | null
+    work_item: number | null
+    corrections: number
+    overdue: boolean
+  }[]
+  regulator: {
+    level: number
+    standing: string
+    findings_recent: number
+    ladder: { findings: number; level: number; what: string }[]
+    history: { at: string; level: number; findings: number; why: string }[]
+    findings: { kind: string; reference: string; raised_at: string; detail: string }[]
+  }
+  statutory_working_days: number
+}
+
+export function useDisputes(id: number) {
+  return useQuery({
+    queryKey: [id, 'disputes'],
+    queryFn: () => apiGet<DisputesData>(`${game(id)}/disputes/`),
+  })
+}
+
 export type ProviderRow = {
   code: string
   name: string
@@ -336,7 +369,7 @@ export type SubmissionDetail = {
 
 export type WorkItemRow = {
   number: number
-  type: 'MATCH_REVIEW' | 'UNLOADABLE_TRIAGE'
+  type: 'MATCH_REVIEW' | 'UNLOADABLE_TRIAGE' | 'DISPUTE'
   status: 'OPEN' | 'IN_PROGRESS' | 'DONE'
   difficulty: number
   created_tick: number
@@ -347,7 +380,24 @@ export type WorkItemRow = {
 }
 
 export type WorkItemDetail = WorkItemRow & {
-  provider: { code: string; name: string }
+  provider: { code: string; name: string } | null
+  dispute?: {
+    number: number
+    subject: string
+    claim: string
+    received_at: string
+    due_date: string
+    status: string
+    outcome: string
+    enquiry: string | null
+  } | null
+  accounts?: {
+    provider: string
+    account: string
+    opened: string | null
+    status: string
+    disputed: boolean
+  }[]
   on_file: {
     reporting_date: string
     status: string
@@ -356,7 +406,7 @@ export type WorkItemDetail = WorkItemRow & {
     days_past_due: number
     disbursement_date: string | null
   } | null
-  record: Record<string, string>
+  record: Record<string, string> | null
   candidate: {
     reference: string
     name: string | null

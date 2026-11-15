@@ -293,3 +293,19 @@ def provider_training(
         organization, on, f"Data quality training for {provider}",
         [dr(code, amount), cr(BANK, amount)], "PROVIDER_TRAINING", at,
     )  # fmt: skip
+
+
+REGULATORY_PENALTIES = ("5400", "Regulatory penalties")
+
+
+def regulatory_penalty(organization: Organization, amount: Decimal, on: date, at: datetime) -> None:
+    """A financial penalty imposed by the regulator (P2.7)."""
+    code, name = REGULATORY_PENALTIES
+    Account.objects.get_or_create(
+        organization=organization, code=code,
+        defaults={"name": name, "account_type": AccountType.EXPENSE},
+    )  # fmt: skip
+    post(
+        organization, on, "Regulatory penalty: repeated breaches of dispute deadlines",
+        [dr(code, amount), cr(BANK, amount)], "REGULATORY_PENALTY", at,
+    )  # fmt: skip

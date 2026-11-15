@@ -31,6 +31,8 @@ from apps.bureau.core.models import (
 from apps.bureau.core.models import Customer as BureauCustomer
 from apps.bureau.quality.models import (
     CleansingRule,
+    CorrectionRecord,
+    Dispute,
     ReviewCase,
     TransformationLog,
     ValidationIssue,
@@ -56,6 +58,8 @@ from .models import (
     Notice,
     PlayerAction,
     ProviderRelationship,
+    RegulatorFinding,
+    RegulatorStanding,
     ScheduledEvent,
     SubscriberView,
     TickLog,
@@ -129,6 +133,37 @@ def fingerprint(game: Game) -> str:
         .values_list("tick", "sim_time", "kind", "severity", "title", "detail", "drill",
                      "is_deadline", "paused"),
     )  # fmt: skip
+    _section(
+        h,
+        "disputes",
+        Dispute.objects.filter(organization_id=org)
+        .order_by("dispute_number")
+        .values_list("dispute_number", "customer__customer_reference",
+                     "enquiry__enquiry_reference", "subject_name", "claim", "accounts",
+                     "received_at", "due_date", "status", "outcome", "resolved_at",
+                     "resolved_by"),
+    )  # fmt: skip
+    _section(
+        h,
+        "corrections",
+        CorrectionRecord.objects.filter(organization_id=org)
+        .order_by("pk")
+        .values_list("kind", "credit_account__facility_account_number",
+                     "from_customer__customer_reference", "to_customer__customer_reference",
+                     "dispute__dispute_number", "reason", "approved_by", "corrected_at"),
+    )  # fmt: skip
+    _section(
+        h,
+        "regulator",
+        RegulatorFinding.objects.filter(game=game)
+        .order_by("raised_at", "reference")
+        .values_list("kind", "reference", "raised_at", "detail"),
+    )
+    _section(
+        h,
+        "standing",
+        RegulatorStanding.objects.filter(game=game).values_list("level", "history"),
+    )
     _section(
         h,
         "providers",

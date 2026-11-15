@@ -153,8 +153,12 @@ def _readable(value: str) -> str:
 
 def explain(case: ReviewCase, result: Judgement) -> str:
     """The reasoning an employee records with a decision (Document 05: explainability)."""
-    record = case.record.cleansed
     verdict = f"Decided: {DECISION_WORDS[result.decision]} (confidence {result.confidence:.2f})."
+    if case.case_type == CaseType.DISPUTE or case.record is None:
+        claim = case.evidence.get("claim", "")
+        accounts = ", ".join(" ".join(a) for a in case.evidence.get("accounts", []))
+        return f"{verdict} The subject disputes {accounts}: {claim}"
+    record = case.record.cleansed
     if case.case_type == CaseType.MATCH_REVIEW:
         identifier = case.evidence.get("identifier", "")
         held_by = case.candidate_customer.customer_reference if case.candidate_customer else "?"

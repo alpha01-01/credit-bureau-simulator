@@ -35,6 +35,7 @@ CHART: tuple[tuple[str, str, str], ...] = (
     ("5100", "Office rent", AccountType.EXPENSE),
     ("5200", "IT infrastructure and hosting", AccountType.EXPENSE),
     ("5300", "Provider relations and training", AccountType.EXPENSE),
+    ("5400", "Regulatory penalties", AccountType.EXPENSE),
 )
 
 BANK, RECEIVABLES, PREPAID_RENT = "1010", "1100", "1300"
