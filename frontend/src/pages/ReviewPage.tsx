@@ -101,6 +101,7 @@ export function ReviewPage() {
         <Rejected r={r} fig={fig} />
       </div>
       <Assets r={r} />
+      <Matching r={r} />
       <Chains r={r} gameId={gameId} fig={fig} />
       {shown && <DrillPanel gameId={gameId} period={period} k={shown} />}
     </Page>
@@ -327,6 +328,43 @@ function Assets({ r }: { r: Review }) {
             <Td>{asset}</Td>
             <Td>{seen}</Td>
             <Td>{truth}</Td>
+          </tr>
+        ))}
+      </Table>
+    </Card>
+  )
+}
+
+const METHOD_LABEL: Record<string, string> = {
+  IDENTIFIER: 'An identifier matched',
+  FUZZY: 'Fuzzy match, linked automatically',
+  REVIEW_SAME: 'A reviewer said: same customer',
+  REVIEW_NEW: 'A reviewer said: different customer',
+  NEW: 'Nothing matched: new customer',
+  BEFORE_P2_4: 'Linked before matching was recorded',
+}
+
+/** How the bureau linked provider customers, and how often each way was wrong. */
+function Matching({ r }: { r: Review }) {
+  const m = r.figures.matching
+  if (!m) return null
+  const rows = Object.entries(m.methods).sort((a, b) => b[1].links - a[1].links)
+  return (
+    <Card title="How customers were matched">
+      <p className="mb-2 text-sm text-slate-600">
+        Tooling {m.tooling.toLowerCase()}; linked automatically at {m.auto_link.toFixed(2)}, held
+        for review from {m.review.toFixed(2)}. A wrong merge put a second person on a customer; a
+        false split made a new customer for someone already on file.
+      </p>
+      <Table head={['How', 'Links (this month)', 'Wrong merges', 'False splits']}>
+        {rows.map(([method, t]) => (
+          <tr key={method}>
+            <Td>{METHOD_LABEL[method] ?? method}</Td>
+            <Td right>
+              {count(t.links)} ({count(t.this_month)})
+            </Td>
+            <Td right>{count(t.wrong_merges)}</Td>
+            <Td right>{count(t.false_splits)}</Td>
           </tr>
         ))}
       </Table>

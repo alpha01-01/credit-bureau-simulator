@@ -41,7 +41,7 @@ from . import assets
 from .clock import Calendar
 from .models import Consequence, DataQualityReview, Delivery, Game
 
-REVIEW_FORMAT = "1"
+REVIEW_FORMAT = "2"  # 2: matching (P2.4)
 DESCRIPTIONS = {"DUPLICATE": "Discarded as a repeat of another row in the same submission"}
 
 
@@ -66,6 +66,17 @@ def build_review(game: Game, cal: Calendar, period: date, tick: int) -> DataQual
     today = cal.tick_end(tick).date()
     visible, truth = assets.month_end_assets(game, today)
     figures["assets"] = {"visible": visible, "truth": truth}
+    org = game.organization
+    figures["matching"] = {
+        "tooling": org.matching_tooling,
+        "auto_link": org.match_auto_link,
+        "review": org.match_review,
+        "methods": assets.link_audit(
+            game,
+            datetime.combine(period.replace(day=1), time(0), tzinfo=UTC),
+            datetime.combine(period + timedelta(days=1), time(0), tzinfo=UTC),
+        ),
+    }
     figures["consequences"] = _consequences(game, first, tick, refs)
     review, _ = DataQualityReview.objects.update_or_create(
         game=game, period=period, defaults={"tick": tick, "figures": figures, "refs": refs}

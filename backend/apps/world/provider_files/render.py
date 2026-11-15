@@ -196,7 +196,7 @@ def render(
         _apply_row_defects(row, record, kind, period, profile, rng, identifiers, blank_weights)
         rows.append(row)
 
-    rows = _insert_duplicates(rows, profile, rng)
+    rows = _insert_duplicates(rows, kind, profile, rng)
 
     defects: list[Defect] = layout.drift_defects()
     position = {id(r): n for n, r in enumerate(rows, start=1)}
@@ -316,15 +316,28 @@ def _apply_row_defects(
 
 
 def _insert_duplicates(
-    rows: list[_Row], profile: DataQualityProfile, rng: np.random.Generator
+    rows: list[_Row], kind: FileKind, profile: DataQualityProfile, rng: np.random.Generator
 ) -> list[_Row]:
+    """Rows sent twice. Some repeats have the name retyped: near-duplicates.
+
+    Which repeats are retyped is drawn from a stream of its own, so that every
+    other draw (and so every other row) stays as it was before near-duplicates.
+    """
     if profile.duplicate_row <= 0 or not rows:
         return rows
     picks = np.flatnonzero(rng.random(len(rows)) < profile.duplicate_row)
+    retype = rng.spawn(1)[0] if len(picks) else rng
     out = list(rows)
     for i in picks.tolist():
         original = rows[i]
         copy = _Row(original.loan_id, dict(original.values), [], duplicate_of=original)
+        if retype.random() < profile.near_duplicate:
+            names = [n for n in NAME_FIELDS[kind] if len(copy.values.get(n, "")) >= 3]
+            if names:
+                name = names[int(retype.integers(len(names)))]
+                old = copy.values[name]
+                copy.values[name] = _typo(old, retype)
+                copy.defects.append(Defect("NAME_TYPO", name, old, copy.values[name]))
         start = next(j for j, r in enumerate(out) if r is original) + 1
         out.insert(int(rng.integers(start, len(out) + 1)), copy)
     return out

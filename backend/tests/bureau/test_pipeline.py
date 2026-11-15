@@ -206,8 +206,20 @@ def test_totals_reconcile_and_defects_are_caught(game: Game) -> None:
     assert run.records_received == sum(f.row_count for f in world_sub.files.all())
     statuses = StagingRecord.objects.filter(run=run).values_list("record_status", flat=True)
     assert run.records_received == len(statuses)
-    # Every repeated row the provider sent is caught as a duplicate.
-    assert run.records_duplicated == ledger.filter(defect_type="DUPLICATE_ROW").count() > 0
+    # Every exact repeat the provider sent is caught as a duplicate. A near-duplicate (the
+    # name retyped) needs matching tooling; without it the account is reported twice (D002).
+    repeats = ledger.filter(defect_type="DUPLICATE_ROW")
+    repeated_rows = set(repeats.values_list("file_id", "row_number"))
+    retyped = [
+        d
+        for d in ledger.filter(defect_type="NAME_TYPO")
+        if (d.file_id, d.row_number) in repeated_rows
+    ]
+    assert run.records_duplicated == repeats.count() - len(retyped) > 0
+    for defect in retyped:
+        near = _record_for(run, defect)
+        assert near.record_status == RecordStatus.UNLOADABLE
+        assert near.issues.filter(rule_code="D002").exists()
     # Under the standard policy a blank mandatory field makes the record unloadable.
     blanks = 0
     for defect in ledger.filter(defect_type="MISSING_FIELD"):

@@ -34,6 +34,23 @@ class Organization(models.Model):
         default="STANDARD",
         help_text="How strictly incoming records are rejected (D18)",
     )
+    # Customer matching (P2.4; Document 07, Section 8.2): the tooling the bureau has
+    # bought, and the thresholds it sets.
+    matching_tooling = models.CharField(
+        max_length=10,
+        choices=[
+            ("BASIC", "Identifiers only"),
+            ("STANDARD", "Fuzzy matching on name and date of birth"),
+            ("ADVANCED", "Fuzzy matching with phone numbers"),
+        ],
+        default="BASIC",
+    )
+    match_auto_link = models.FloatField(
+        default=0.92, help_text="Link without review at or above this similarity"
+    )
+    match_review = models.FloatField(
+        default=0.75, help_text="Below auto-link, hold for review at or above this similarity"
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     # Counters for the bureau's own reference numbers.

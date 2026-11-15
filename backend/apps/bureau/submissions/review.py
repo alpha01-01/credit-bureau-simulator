@@ -56,9 +56,7 @@ def apply_decision(case: ReviewCase, decision: str, decided_by: str, at: datetim
         elif decision == Decision.CORRECT_AND_LOAD:
             _correct_and_load(record, case.proposal, at)
         else:
-            resolution = (
-                (SAME, case.candidate_customer_id) if decision == SAME else (DIFFERENT, None)
-            )
+            resolution = (SAME if decision == SAME else DIFFERENT, case.candidate_customer_id)
             _load(record, at, resolution)
 
         case.status = CaseStatus.RESOLVED

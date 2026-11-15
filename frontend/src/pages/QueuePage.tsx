@@ -8,6 +8,7 @@ import {
   useWorkItems,
 } from '../api/game'
 import { useGameId } from '../app/useGameId'
+import { MatchingPolicyCard } from '../components/MatchingPolicy'
 import { Badge, Card, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
 import { count, percent } from '../lib/format'
 
@@ -40,6 +41,7 @@ export function QueuePage() {
       title="Data Operations work queue"
       subtitle="Records the pipeline could not settle on its own."
     >
+      <MatchingPolicyCard gameId={gameId} />
       <Card title="Team">
         {staff.data && (
           <Table head={['Employee', 'Role', 'Match skill', 'Triage skill', 'Done today', 'Morale']}>

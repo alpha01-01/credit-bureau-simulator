@@ -50,6 +50,8 @@ class DataQualityProfile:
     date_format: float = 0.0
     future_date: float = 0.0
     duplicate_row: float = 0.0
+    # Share of repeated rows resent with the name retyped: near-duplicates (P2.4, A-049).
+    near_duplicate: float = 0.5
     omit_account: float = 0.0
     # Excel drops the leading zero of phone numbers typed as numbers.
     phones_as_numbers: bool = False  # the extract went through Excel: leading zeros lost

@@ -118,6 +118,21 @@ export type Review = {
         }
       }
     }
+    matching?: {
+      tooling: string
+      auto_link: number
+      review: number
+      methods: Record<
+        string,
+        {
+          links: number
+          this_month: number
+          wrong_merges: number
+          false_splits: number
+          wrong_this_month: number
+        }
+      >
+    }
     consequences: {
       mixed_reports: number
       incomplete_reports: number
@@ -551,6 +566,20 @@ export function useInvoices(id: number, unpaid: string | undefined) {
   return useQuery({
     queryKey: [id, 'invoices', unpaid],
     queryFn: () => apiGet<InvoiceRow[]>(`${game(id)}/invoices/${query({ unpaid })}`),
+  })
+}
+
+export type MatchingPolicy = {
+  tooling: string
+  auto_link: number
+  review: number
+  options: { level: string; description: string; monthly_cost: string }[]
+}
+
+export function useMatchingPolicy(id: number) {
+  return useQuery({
+    queryKey: [id, 'matching-policy'],
+    queryFn: () => apiGet<MatchingPolicy>(`${game(id)}/matching-policy/`),
   })
 }
 

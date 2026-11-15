@@ -147,6 +147,36 @@ def set_rejection_policy(game: Game, policy: str) -> Game:
     return game
 
 
+TOOLING_LEVELS = {
+    "BASIC": "Identifiers only",
+    "STANDARD": "Fuzzy matching on name and date of birth",
+    "ADVANCED": "Fuzzy matching with phone numbers",
+}
+
+
+def set_matching_thresholds(game: Game, auto_link: float, review: float) -> Game:
+    """The similarity at which records are linked without review, and held for review."""
+    if not 0.5 <= review <= auto_link <= 1.0:
+        raise ClockError("Thresholds must satisfy 0.50 <= review <= auto-link <= 1.00")
+    auto_link, review = round(auto_link, 2), round(review, 2)
+    record(game, "SET_MATCHING_THRESHOLDS", {"auto_link": auto_link, "review": review})
+    organization = game.organization
+    organization.match_auto_link, organization.match_review = auto_link, review
+    organization.save(update_fields=["match_auto_link", "match_review"])
+    return game
+
+
+def set_matching_tooling(game: Game, level: str) -> Game:
+    """Buy (or drop) matching software; billed from the next month."""
+    if level not in TOOLING_LEVELS:
+        raise ClockError(f"Tooling must be one of {', '.join(TOOLING_LEVELS)}")
+    record(game, "SET_MATCHING_TOOLING", {"level": level})
+    organization = game.organization
+    organization.matching_tooling = level
+    organization.save(update_fields=["matching_tooling"])
+    return game
+
+
 def step(game: Game) -> Game:
     """One tick of a running clock, in real time. Not an action: speed is.
 
@@ -223,6 +253,12 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             target = set_rejection_policy(target, str(action.payload["policy"]))
         case "RESOLVE_ITEM":
             resolve_item(target, int(action.payload["item"]), str(action.payload["decision"]))
+        case "SET_MATCHING_THRESHOLDS":
+            target = set_matching_thresholds(
+                target, float(action.payload["auto_link"]), float(action.payload["review"])
+            )
+        case "SET_MATCHING_TOOLING":
+            target = set_matching_tooling(target, str(action.payload["level"]))
         case "SET_PAUSE_RULES":
             target = set_pause_rules(
                 target, list(action.payload["severities"]), bool(action.payload["deadlines"])

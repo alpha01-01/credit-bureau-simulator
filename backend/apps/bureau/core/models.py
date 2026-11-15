@@ -125,6 +125,14 @@ class CustomerContact(models.Model):
         return self.contact_value
 
 
+class LinkMethod(models.TextChoices):
+    IDENTIFIER = "IDENTIFIER", "An identifier matched and the identity agreed"
+    FUZZY = "FUZZY", "Name, date of birth (and phone) were close enough"
+    REVIEW_SAME = "REVIEW_SAME", "A reviewer decided it was the same customer"
+    REVIEW_NEW = "REVIEW_NEW", "A reviewer decided it was a different customer"
+    NEW = "NEW", "Nothing matched: a new customer"
+
+
 class ProviderCustomerLink(models.Model):
     """A provider's own customer number, linked to the bureau customer (Document 07, D4)."""
 
@@ -135,6 +143,12 @@ class ProviderCustomerLink(models.Model):
     provider_customer_number = models.CharField(max_length=50)
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="provider_links")
     source_submission = models.ForeignKey(Submission, on_delete=models.PROTECT, related_name="+")
+    method = models.CharField(
+        max_length=12,
+        choices=LinkMethod.choices,
+        blank=True,
+        help_text="How the bureau decided who this provider customer is (P2.4)",
+    )
 
     class Meta:
         constraints = [

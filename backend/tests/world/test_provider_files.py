@@ -280,10 +280,15 @@ def test_every_difference_from_the_truth_is_in_the_defect_ledger(
         originals: list[int] = []
         for n, raw in enumerate(rows, start=1):
             if n in duplicates:
-                # A repeated row is an exact copy of an earlier one.
+                # A repeated row copies an earlier one; a near-duplicate has the name retyped,
+                # and that difference is in the ledger like any other.
                 assert duplicates[n] < n
-                assert raw == rows[duplicates[n] - 1]
                 assert row_loans[n] == row_loans[duplicates[n]]
+                original = dict(zip(columns, rows[duplicates[n] - 1], strict=True))
+                repeat = dict(zip(columns, raw, strict=True))
+                for name, value in repeat.items():
+                    if value != original[name]:
+                        found[(n, name)] = (original[name], value)
                 continue
             originals.append(row_loans[n])
             values = dict(zip(columns, raw, strict=True))

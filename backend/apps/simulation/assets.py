@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from django.db import connection, models
@@ -34,6 +34,7 @@ from apps.bureau.core.models import (
     ProviderCustomerLink,
 )
 from apps.bureau.providers.models import Institution
+from apps.bureau.submissions.models import Submission
 from apps.standards.submission_template import OPEN_STATUS_CODES
 from apps.world.generation.persist import loan_month_partition
 from apps.world.generation.rng import stream
@@ -128,6 +129,56 @@ def identity(game: Game) -> Identity:
             borrowers_of[customer].add(who)
             customers_of[who].add(customer)
     return Identity(dict(borrowers_of), dict(customers_of))
+
+
+# Every provider link: how it was made, when its file arrived, and whose it really is.
+_LINK_AUDIT = f"""
+SELECT pl.id, pl.customer_id, pl.method, s.received_at, lc.person_id, lc.business_id
+FROM {_t(ProviderCustomerLink)} pl
+JOIN {_t(Submission)} s ON s.id = pl.source_submission_id
+JOIN {_t(Institution)} i ON i.id = pl.institution_id
+JOIN {_t(WorldLender)} wl ON wl.world_id = %(world)s AND wl.code = i.institution_code
+JOIN {_t(LenderCustomer)} lc ON lc.lender_id = wl.id AND lc.customer_number = pl.provider_customer_number
+WHERE pl.organization_id = %(org)s
+ORDER BY pl.id
+"""
+
+
+def link_audit(game: Game, start: datetime, end: datetime) -> dict[str, dict[str, int]]:
+    """How the bureau linked its provider customers, and how often each way was wrong.
+
+    A link is a **wrong merge** when it puts someone other than the customer's first
+    linked person on the customer; a link that made a new customer is a **false
+    split** when its person was already held as another customer. ``this_month``
+    counts links from files received between ``start`` and ``end``.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(_LINK_AUDIT, {"world": game.world_id, "org": game.organization_id})
+        rows = cursor.fetchall()
+    first_of: dict[int, Borrower] = {}  # customer -> the person its first link names
+    held_as: dict[Borrower, int] = {}  # person -> the customer first linked to them
+    out: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"links": 0, "this_month": 0, "wrong_merges": 0, "false_splits": 0,
+                 "wrong_this_month": 0}
+    )  # fmt: skip
+    for _link, customer, method, received, person, business in rows:
+        who = _borrower(person, business)
+        tally = out[method or "BEFORE_P2_4"]
+        recent = start <= received < end
+        tally["links"] += 1
+        tally["this_month"] += recent
+        wrong = False
+        if customer not in first_of:
+            first_of[customer] = who
+            if who in held_as and held_as[who] != customer:
+                tally["false_splits"] += 1
+                wrong = True
+        elif first_of[customer] != who:
+            tally["wrong_merges"] += 1
+            wrong = True
+        held_as.setdefault(who, customer)
+        tally["wrong_this_month"] += recent and wrong
+    return dict(out)
 
 
 def active_borrowers(game: Game, period: date) -> set[Borrower]:
