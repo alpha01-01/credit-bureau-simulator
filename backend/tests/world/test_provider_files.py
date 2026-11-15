@@ -63,6 +63,7 @@ from apps.world.provider_files.truth import load_truth
 ROW_DEFECTS = {
     "MISSING_FIELD", "PHONE_FORMAT", "AMOUNT_FORMAT", "NAME_TYPO", "NAME_SWAP",
     "WRONG_IDENTIFIER", "STALE_VALUE", "INCONSISTENT_STATUS", "DATE_FORMAT", "FUTURE_DATE",
+    "CODE_WORD",
 }  # fmt: skip
 
 # Every defect switched on at a high rate, so a small file exercises them all.
@@ -72,6 +73,7 @@ HEAVY = replace(
     missing_field=0.12, phone_format=0.12, amount_format=0.12, name_typo=0.12, name_swap=0.12,
     wrong_identifier=0.12, stale_values=0.12, inconsistent_status=0.12, date_format=0.12,
     future_date=0.12, duplicate_row=0.05, omit_account=0.05, template_drift=1.0, late_rate=1.0,
+    code_words=0.12,
 )  # fmt: skip
 
 

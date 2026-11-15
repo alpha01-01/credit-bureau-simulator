@@ -102,6 +102,7 @@ export function ReviewPage() {
       </div>
       <Assets r={r} />
       <Matching r={r} />
+      <OwnRules r={r} fig={fig} />
       <Chains r={r} gameId={gameId} fig={fig} />
       {shown && <DrillPanel gameId={gameId} period={period} k={shown} />}
     </Page>
@@ -331,6 +332,75 @@ function Assets({ r }: { r: Review }) {
           </tr>
         ))}
       </Table>
+    </Card>
+  )
+}
+
+/** What the bureau's own rules did, measured against the truth (P2.5). */
+function OwnRules({ r, fig }: { r: Review; fig: FigureContext }) {
+  const rules = r.figures.rules
+  if (!rules || (rules.cleansing.length === 0 && rules.relaxed.length === 0)) return null
+  return (
+    <Card title="Your own rules">
+      <div className="space-y-4 text-sm">
+        {rules.cleansing.length > 0 && (
+          <Table head={['Cleansing rule', 'Values changed', 'Made right', 'Made wrong']}>
+            {rules.cleansing.map((rule) => (
+              <tr key={rule.code}>
+                <Td>
+                  <span className="font-mono">{rule.code}</span> {rule.description}
+                  {rule.active === false && <span className="text-slate-500"> (off)</span>}
+                </Td>
+                <Td right>{count(rule.changes)}</Td>
+                <Td right>
+                  <Figure
+                    fig={fig}
+                    k={`rule.${rule.code}.right`}
+                    n={rule.right}
+                    label="values made right"
+                  />
+                </Td>
+                <Td right>
+                  <Figure
+                    fig={fig}
+                    k={`rule.${rule.code}.wrong`}
+                    n={rule.changes - rule.right}
+                    label="values made wrong"
+                  />
+                </Td>
+              </tr>
+            ))}
+          </Table>
+        )}
+        {rules.relaxed.length > 0 && (
+          <Table head={['Relaxed check', 'Records loaded anyway', 'Really fine', 'Really wrong']}>
+            {rules.relaxed.map((rule) => (
+              <tr key={rule.code}>
+                <Td>
+                  <span className="font-mono">{rule.code}</span> {rule.description}
+                </Td>
+                <Td right>{count(rule.changes)}</Td>
+                <Td right>
+                  <Figure
+                    fig={fig}
+                    k={`relaxed.${rule.code}.right`}
+                    n={rule.right}
+                    label="records really fine"
+                  />
+                </Td>
+                <Td right>
+                  <Figure
+                    fig={fig}
+                    k={`relaxed.${rule.code}.wrong`}
+                    n={rule.changes - rule.right}
+                    label="records really wrong"
+                  />
+                </Td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </div>
     </Card>
   )
 }

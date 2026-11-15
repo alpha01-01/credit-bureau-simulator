@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -25,9 +25,10 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.bureau.core.models import AccountObservation, Enquiry
-from apps.bureau.quality.models import ALLOWED_DECISIONS
-from apps.bureau.quality.rules import POLICIES
-from apps.bureau.submissions.models import StagingRecord
+from apps.bureau.quality.models import ALLOWED_DECISIONS, CleansingRule, RuleAction
+from apps.bureau.quality.rules import POLICIES, RELAXABLE, RULES
+from apps.bureau.submissions.feedback import as_csv, build_report
+from apps.bureau.submissions.models import StagingRecord, Submission
 from apps.bureau.submissions.review import ReviewError
 from apps.finance import statements
 from apps.finance.events import MATCHING_TOOLING_COST
@@ -129,6 +130,103 @@ def feed(request: Request, game_id: int) -> Response:
         {
             "notices": [controls.notice_dict(n) for n in page[:FEED_PAGE]],
             "more": len(page) > FEED_PAGE,
+        }
+    )
+
+
+@api_view(["POST"])
+def map_file(request: Request, game_id: int, reference: str, file_name: str) -> Response:
+    """Map a rejected file's columns to the template and load it (P2.5)."""
+    game = _game(request, game_id)
+    columns = request.data.get("columns")
+    if not isinstance(columns, list):
+        return _error(ValueError("columns must be a list"))
+    try:
+        controls.map_template(game, reference, file_name, [str(c) for c in columns])
+    except ClockError as exc:
+        return _error(exc)
+    return Response({"mapped": True})
+
+
+@api_view(["GET", "POST"])
+def feedback(request: Request, game_id: int, reference: str) -> HttpResponse:
+    """A provider feedback report: GET it (?download=csv for the provider's file), POST to send."""
+    game = _game(request, game_id)
+    submission = get_object_or_404(
+        Submission.objects.select_related("institution"),
+        organization=game.organization,
+        submission_reference=reference,
+    )
+    if request.method == "POST":
+        controls.send_feedback(game, reference)
+    report = build_report(submission)
+    if request.query_params.get("download") == "csv":
+        response = HttpResponse(as_csv(report), content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="{reference}-feedback.csv"'
+        return response
+    sent = submission.feedback_reports.order_by("-sent_at", "-pk").values_list("sent_at", flat=True)
+    return Response({**report, "sent": list(sent)})
+
+
+@api_view(["GET", "POST"])
+def rules(request: Request, game_id: int) -> Response:
+    """The bureau's own cleansing rules and relaxed validation rules (P2.5).
+
+    POST one of: {"add": {field, action, find, replace, provider}},
+    {"code": "U01", "active": false}, {"override": {"code": "F011", "setting": "WARNING"}}.
+    """
+    game = _game(request, game_id)
+    if request.method == "POST":
+        data = request.data
+        try:
+            if isinstance(data.get("add"), dict):
+                new = data["add"]
+                controls.add_cleansing_rule(
+                    game, str(new.get("field", "")), str(new.get("action", "")),
+                    str(new.get("find", "")), str(new.get("replace", "")),
+                    str(new.get("provider", "")),
+                )  # fmt: skip
+            elif "code" in data and "active" in data:
+                controls.set_cleansing_rule_active(game, str(data["code"]), bool(data["active"]))
+            elif isinstance(data.get("override"), dict):
+                o = data["override"]
+                controls.set_rule_override(game, str(o.get("code", "")), str(o.get("setting", "")))
+            else:
+                return _error(ValueError("Nothing to change"))
+        except ClockError as exc:
+            return _error(exc)
+    org = game.organization
+    return Response(
+        {
+            "cleansing": [
+                {
+                    "code": r.code,
+                    "field": r.field,
+                    "action": r.action,
+                    "find": r.find,
+                    "replace": r.replace,
+                    "provider": r.institution.institution_code if r.institution else "",
+                    "active": r.is_active,
+                    "created_at": r.created_at,
+                }
+                for r in CleansingRule.objects.filter(organization=org)
+                .select_related("institution")
+                .order_by("code")
+            ],
+            "validation": [
+                {
+                    "code": code,
+                    "description": RULES[code],
+                    "setting": org.rule_overrides.get(code, "ERROR"),
+                }
+                for code in RELAXABLE
+            ],
+            "actions": [{"code": a, "description": label} for a, label in RuleAction.choices],
+            "providers": list(
+                org.institutions.order_by("institution_code").values_list(
+                    "institution_code", flat=True
+                )
+            ),
         }
     )
 
@@ -474,7 +572,7 @@ def review_drill(request: Request, game_id: int, period: str) -> Response:
     refs = found.refs[key]
     if key.startswith(("match.", "triage.")):
         return Response({"key": key, "kind": "work_items", "rows": _item_rows(game, refs)})
-    if key.startswith("rejected."):
+    if key.startswith(("rejected.", "rule.", "relaxed.")):
         return Response({"key": key, "kind": "records", "rows": _record_rows(game, refs)})
     chains = found.figures["consequences"]["chains"]
     return Response({"key": key, "kind": "consequences", "rows": chains})

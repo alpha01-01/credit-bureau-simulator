@@ -62,6 +62,32 @@ class FileStatus(models.TextChoices):
     REJECTED = "REJECTED", "Rejected"
 
 
+class TemplateMapping(models.Model):
+    """How a provider's own column layout maps to the template (P2.5; D17).
+
+    When a provider changes its extract, the file's columns no longer match and
+    it is rejected (T001). The bureau maps the received headers to the template's
+    columns once; the mapping is kept and applied to that provider's later files
+    with the same headers.
+    """
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="+")
+    institution = models.ForeignKey(
+        Institution, on_delete=models.CASCADE, related_name="template_mappings"
+    )
+    file_kind = models.CharField(max_length=4)
+    received = models.JSONField(help_text="The file's headers, as written, in order")
+    columns = models.JSONField(help_text="The template column for each received header")
+    created_at = models.DateTimeField(help_text="Game time")
+    created_by = models.CharField(max_length=120)
+
+    class Meta:
+        indexes = [models.Index(fields=["institution", "file_kind"])]
+
+    def __str__(self) -> str:
+        return f"{self.institution_id} {self.file_kind} mapping"
+
+
 class SubmissionFile(models.Model):
     submission = models.ForeignKey(Submission, on_delete=models.CASCADE, related_name="files")
     file_name = models.CharField(max_length=150)
@@ -75,6 +101,14 @@ class SubmissionFile(models.Model):
         max_length=20, choices=FileStatus.choices, default=FileStatus.RECEIVED
     )
     rejection_reason = models.CharField(max_length=300, blank=True)
+    mapping = models.ForeignKey(
+        TemplateMapping,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="files",
+        help_text="The column mapping the file was read with, when its layout differed",
+    )
 
     class Meta:
         indexes = [models.Index(fields=["file_hash"])]
@@ -176,3 +210,21 @@ class StagingRecord(models.Model):
 def changes_from(raw: dict[str, str], cleansed: dict[str, str]) -> dict[str, str]:
     """The fields whose cleansed value differs from the raw one."""
     return {k: v for k, v in cleansed.items() if raw.get(k) != v}
+
+
+class FeedbackReport(models.Model):
+    """What the bureau told a provider about one submission (P2.5).
+
+    ``report`` is the report as sent: the files rejected and why, and every record
+    that could not be loaded with the rule, field and value at fault.
+    """
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="+")
+    submission = models.ForeignKey(
+        Submission, on_delete=models.CASCADE, related_name="feedback_reports"
+    )
+    sent_at = models.DateTimeField(help_text="Game time")
+    report = models.JSONField(default=dict)
+
+    def __str__(self) -> str:
+        return f"Feedback on {self.submission_id} at {self.sent_at:%Y-%m-%d}"

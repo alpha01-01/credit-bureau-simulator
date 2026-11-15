@@ -8,6 +8,7 @@ import {
   type RejectionPolicy,
 } from '../api/game'
 import { useGameId } from '../app/useGameId'
+import { FeedbackCard, MappingForm } from '../components/SubmissionTools'
 import { Badge, Card, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
 import { count, dateTime, day } from '../lib/format'
 
@@ -141,11 +142,27 @@ export function SubmissionPage() {
               <Td>
                 <Badge tone={f.status === 'REJECTED' ? 'bad' : 'good'}>{f.status}</Badge>{' '}
                 {f.rejection_reason}
+                {f.mapped && (
+                  <span className="ml-1 text-xs text-slate-500">(read with a mapping)</span>
+                )}
               </Td>
             </tr>
           ))}
         </Table>
       </Card>
+      {s.files
+        .filter((f) => f.mapping)
+        .map((f) => (
+          <Card key={`map-${f.name}`} title="Map the provider's columns">
+            <MappingForm
+              gameId={gameId}
+              reference={s.reference}
+              fileName={f.name}
+              offer={f.mapping!}
+            />
+          </Card>
+        ))}
+      <FeedbackCard gameId={gameId} reference={s.reference} />
       {s.runs.map((run) => (
         <Card
           key={run.run_number}

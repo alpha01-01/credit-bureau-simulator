@@ -118,6 +118,10 @@ export type Review = {
         }
       }
     }
+    rules?: {
+      cleansing: RuleEffect[]
+      relaxed: RuleEffect[]
+    }
     matching?: {
       tooling: string
       auto_link: number
@@ -141,6 +145,16 @@ export type Review = {
       chains: Chain[]
     }
   }
+}
+
+/** What one of the bureau's own rules did in a month, measured against the truth. */
+export type RuleEffect = {
+  code: string
+  changes: number
+  right: number
+  fields: string[]
+  description?: string
+  active?: boolean
 }
 
 export type DrillRow = Record<string, unknown>
@@ -204,6 +218,58 @@ export type SubmissionRow = {
   pending: number | null
 }
 
+/** A file rejected for its columns: what arrived, and the bureau's suggested mapping. */
+export type FileMappingOffer = { received: string[]; suggested: string[]; template: string[] }
+
+export type FeedbackReport = {
+  submission: string
+  provider: string
+  period: string
+  files_rejected: number
+  records_unloadable: number
+  records_with_warnings: number
+  rules: { rule: string; description: string; records: number }[]
+  rows: {
+    file: string
+    row: number
+    account: string
+    customer: string
+    problems: { rule: string; field: string; value: string; message: string }[]
+  }[]
+  more_rows: number
+  sent: string[]
+}
+
+export type OwnRules = {
+  cleansing: {
+    code: string
+    field: string
+    action: string
+    find: string
+    replace: string
+    provider: string
+    active: boolean
+    created_at: string
+  }[]
+  validation: { code: string; description: string; setting: 'ERROR' | 'WARNING' }[]
+  actions: { code: string; description: string }[]
+  providers: string[]
+}
+
+export function useFeedback(id: number, reference: string) {
+  return useQuery({
+    queryKey: [id, 'feedback', reference],
+    queryFn: () => apiGet<FeedbackReport>(`${game(id)}/submissions/${reference}/feedback/`),
+  })
+}
+
+export function useOwnRules(id: number) {
+  return useQuery({
+    queryKey: [id, 'rules'],
+    queryFn: () => apiGet<OwnRules>(`${game(id)}/rules/`),
+  })
+}
+
 export type SubmissionDetail = {
   reference: string
   provider: string
@@ -221,6 +287,8 @@ export type SubmissionDetail = {
     sha256: string
     status: string
     rejection_reason: string
+    mapped: boolean
+    mapping: FileMappingOffer | null
   }[]
   runs: {
     run_number: number

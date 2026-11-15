@@ -48,6 +48,10 @@ class Organization(models.Model):
     match_auto_link = models.FloatField(
         default=0.92, help_text="Link without review at or above this similarity"
     )
+    rule_overrides = models.JSONField(
+        default=dict,
+        help_text="Validation rules the bureau has relaxed: code -> WARNING or OFF (P2.5)",
+    )
     match_review = models.FloatField(
         default=0.75, help_text="Below auto-link, hold for review at or above this similarity"
     )

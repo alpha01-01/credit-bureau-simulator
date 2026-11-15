@@ -19,7 +19,7 @@ from apps.bureau.quality.models import (
     TransformationLog,
     ValidationIssue,
 )
-from apps.bureau.quality.rules import Issue, validate
+from apps.bureau.quality.rules import Issue, relax, validate
 from apps.bureau.referencing.matching import DIFFERENT, SAME, Pending
 from apps.standards.rulebook import DATA_STANDARDS
 from apps.standards.submission_template import FileKind
@@ -96,7 +96,8 @@ def _correct_and_load(record: StagingRecord, proposal: dict[str, str], at: datet
         submission.organization.rejection_policy,
         DATA_STANDARDS.get(record.run.template_version),
     )
-    errors = [i for i in checked.issues if i.severity == "ERROR"]
+    issues = relax(checked.issues, submission.organization.rule_overrides)
+    errors = [i for i in issues if i.severity == "ERROR"]
     if errors:
         record.record_status = RecordStatus.UNLOADABLE
         record.save(update_fields=["changes", "record_status"])

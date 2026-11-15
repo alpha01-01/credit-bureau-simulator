@@ -421,6 +421,7 @@ class DefectType(models.TextChoices):
     OMITTED_ACCOUNT = "OMITTED_ACCOUNT", "Account left out of the file"
     TEMPLATE_DRIFT = "TEMPLATE_DRIFT", "Column renamed or moved"
     LATE_SUBMISSION = "LATE_SUBMISSION", "Submitted after the deadline"
+    CODE_WORD = "CODE_WORD", "Code written as a word"
 
 
 class FileDefect(models.Model):

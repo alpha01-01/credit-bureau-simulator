@@ -33,8 +33,20 @@ from apps.bureau.core.models import (
     ProviderCustomerLink,
 )
 from apps.bureau.providers.models import Institution, InstitutionBranch
-from apps.bureau.quality.models import ReviewCase, TransformationLog, ValidationIssue
-from apps.bureau.submissions.models import ProcessingRun, StagingRecord, Submission, SubmissionFile
+from apps.bureau.quality.models import (
+    CleansingRule,
+    ReviewCase,
+    TransformationLog,
+    ValidationIssue,
+)
+from apps.bureau.submissions.models import (
+    FeedbackReport,
+    ProcessingRun,
+    StagingRecord,
+    Submission,
+    SubmissionFile,
+    TemplateMapping,
+)
 from apps.commercial.models import Contract, Product, Subscriber, UsageRecord
 from apps.finance.models import Account, Invoice, InvoiceLine, JournalEntry, JournalLine, Payment
 from apps.org.models import Employee, Organization
@@ -116,7 +128,10 @@ _ORDER: tuple[tuple[type[Model], str], ...] = (
     (StagingRecord, f"run_id IN ({_RUNS})"),
     (ProcessingRun, f"submission_id IN ({_SUBMISSIONS})"),
     (Delivery, "game_id = %(game)s"),
+    (FeedbackReport, "organization_id = %(org)s"),
     (SubmissionFile, f"submission_id IN ({_SUBMISSIONS})"),
+    (TemplateMapping, "organization_id = %(org)s"),
+    (CleansingRule, "organization_id = %(org)s"),
     (Submission, "organization_id = %(org)s"),
     (InstitutionBranch, f"institution_id IN ({_INSTITUTIONS})"),
     (Institution, "organization_id = %(org)s"),

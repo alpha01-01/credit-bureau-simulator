@@ -27,7 +27,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from apps.bureau.core.models import (
@@ -38,12 +38,20 @@ from apps.bureau.core.models import (
 )
 from apps.bureau.quality.models import (
     CaseType,
+    CleansingRule,
     ReviewCase,
     Severity,
     TransformationLog,
     ValidationIssue,
 )
-from apps.bureau.quality.rules import Issue, cleanse, parse_date, propose_corrections, validate
+from apps.bureau.quality.rules import (
+    Issue,
+    cleanse,
+    parse_date,
+    propose_corrections,
+    relax,
+    validate,
+)
 from apps.bureau.referencing.matching import (
     CustomerKey,
     MatchQuestion,
@@ -66,6 +74,7 @@ from apps.standards.submission_template import (
 )
 
 from .intake import read_rows
+from .mapping import saved_mapping
 from .models import (
     FileStatus,
     ProcessingRun,
@@ -99,8 +108,14 @@ class _Row:
     proposal: dict[str, str] = field(default_factory=dict)
 
 
-def process_submission(submission: Submission, at: datetime | None = None) -> ProcessingRun:
-    """Process a submission. ``at`` is the (game) time of the run; default: now."""
+def process_submission(
+    submission: Submission, at: datetime | None = None, files: list[SubmissionFile] | None = None
+) -> ProcessingRun:
+    """Process a submission. ``at`` is the (game) time of the run; default: now.
+
+    ``files`` processes just those files (a rejected file read again with a new
+    template mapping); by default every file not rejected.
+    """
     at = at or timezone.now()
     with transaction.atomic():
         submission = (
@@ -119,9 +134,12 @@ def process_submission(submission: Submission, at: datetime | None = None) -> Pr
         )
         file_issues: list[ValidationIssue] = []
         rows: list[_Row] = []
-        for stored in submission.files.order_by("file_name", "pk"):
-            if stored.file_status == FileStatus.REJECTED:
-                continue
+        chosen = (
+            submission.files.filter(pk__in=[f.pk for f in files])
+            if files is not None
+            else submission.files.exclude(file_status=FileStatus.REJECTED)
+        )
+        for stored in chosen.order_by("file_name", "pk"):
             rows.extend(_stage_file(run, stored, file_issues))
 
         pending = Pending()
@@ -191,20 +209,40 @@ def _stage_file(
         return reject("T004", str(exc))
     kind = FileKind(stored.file_kind)
     standard = DATA_STANDARDS.get(run.template_version)
-    if names != list(standard.header(kind)):
-        return reject("T001", ",".join(names))
+    header = list(standard.header(kind))
+    if names != header:
+        # A layout the bureau has mapped before is read with that mapping (P2.5).
+        mapping = saved_mapping(run.submission, kind, names)
+        if mapping is None:
+            return reject("T001", ",".join(names))
+        order = [mapping.columns.index(column) for column in header]
+        raw_rows = [[row[i] for i in order] for row in raw_rows]
+        names = header
+        stored.mapping = mapping
+        stored.save(update_fields=["mapping"])
 
     stored.file_status = FileStatus.ACCEPTED
-    stored.save(update_fields=["file_status"])
+    stored.rejection_reason = ""
+    stored.save(update_fields=["file_status", "rejection_reason"])
     period = run.submission.reporting_period
 
-    policy = run.submission.organization.rejection_policy
+    organization = run.submission.organization
+    policy = organization.rejection_policy
+    own_rules = list(
+        CleansingRule.objects.filter(organization=organization, is_active=True)
+        .filter(Q(institution__isnull=True) | Q(institution_id=run.submission.institution_id))
+        .order_by("code")
+    )
     rows: list[_Row] = []
     for n, values in enumerate(raw_rows, start=1):
         raw = dict(zip(names, values, strict=True))
         cleansed, logs = cleanse(kind, raw, standard)
+        for rule in own_rules:  # the bureau's own rules, after the built-in ones (P2.5)
+            before = cleansed.get(rule.field, "")
+            if before and (after := rule.apply(before)) != before:
+                cleansed[rule.field] = after
+                logs.append((rule.field, rule.code, before, after))
         rows.append(_Row(stored, n, raw, cleansed, logs))
-    organization = run.submission.organization
     _mark_duplicates(kind, rows, organization.matching_tooling, organization.match_auto_link)
 
     account_rows: dict[str, int] = {}
@@ -212,7 +250,7 @@ def _stage_file(
         if row.status == RecordStatus.DUPLICATE:
             continue
         checked = validate(kind, row.cleansed, period, policy, standard)
-        row.issues.extend(checked.issues)
+        row.issues.extend(relax(checked.issues, organization.rule_overrides))
         for name, value in checked.blanked.items():
             row.cleansed[name] = ""
             row.transformations.append((name, "C005", value, ""))

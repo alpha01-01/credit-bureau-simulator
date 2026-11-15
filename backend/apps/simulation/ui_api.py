@@ -34,11 +34,13 @@ from apps.bureau.core.models import (
 )
 from apps.bureau.quality.models import ValidationIssue
 from apps.bureau.reports.enquiries import cheques_on_file, judgments_on_file
+from apps.bureau.submissions import mapping
 from apps.bureau.submissions.intake import due_date_for
 from apps.bureau.submissions.models import (
     FileStatus,
     ProcessingRun,
     Submission,
+    SubmissionFile,
 )
 from apps.commercial.models import UsageRecord
 from apps.finance import statements
@@ -459,12 +461,27 @@ def submission_detail(request: Request, game_id: int, reference: str) -> Respons
                     "sha256": f.file_hash,
                     "status": f.file_status,
                     "rejection_reason": f.rejection_reason,
+                    "mapped": f.mapping_id is not None,
+                    "mapping": _mapping_offer(f),
                 }
                 for f in s.files.order_by("file_name")
             ],
             "runs": runs,
         }
     )
+
+
+def _mapping_offer(stored: SubmissionFile) -> dict[str, Any] | None:
+    """For a file rejected for its columns: what arrived, and the bureau's suggestion."""
+    if stored.file_status != FileStatus.REJECTED or stored.rejection_reason != "T001":
+        return None
+    received = mapping.received_headers(stored)
+    columns = mapping.template_columns(stored)
+    return {
+        "received": received,
+        "suggested": mapping.suggest(received, columns),
+        "template": list(columns),
+    }
 
 
 # --- Customers -----------------------------------------------------------------------------

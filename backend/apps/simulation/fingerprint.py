@@ -29,8 +29,20 @@ from apps.bureau.core.models import (
     ProviderCustomerLink,
 )
 from apps.bureau.core.models import Customer as BureauCustomer
-from apps.bureau.quality.models import ReviewCase, TransformationLog, ValidationIssue
-from apps.bureau.submissions.models import ProcessingRun, StagingRecord, Submission, SubmissionFile
+from apps.bureau.quality.models import (
+    CleansingRule,
+    ReviewCase,
+    TransformationLog,
+    ValidationIssue,
+)
+from apps.bureau.submissions.models import (
+    FeedbackReport,
+    ProcessingRun,
+    StagingRecord,
+    Submission,
+    SubmissionFile,
+    TemplateMapping,
+)
 from apps.commercial.models import UsageRecord
 from apps.finance.models import Invoice, JournalLine, Payment
 from apps.org.models import Employee
@@ -67,7 +79,9 @@ def fingerprint(game: Game) -> str:
         h,
         "game",
         [(game.clock_start, game.current_tick, game.status, game.speed,
-          game.organization.rejection_policy, game.pause_severities, game.pause_on_deadlines)],
+          game.organization.rejection_policy, game.pause_severities, game.pause_on_deadlines,
+          game.organization.rule_overrides, game.organization.matching_tooling,
+          game.organization.match_auto_link, game.organization.match_review)],
     )  # fmt: skip
     _section(
         h,
@@ -83,6 +97,29 @@ def fingerprint(game: Game) -> str:
         .order_by("sequence")
         .values_list("sequence", "event_type", "due_tick", "payload", "status", "processed_tick"),
     )
+    _section(
+        h,
+        "cleansing_rules",
+        CleansingRule.objects.filter(organization_id=org)
+        .order_by("code")
+        .values_list("code", "field", "action", "find", "replace",
+                     "institution__institution_code", "is_active", "created_at"),
+    )  # fmt: skip
+    _section(
+        h,
+        "feedback",
+        FeedbackReport.objects.filter(organization_id=org)
+        .order_by("pk")
+        .values_list("submission__submission_reference", "sent_at", "report"),
+    )
+    _section(
+        h,
+        "mappings",
+        TemplateMapping.objects.filter(organization_id=org)
+        .order_by("pk")
+        .values_list("institution__institution_code", "file_kind", "received", "columns",
+                     "created_at", "created_by"),
+    )  # fmt: skip
     _section(
         h,
         "notices",
