@@ -76,9 +76,22 @@ def rng_for(game: Game) -> Callable[[int], np.random.Generator]:
 
 
 def sync_work_items(game: Game, tick: int) -> int:
-    """Create a work item, with its answer, for every review case that has none."""
+    """Create a work item, with its answer, for every review case that has none.
+
+    Only this function makes work items, one per case and numbered as the case, and
+    case numbers only grow; so cases without one all come after the highest item
+    number. Looking there first keeps the every-tick check cheap (P2.1).
+    """
+    last = (
+        WorkItem.objects.filter(organization=game.organization)
+        .order_by("-item_number")
+        .values_list("item_number", flat=True)
+        .first()
+    )
     cases = list(
-        ReviewCase.objects.filter(organization=game.organization, work_item__isnull=True)
+        ReviewCase.objects.filter(
+            organization=game.organization, case_number__gt=last or 0, work_item__isnull=True
+        )
         .select_related("record__file", "record__run__submission__institution")
         .order_by("case_number")
     )

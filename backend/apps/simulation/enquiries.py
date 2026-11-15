@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
+from typing import Any
 
 from apps.bureau.core.models import Enquiry, IdentifierType
 from apps.bureau.providers.models import Institution
@@ -87,7 +88,15 @@ def schedule_applications(game: Game, cal: Calendar, tick: int, period: date, se
     return sequence
 
 
-def handle_application(game: Game, payload: dict[str, object], at: datetime) -> Enquiry | None:
+def handle_application(
+    game: Game, payload: dict[str, object], at: datetime, memo: dict[object, Any] | None = None
+) -> Enquiry | None:
+    """One loan application: the lender may check the bureau, and judges what it gets back.
+
+    ``memo`` holds lookups shared by the applications of one tick, which cannot change
+    while the tick runs.
+    """
+    memo = {} if memo is None else memo
     code = str(payload["lender"])
     period = date.fromisoformat(str(payload["period"]))
     seq = int(str(payload["seq"]))
@@ -95,9 +104,12 @@ def handle_application(game: Game, payload: dict[str, object], at: datetime) -> 
         world=game.world, lender__code=code, period=period, seq=seq
     )
     view = SubscriberView.objects.select_for_update().get(game=game, subscriber_code=code)
-    subscriber = Subscriber.objects.get(organization=game.organization, subscriber_code=code)
-    product = Product.objects.get(organization=game.organization, product_code=PRODUCT)
-    contract = active_contract(subscriber.pk, product, at.date())
+    key = ("subscriber", code, at.date())
+    if key not in memo:
+        subscriber = Subscriber.objects.get(organization=game.organization, subscriber_code=code)
+        product = Product.objects.get(organization=game.organization, product_code=PRODUCT)
+        memo[key] = (subscriber, product, active_contract(subscriber.pk, product, at.date()))
+    subscriber, product, contract = memo[key]
     price = contract.unit_price
 
     view.opportunities += 1
@@ -139,7 +151,7 @@ def handle_application(game: Game, payload: dict[str, object], at: datetime) -> 
         game=game,
         enquiry=enquiry,
         application=application,
-        should_hit=_has_reported_credit(game, borrower, period),
+        should_hit=_has_reported_credit(game, borrower, period, memo),
         hit=hit,
         correct_person=correct,
         outcome=outcome,
@@ -152,13 +164,17 @@ def handle_application(game: Game, payload: dict[str, object], at: datetime) -> 
     return enquiry
 
 
-def _has_reported_credit(game: Game, borrower: tuple[str, int], period: date) -> bool:
+def _has_reported_credit(
+    game: Game, borrower: tuple[str, int], period: date, memo: dict[object, Any]
+) -> bool:
     """Does the applicant have a loan, before this month, with a lender reporting to the bureau?"""
-    providers = tuple(
-        Institution.objects.filter(organization=game.organization)
-        .order_by("institution_code")
-        .values_list("institution_code", flat=True)
-    )
+    if "providers" not in memo:
+        memo["providers"] = tuple(
+            Institution.objects.filter(organization=game.organization)
+            .order_by("institution_code")
+            .values_list("institution_code", flat=True)
+        )
+    providers = memo["providers"]
     people, businesses = _reported_borrowers(game.world_id, providers, period.replace(day=1))
     return borrower[1] in (people if borrower[0] == "person" else businesses)
 
