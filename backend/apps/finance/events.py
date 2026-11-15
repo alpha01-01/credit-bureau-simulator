@@ -56,6 +56,12 @@ from .models import Account, Invoice, InvoiceLine, JournalLine, Payment
 # Tax and payroll rates come from the rule book edition in force (apps.standards.rulebook).
 MONTHLY_RENT = Decimal("45000.00")
 MONTHLY_IT = Decimal("15000.00")
+# ASSUMPTION A-048: matching software licence per month, by tooling level (P2.4).
+MATCHING_TOOLING_COST = {
+    "BASIC": Decimal("0.00"),
+    "STANDARD": Decimal("8000.00"),
+    "ADVANCED": Decimal("20000.00"),
+}
 OPENING_BANK = Decimal("1800000.00")
 SHARE_CAPITAL_AMOUNT = Decimal("2000000.00")
 PAYMENT_TERMS_DAYS = 30
@@ -105,6 +111,13 @@ def month_start_costs(organization: Organization, month_first: date, at: datetim
             organization, month_first, f"IT hosting for {month_first:%B %Y}",
             [dr(IT, MONTHLY_IT), cr(BANK, MONTHLY_IT)], "IT_HOSTING", at,
         )  # fmt: skip
+        tooling = MATCHING_TOOLING_COST[organization.matching_tooling]
+        if tooling:
+            post(
+                organization, month_first,
+                f"Matching software ({organization.matching_tooling.lower()}) for {month_first:%B %Y}",
+                [dr(IT, tooling), cr(BANK, tooling)], "IT_TOOLING", at,
+            )  # fmt: skip
 
 
 # --- Billing ---------------------------------------------------------------------------------

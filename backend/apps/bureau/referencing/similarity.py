@@ -15,7 +15,7 @@ from datetime import date
 AUTO_LINK = 0.92
 
 
-def _normalise(text: str) -> str:
+def normalise(text: str) -> str:
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return " ".join(text.upper().replace("-", " ").replace(".", " ").split())
 
@@ -52,9 +52,9 @@ def jaro_winkler(a: str, b: str) -> float:
 
 def name_similarity(first_a: str, last_a: str, first_b: str, last_b: str) -> float:
     """Full-name similarity, tolerant of first and last names given the wrong way round."""
-    a = _normalise(f"{first_a} {last_a}")
-    b = _normalise(f"{first_b} {last_b}")
-    swapped = _normalise(f"{last_b} {first_b}")
+    a = normalise(f"{first_a} {last_a}")
+    b = normalise(f"{first_b} {last_b}")
+    swapped = normalise(f"{last_b} {first_b}")
     return max(jaro_winkler(a, b), jaro_winkler(a, swapped))
 
 
@@ -100,7 +100,7 @@ def compare_businesses(
     record: tuple[str, date | None], customer: tuple[str, date | None]
 ) -> Comparison:
     """(registered name, registration date) of the record and of the bureau customer."""
-    a, b = _normalise(record[0]), _normalise(customer[0])
+    a, b = normalise(record[0]), normalise(customer[0])
     names = jaro_winkler(a, b)
     registered = date_similarity(record[1], customer[1])
     reasons = [

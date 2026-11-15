@@ -52,6 +52,7 @@ from apps.bureau.referencing.matching import (
     Referencer,
     observed_accounts,
 )
+from apps.bureau.referencing.similarity import jaro_winkler, name_similarity, normalise
 from apps.dbcopy import copy_insert
 from apps.org.models import Organization
 from apps.standards.rulebook import DATA_STANDARDS
@@ -77,7 +78,8 @@ from .models import (
     changes_from,
 )
 
-PROCESSING_VERSION = "pipeline-v2"
+# v3 (P2.4): links record how they were made; fuzzy matching and near-duplicates by tooling.
+PROCESSING_VERSION = "pipeline-v3"
 BATCH = 2000
 
 
@@ -202,7 +204,8 @@ def _stage_file(
         raw = dict(zip(names, values, strict=True))
         cleansed, logs = cleanse(kind, raw, standard)
         rows.append(_Row(stored, n, raw, cleansed, logs))
-    _mark_duplicates(kind, rows)
+    organization = run.submission.organization
+    _mark_duplicates(kind, rows, organization.matching_tooling, organization.match_auto_link)
 
     account_rows: dict[str, int] = {}
     for row in rows:
@@ -241,12 +244,19 @@ DUPLICATE_KEYS = {
 }
 
 
-def _mark_duplicates(kind: FileKind, rows: list[_Row]) -> None:
+def _mark_duplicates(
+    kind: FileKind, rows: list[_Row], tooling: str = "BASIC", auto_link: float = 1.0
+) -> None:
     """The standard's duplicate rule (D18): the same record reported twice.
 
     The names must agree as well. Of a set of duplicates the record with the
     lower balance is kept (owner's rule, strictly enforced); on equal balances,
     the first. A provider who disagrees raises a dispute.
+
+    Near-duplicates (P2.4): the same account, customer and date reported twice
+    with the name spelled differently. Matching tooling recognises a repeat whose
+    names are at least ``auto_link`` alike; without it, the second row cannot be
+    loaded (D002, the account reported twice).
     """
     names = ("BusinessName",) if kind in BUSINESS_KINDS else ("Surname", "FirstName")
     fields = DUPLICATE_KEYS[kind]
@@ -269,6 +279,42 @@ def _mark_duplicates(kind: FileKind, rows: list[_Row]) -> None:
             row.status = RecordStatus.DUPLICATE
             row.duplicate_of = kept.number
             row.issues.append(Issue("D001", value=f"row {kept.number}", severity="WARNING"))
+    if tooling != "BASIC":
+        _mark_near_duplicates(kind, rows, names, fields, auto_link)
+
+
+def _mark_near_duplicates(
+    kind: FileKind,
+    rows: list[_Row],
+    names: tuple[str, ...],
+    fields: tuple[str, ...],
+    auto_link: float,
+) -> None:
+    first: dict[tuple[str, ...], _Row] = {}
+    for row in rows:
+        if row.status == RecordStatus.DUPLICATE:
+            continue
+        key = tuple(row.cleansed[f] for f in fields)
+        if not all(key):
+            continue
+        if key not in first:
+            first[key] = row
+            continue
+        kept, v = first[key], row.cleansed
+        k = kept.cleansed
+        alike = (
+            jaro_winkler(normalise(v[names[0]]), normalise(k[names[0]]))
+            if len(names) == 1
+            else name_similarity(v["FirstName"], v["Surname"], k["FirstName"], k["Surname"])
+        )
+        if alike >= auto_link:
+            row.status = RecordStatus.DUPLICATE
+            row.duplicate_of = kept.number
+            row.issues.append(
+                Issue(
+                    "D001", value=f"row {kept.number}, names {alike:.2f} alike", severity="WARNING"
+                )
+            )
 
 
 def _reference(

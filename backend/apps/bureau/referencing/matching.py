@@ -12,7 +12,16 @@ disbursement date that differs from the account on file cannot be loaded
 
 Conflicts (an identifier already held by another customer, an account held by
 another customer) are kept as warnings for review; the provider's own keys win.
-Partial and fuzzy matching arrive with work items in S5.
+
+Fuzzy matching (P2.4) depends on the bureau's matching tooling. With STANDARD
+tooling, a record that no identifier links is compared with the customers born
+on the same day or sharing its surname and year of birth (businesses: registered
+on the same day); ADVANCED tooling also
+looks up customers by phone number and counts a shared number in the score. At
+or above the bureau's auto-link threshold the record is linked; between its
+review and auto-link thresholds the match is held for review; below, the record
+becomes a new customer. Lower thresholds make fewer false splits and more false
+merges; higher ones the reverse. ASSUMPTION A-048.
 
 Exact matching has a real weakness that the game relies on: a provider that
 sends another person's identifier links the record to that person.
@@ -35,6 +44,7 @@ from apps.bureau.core.models import (
     CustomerType,
     IdentifierType,
     IndividualProfile,
+    LinkMethod,
     ProviderCustomerLink,
 )
 from apps.bureau.providers.models import Institution
@@ -43,6 +53,7 @@ from apps.bureau.referencing.similarity import (
     Comparison,
     compare_businesses,
     compare_individuals,
+    normalise,
 )
 from apps.bureau.submissions.models import Submission
 from apps.standards.submission_template import CONSUMER_KINDS, FileKind
@@ -79,16 +90,26 @@ _PHONE_FIELDS: dict[FileKind, tuple[str, ...]] = {
 OVERDRAFT = "121"  # the standard allows an overdraft's disbursement date to move
 
 
+FUZZY_FIELD = "NAME_AND_BIRTH"  # what a fuzzy match question was matched on
+PHONE_WEIGHT = 0.15  # share of a fuzzy score that a shared phone number carries (ADVANCED)
+
+
 @dataclass(frozen=True)
 class MatchQuestion:
-    """An identifier matched, but the identity does not agree well enough to link blindly."""
+    """A possible match that is not sure enough to link blindly.
+
+    Either an identifier matched but the identity does not agree, or (fuzzy
+    matching) no identifier matched but name and date of birth come close.
+    """
 
     candidate: CustomerKey
     comparison: Comparison
     identifier_field: str
 
 
-# How a reviewer settled a match question: link to this customer id, or create a new customer.
+# How a reviewer settled a match question: the same customer as this candidate, or a
+# different one (then the candidate is ruled out and, with fuzzy matching, the bureau looks
+# for the right customer before creating a new one).
 Resolution = tuple[str, int | None]
 SAME, DIFFERENT = "SAME_CUSTOMER", "DIFFERENT_CUSTOMER"
 
@@ -130,6 +151,10 @@ class Referencer:
     ) -> None:
         self.submission = submission
         self.organization_id = submission.organization_id
+        organization = submission.organization
+        self.tooling = organization.matching_tooling
+        self.auto_link = organization.match_auto_link
+        self.review = organization.match_review
         self.institution: Institution = submission.institution
         self.kind = kind
         # Cheque and judgment records identify a person as a consumer credit record does.
@@ -190,6 +215,85 @@ class Referencer:
             ).values_list("customer_id", "registered_name", "registration_date"):
                 self.identity[c] = (name, registered)
 
+        # Fuzzy matching: customers born (or registered) on the records' dates, and with
+        # ADVANCED tooling, customers who share a phone number with a record.
+        self.born_on: dict[date | None, list[CustomerKey]] = defaultdict(list)
+        self.family: dict[tuple[str, int], list[CustomerKey]] = defaultdict(list)
+        self.on_phone: dict[str, list[CustomerKey]] = defaultdict(list)
+        if self.tooling != "BASIC":
+            self._load_fuzzy_pool(records)
+
+    def _load_fuzzy_pool(self, records: list[dict[str, str]]) -> None:
+        date_field = "DOB" if self.consumer else "RegistrationDate"
+        dates = {d for r in records if (d := parse_date(r.get(date_field, ""))) is not None}
+        pool: set[int] = set()
+        if self.consumer:
+            years = {d.year for d in dates}
+            rows = IndividualProfile.objects.filter(
+                customer__organization_id=self.organization_id, date_of_birth__year__in=years
+            ).values_list("customer_id", "first_name", "last_name", "date_of_birth")
+            wanted = {(normalise(r.get("Surname", "")), d.year) for r in records
+                      if (d := parse_date(r.get("DOB", ""))) is not None}  # fmt: skip
+            for c, first, last, born in rows:
+                family = (normalise(last), born.year) if born else None
+                if born not in dates and family not in wanted:
+                    continue
+                self.identity[c] = (first, last, born)
+                self.born_on[born].append(c)
+                if family:
+                    self.family[family].append(c)
+                pool.add(c)
+        else:
+            for c, name, registered in BusinessProfile.objects.filter(
+                customer__organization_id=self.organization_id, registration_date__in=dates
+            ).values_list("customer_id", "registered_name", "registration_date"):
+                self.identity[c] = (name, registered)
+                self.born_on[registered].append(c)
+                pool.add(c)
+        if self.tooling == "ADVANCED":
+            phones = {r[f] for r in records for f in _PHONE_FIELDS[self.subject] if r.get(f)}
+            for c, number in CustomerContact.objects.filter(
+                customer__organization_id=self.organization_id, contact_value__in=phones
+            ).values_list("customer_id", "contact_value"):
+                self.on_phone[number].append(c)
+                pool.add(c)
+        for c, number in CustomerContact.objects.filter(customer_id__in=pool).values_list(
+            "customer_id", "contact_value"
+        ):
+            self.contacts_of[c].add(number)
+
+    def _fuzzy(
+        self, values: dict[str, str], ruled_out: CustomerKey | None = None
+    ) -> tuple[CustomerKey, Comparison] | None:
+        """The closest customer by name and date of birth (and phone), if any."""
+        date_field = "DOB" if self.consumer else "RegistrationDate"
+        phones = [values[f] for f in _PHONE_FIELDS[self.subject] if values.get(f)]
+        born = parse_date(values[date_field])
+        candidates: list[CustomerKey] = list(self.born_on.get(born, []))
+        if self.consumer and born is not None:
+            candidates.extend(self.family.get((normalise(values["Surname"]), born.year), []))
+        if self.tooling == "ADVANCED":
+            for number in phones:
+                candidates.extend(self.on_phone.get(number, []))
+        best: tuple[CustomerKey, Comparison] | None = None
+        seen: list[CustomerKey] = []
+        for key in candidates:
+            if any(_same(key, k) for k in seen) or (
+                ruled_out is not None and _same(key, ruled_out)
+            ):
+                continue
+            seen.append(key)
+            comparison = self.compare(values, key)
+            if self.tooling == "ADVANCED":
+                shared = any(p in self.contacts_of[key] for p in phones)
+                comparison = Comparison(
+                    round((1 - PHONE_WEIGHT) * comparison.score + PHONE_WEIGHT * shared, 3),
+                    [*comparison.reasons, "same phone number" if shared else "no phone in common"],
+                )
+            if best is None or comparison.score > best[1].score:
+                best = (key, comparison)
+        return best
+
     def _record_identity(self, values: dict[str, str]) -> tuple[Any, ...]:
         if self.consumer:
             return (values["FirstName"], values["Surname"], parse_date(values["DOB"]))
@@ -249,29 +353,53 @@ class Referencer:
             elif not _same(found, owner):
                 issues.append(Issue("R001", name, value, "WARNING"))
 
+        # Fuzzy matching, for a record nothing else settles.
+        close = (
+            self._fuzzy(values)
+            if self.tooling != "BASIC" and linked is None and found is None and resolution is None
+            else None
+        )
+
         customer: CustomerKey
         # Once the provider's customer number is linked, it decides (as everywhere else);
         # a reviewer's resolution settles only a number the bureau has not linked yet,
         # e.g. the second loan of a borrower whose first case was decided earlier.
         if linked is None and resolution is not None and resolution[0] == SAME and resolution[1]:
             customer = resolution[1]
-            self._link(values["CustomerID"], customer)
+            self._link(values["CustomerID"], customer, LinkMethod.REVIEW_SAME)
         elif linked is None and resolution is not None and resolution[0] == DIFFERENT:
-            customer = self._new_customer(values)
-            self._link(values["CustomerID"], customer)
+            other = (
+                self._fuzzy(values, ruled_out=resolution[1]) if self.tooling != "BASIC" else None
+            )
+            if other is not None and other[1].score >= self.auto_link:
+                customer = other[0]
+                self._link(values["CustomerID"], customer, LinkMethod.FUZZY)
+            else:
+                customer = self._new_customer(values)
+                self._link(values["CustomerID"], customer, LinkMethod.REVIEW_NEW)
         elif linked is not None:
             customer = linked
             if found is not None and not _same(found, linked):
                 issues.append(Issue("R001", _ID_FIELDS[self.subject][0][0], "", "WARNING"))
         elif found is not None:
             comparison = self.compare(values, found)
-            if not comparison.auto_link:
+            if comparison.score < self.auto_link:
                 return MatchQuestion(found, comparison, found_field), []
             customer = found
-            self._link(values["CustomerID"], customer)
+            self._link(values["CustomerID"], customer, LinkMethod.IDENTIFIER)
+        elif close is not None and close[1].score >= self.review:
+            key, comparison = close
+            if comparison.score < self.auto_link:
+                if isinstance(key, int):
+                    return MatchQuestion(key, comparison, FUZZY_FIELD), []
+                customer = self._new_customer(values)  # no case on a customer not yet saved
+                self._link(values["CustomerID"], customer, LinkMethod.NEW)
+            else:
+                customer = key
+                self._link(values["CustomerID"], customer, LinkMethod.FUZZY)
         else:
             customer = self._new_customer(values)
-            self._link(values["CustomerID"], customer)
+            self._link(values["CustomerID"], customer, LinkMethod.NEW)
 
         # Record identifiers the bureau did not have yet; conflicts stay as warnings.
         for name, id_type in _ID_FIELDS[self.subject]:
@@ -322,14 +450,24 @@ class Referencer:
                     registration_date=parse_date(values["RegistrationDate"]),
                 )
             )
-        return NewCustomer(customer, self._record_identity(values))
+        new = NewCustomer(customer, self._record_identity(values))
+        # Later rows of the same run can match it too.
+        self.born_on[new.identity[-1]].append(new)
+        if self.consumer and new.identity[-1] is not None:
+            self.family[(normalise(new.identity[1]), new.identity[-1].year)].append(new)
+        if self.tooling == "ADVANCED":
+            for name in _PHONE_FIELDS[self.subject]:
+                if values.get(name):
+                    self.on_phone[values[name]].append(new)
+        return new
 
-    def _link(self, number: str, customer: CustomerKey) -> None:
+    def _link(self, number: str, customer: CustomerKey, method: str) -> None:
         link = ProviderCustomerLink(
             organization_id=self.organization_id,
             institution=self.institution,
             provider_customer_number=number,
             source_submission=self.submission,
+            method=method,
         )
         _set_customer(link, customer)
         self.pending.links.append(link)

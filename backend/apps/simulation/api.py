@@ -30,6 +30,7 @@ from apps.bureau.quality.rules import POLICIES
 from apps.bureau.submissions.models import StagingRecord
 from apps.bureau.submissions.review import ReviewError
 from apps.finance import statements
+from apps.finance.events import MATCHING_TOOLING_COST
 from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 from apps.workitems.work import WorkError
@@ -128,6 +129,41 @@ def feed(request: Request, game_id: int) -> Response:
         {
             "notices": [controls.notice_dict(n) for n in page[:FEED_PAGE]],
             "more": len(page) > FEED_PAGE,
+        }
+    )
+
+
+@api_view(["GET", "POST"])
+def matching_policy(request: Request, game_id: int) -> Response:
+    """Customer matching (P2.4): the tooling bought and the thresholds set."""
+    game = _game(request, game_id)
+    if request.method == "POST":
+        try:
+            if "tooling" in request.data:
+                controls.set_matching_tooling(game, str(request.data["tooling"]))
+            if "auto_link" in request.data or "review" in request.data:
+                org = game.organization
+                controls.set_matching_thresholds(
+                    game,
+                    float(request.data.get("auto_link", org.match_auto_link)),
+                    float(request.data.get("review", org.match_review)),
+                )
+        except (ClockError, ValueError, TypeError) as exc:
+            return _error(exc)
+    org = game.organization
+    return Response(
+        {
+            "tooling": org.matching_tooling,
+            "auto_link": org.match_auto_link,
+            "review": org.match_review,
+            "options": [
+                {
+                    "level": level,
+                    "description": label,
+                    "monthly_cost": str(MATCHING_TOOLING_COST[level]),
+                }
+                for level, label in controls.TOOLING_LEVELS.items()
+            ],
         }
     )
 
