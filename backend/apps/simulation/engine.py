@@ -136,12 +136,14 @@ def run_tick(game_id: int, tick: int) -> bool:
         due = ScheduledEvent.objects.filter(
             game=game, status=EventStatus.PENDING, due_tick__lte=tick
         ).order_by("due_tick", "sequence")
+        handled = []
         for event in due:
             _handle(game, event, cal.tick_start(tick))
             event.status = EventStatus.DONE
             event.processed_tick = tick
-            event.save(update_fields=["status", "processed_tick"])
-            processed += 1
+            handled.append(event)
+        ScheduledEvent.objects.bulk_update(handled, ["status", "processed_tick"], batch_size=1000)
+        processed += len(handled)
 
         if has_work(game.organization):
             processed += work_tick(

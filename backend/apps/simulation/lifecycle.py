@@ -10,7 +10,10 @@ organisation goes, children before parents, with set-based SQL.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
 from django.db import connection, transaction
@@ -56,8 +59,12 @@ def _table(model: type[Model]) -> str:
 
 # (table, SQL condition selecting the game's rows; %(org)s / %(game)s parameters)
 _SUBMISSIONS = f"SELECT id FROM {_table(Submission)} WHERE organization_id = %(org)s"
-_RUNS = f"SELECT id FROM {_table(ProcessingRun)} WHERE submission_id IN ({_SUBMISSIONS})"
-_RECORDS = f"SELECT id FROM {_table(StagingRecord)} WHERE run_id IN ({_RUNS})"
+# A game's processing runs and staging records sit two and three steps below its
+# organisation. Their ids are gathered first into small temporary tables with exact
+# statistics (``game_scope``): nested subqueries on stale statistics once made the
+# planner take minutes over a delete (P2.1).
+_RUNS = "SELECT id FROM scope_runs"
+_RECORDS = "SELECT id FROM scope_records"
 _CUSTOMERS = f"SELECT id FROM {_table(Customer)} WHERE organization_id = %(org)s"
 _INSTITUTIONS = f"SELECT id FROM {_table(Institution)} WHERE organization_id = %(org)s"
 
@@ -121,10 +128,34 @@ def delete_game(game: Game) -> None:
     """Delete a game, its bureau and every record and file the bureau holds."""
     params = {"org": game.organization_id, "game": game.pk}
     folder = Path(settings.STORAGE_ROOT) / "bureau" / f"org_{game.organization_id}"
-    with transaction.atomic(), connection.cursor() as cursor:
+    with transaction.atomic(), connection.cursor() as cursor, game_scope(cursor, params):
         for model, condition in _ORDER:
             cursor.execute(f"DELETE FROM {_table(model)} WHERE {condition}", params)
         transaction.on_commit(lambda: shutil.rmtree(folder, ignore_errors=True))
+
+
+@contextmanager
+def game_scope(cursor: Any, params: dict[str, Any]) -> Iterator[None]:
+    """Gather the game's run and record ids for the ``_ORDER`` conditions to use."""
+    cursor.execute("DROP TABLE IF EXISTS scope_runs, scope_records")
+    cursor.execute(
+        "CREATE TEMP TABLE scope_runs AS SELECT id FROM "
+        + _table(ProcessingRun)
+        + f" WHERE submission_id IN ({_SUBMISSIONS})",
+        params,
+    )
+    cursor.execute(
+        "CREATE TEMP TABLE scope_records AS SELECT id FROM "
+        + _table(StagingRecord)
+        + " WHERE run_id IN (SELECT id FROM scope_runs)"
+    )
+    cursor.execute("ANALYZE scope_runs")
+    cursor.execute("ANALYZE scope_records")
+    try:
+        yield
+    finally:
+        # Dropped now, not at commit: a caller's transaction may handle several games.
+        cursor.execute("DROP TABLE IF EXISTS scope_runs, scope_records")
 
 
 def delete_world_with_games(world_id: int) -> None:

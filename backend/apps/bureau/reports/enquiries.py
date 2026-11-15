@@ -67,7 +67,7 @@ def enquire(
                 identifier_type=identifier_type,
                 identifier_value=identifier_value,
             )
-            .select_related("customer")
+            .select_related("customer__individual", "customer__business")
             .first()
         )
         customer = identifier.customer if identifier else None

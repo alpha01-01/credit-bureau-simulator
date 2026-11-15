@@ -20,6 +20,7 @@ from typing import Any
 import numpy as np
 from django.conf import settings
 from django.db import connection, transaction
+from django.db.models import Model
 
 from .config import PRODUCTS, WorldConfig
 from .engine import PERSON, PRODUCT_CODES, STATUS_NAMES, SimulationResult
@@ -349,7 +350,19 @@ def write_world(
         )
         cursor.execute(f"ANALYZE {partition}")
 
+    # Fresh statistics, so the first queries on the new world get sensible plans. Without
+    # them a new database thinks every table holds one row and joins them blindly (P2.1).
+    from apps.world import models as m
+
+    analyze(m.Lender, m.Branch, m.Person, m.Business, m.LenderCustomer, m.Loan)
     return world_id
+
+
+def analyze(*models: type[Model]) -> None:
+    """Refresh the planner's statistics for these tables (a sample, so cheap)."""
+    with connection.cursor() as cursor:
+        for model in models:
+            cursor.execute("ANALYZE " + connection.ops.quote_name(model._meta.db_table))
 
 
 def loan_month_partition(world_id: int) -> str:

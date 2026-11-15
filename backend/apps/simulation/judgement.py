@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
+from functools import lru_cache
 
 import numpy as np
 
@@ -128,6 +129,12 @@ def record_borrower(game: Game, file_id: int, row_number: int) -> Borrower:
 
 def customer_borrower(game: Game, customer_id: int) -> Borrower:
     """The real borrower behind a bureau customer: via the first provider link that created it."""
+    return _customer_borrower(game.world_id, customer_id)
+
+
+# A customer's first provider link never changes, so neither does its answer (P2.1).
+@lru_cache(maxsize=1 << 17)
+def _customer_borrower(world_id: int, customer_id: int) -> Borrower:
     link = (
         ProviderCustomerLink.objects.filter(customer_id=customer_id)
         .select_related("institution")
@@ -137,7 +144,7 @@ def customer_borrower(game: Game, customer_id: int) -> Borrower:
     if link is None:
         raise LookupError(f"Bureau customer {customer_id} has no provider link")
     lender_customer = LenderCustomer.objects.get(
-        world=game.world,
+        world_id=world_id,
         lender__code=link.institution.institution_code,
         customer_number=link.provider_customer_number,
     )

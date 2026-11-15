@@ -35,7 +35,7 @@ from apps.bureau.submissions.pipeline import PROCESSING_VERSION
 from apps.org.models import Organization
 from apps.world.models import World
 
-from .lifecycle import _ORDER
+from .lifecycle import _ORDER, game_scope
 from .models import Game, HistoryTemplate
 
 # Change when anything that shapes a pre-loaded history changes, so old templates are rebuilt.
@@ -105,12 +105,13 @@ def copy_bureau(source: Game, target: Game) -> None:
     with transaction.atomic(), connection.cursor() as cursor:
         # A copy can always be made again: no need to wait for its log to reach the disk.
         cursor.execute("SET LOCAL synchronous_commit = off")
-        maps = {
-            model: _id_map(cursor, model, condition, params, n)
-            for n, (model, condition) in enumerate(_COPIED)
-        }
-        for model, _ in _COPIED:
-            _copy_rows(cursor, model, maps, copied, params)
+        with game_scope(cursor, params):
+            maps = {
+                model: _id_map(cursor, model, condition, params, n)
+                for n, (model, condition) in enumerate(_COPIED)
+            }
+            for model, _ in _COPIED:
+                _copy_rows(cursor, model, maps, copied, params)
         # Dropped now, not at commit: a caller's transaction may copy several games.
         cursor.execute(f"DROP TABLE {', '.join(maps.values())}")
         _copy_organization(source.organization_id, target.organization_id)
