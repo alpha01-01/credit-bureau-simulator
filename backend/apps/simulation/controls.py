@@ -18,10 +18,11 @@ from apps.bureau.quality.rules import POLICIES
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
+from .checkpoints import checkpoint_now
 from .clock import TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
 from .judgement import sync_work_items
-from .models import SPEEDS, EventStatus, Game, GameStatus, PlayerAction
+from .models import SPEEDS, Checkpoint, EventStatus, Game, GameStatus, PlayerAction
 
 ADVANCE_UNITS = ("hour", "day", "next_event")
 
@@ -123,23 +124,57 @@ def replay(source: Game, target: Game) -> Game:
     for action in source.actions.order_by("sequence"):
         if target.current_tick < action.tick:
             target = advance(target, action.tick - target.current_tick)
-        match action.action_type:
-            case "PAUSE":
-                target = pause(target)
-            case "RESUME":
-                target = resume(target)
-            case "SET_SPEED":
-                target = set_speed(target, int(action.payload["speed"]))
-            case "ADVANCE":
-                target = advance_by(target, action.payload["unit"], int(action.payload["count"]))
-            case "SET_REJECTION_POLICY":
-                target = set_rejection_policy(target, str(action.payload["policy"]))
-            case "RESOLVE_ITEM":
-                resolve_item(target, int(action.payload["item"]), str(action.payload["decision"]))
-            case other:
-                raise ClockError(f"Unknown action {other}")
+        target = _apply(target, action)
     if target.current_tick < source.current_tick:  # ticks run by the clock worker
         target = advance(target, source.current_tick - target.current_tick)
+    return target
+
+
+def replay_to(checkpoint: Checkpoint, target: Game) -> Game:
+    """Bring ``target`` (a fresh game like the checkpoint's) to the checkpoint's point.
+
+    The actions taken before the checkpoint are applied at their ticks. Advances are
+    not applied as actions: the clock is moved to each action's tick instead, and to
+    the checkpoint's tick at the end, so a long advance that ran past the checkpoint
+    stops there.
+    """
+    source = checkpoint.game
+    if target.world_id != source.world_id:
+        raise ClockError("Replay needs a game in the same world")
+    if target.current_tick > checkpoint.tick:
+        raise ClockError("The game is already past the checkpoint")
+    actions = source.actions.order_by("sequence")[: checkpoint.action_count]
+    for action in actions:
+        if target.current_tick < action.tick:
+            target = advance(target, action.tick - target.current_tick)
+        if action.action_type != "ADVANCE":
+            target = _apply(target, action)
+    if target.current_tick < checkpoint.tick:
+        target = advance(target, checkpoint.tick - target.current_tick)
+    return target
+
+
+def checkpoint(game: Game, label: str = "") -> Checkpoint:
+    """Take an on-demand checkpoint at the current tick."""
+    return checkpoint_now(game, label, state(game).now)
+
+
+def _apply(target: Game, action: PlayerAction) -> Game:
+    match action.action_type:
+        case "PAUSE":
+            target = pause(target)
+        case "RESUME":
+            target = resume(target)
+        case "SET_SPEED":
+            target = set_speed(target, int(action.payload["speed"]))
+        case "ADVANCE":
+            target = advance_by(target, action.payload["unit"], int(action.payload["count"]))
+        case "SET_REJECTION_POLICY":
+            target = set_rejection_policy(target, str(action.payload["policy"]))
+        case "RESOLVE_ITEM":
+            resolve_item(target, int(action.payload["item"]), str(action.payload["decision"]))
+        case other:
+            raise ClockError(f"Unknown action {other}")
     return target
 
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from django.db import models, transaction
+from django.db import connection, models
 
 COUNTERS = (
     "last_customer_seq",
@@ -52,12 +52,17 @@ class Organization(models.Model):
         """Reserve ``count`` numbers from a counter; returns the first. Locks the row."""
         if counter not in COUNTERS:
             raise ValueError(counter)
-        with transaction.atomic():
-            row = Organization.objects.select_for_update().only(counter).get(pk=self.pk)
-            first = int(getattr(row, counter)) + 1
-            Organization.objects.filter(pk=self.pk).update(**{counter: first + count - 1})
-        setattr(self, counter, first + count - 1)
-        return first
+        # One statement: the row lock is taken and the new value returned together.
+        table, column = Organization._meta.db_table, connection.ops.quote_name(counter)
+        sql = f"UPDATE {table} SET {column} = {column} + %s WHERE id = %s RETURNING {column}"  # noqa: S608 - a known counter
+        with connection.cursor() as cursor:
+            cursor.execute(sql, [count, self.pk])
+            row = cursor.fetchone()
+        if row is None:
+            raise Organization.DoesNotExist(self.pk)
+        last = int(row[0])
+        setattr(self, counter, last)
+        return last - count + 1
 
 
 class Employee(models.Model):

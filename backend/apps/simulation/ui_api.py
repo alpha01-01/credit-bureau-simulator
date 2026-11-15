@@ -52,9 +52,9 @@ from apps.world.models import World
 
 from . import controls
 from .api import _game
-from .bridge import start_game
+from .bridge import install_history, new_game, start_game
 from .clock import previous_month_end
-from .history import DEFAULT_HISTORY_MONTHS, preload_history
+from .history import DEFAULT_HISTORY_MONTHS
 from .models import Game
 
 # --- Worlds and games -----------------------------------------------------------------
@@ -97,7 +97,8 @@ def games(request: Request) -> Response:
     months = int(request.data.get("history_months", DEFAULT_HISTORY_MONTHS))
     if not 0 <= months <= 24:
         return Response({"detail": "history_months must be 0 to 24"}, status=400)
-    game = start_game(world, owner=request.user)
+    # A game with history starts empty; its bureau is installed in the background.
+    game = new_game(world, owner=request.user) if months else start_game(world, owner=request.user)
     if months:
         Game.objects.filter(pk=game.pk).update(
             setup_status="PREPARING", setup_message="Waiting to load history"
@@ -121,7 +122,7 @@ def _prepare(game_id: int, months: int) -> None:
         def progress(message: str) -> None:
             Game.objects.filter(pk=game_id).update(setup_message=message[:200])
 
-        preload_history(game, months, progress)
+        install_history(game, months, progress)
         Game.objects.filter(pk=game_id).update(setup_status="READY", setup_message="")
     except Exception as exc:  # the player must see why setup failed
         Game.objects.filter(pk=game_id).update(setup_status="FAILED", setup_message=str(exc)[:200])

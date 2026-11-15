@@ -101,12 +101,12 @@ def _correct_and_load(record: StagingRecord, proposal: dict[str, str], at: datet
     errors = [i for i in checked.issues if i.severity == "ERROR"]
     if errors:
         record.record_status = RecordStatus.UNLOADABLE
-        record.save(update_fields=["cleansed", "record_status"])
+        record.save(update_fields=["changes", "record_status"])
         ValidationIssue.objects.bulk_create(
             issue_rows(record.run, record.file, record, record.source_row_number, errors)
         )
         return
-    record.save(update_fields=["cleansed"])
+    record.save(update_fields=["changes"])
     _load(record, at, None)
 
 

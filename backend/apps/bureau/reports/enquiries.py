@@ -60,14 +60,14 @@ def enquire(
         raise EnquiryError(f"{purpose!r} is not a permissible purpose")
     if not consent_reference:
         raise EnquiryError("An enquiry needs the subject's consent reference")
-    with transaction.atomic():
+    with transaction.atomic(savepoint=False):
         identifier = (
             CustomerIdentifier.objects.filter(
                 organization=organization,
                 identifier_type=identifier_type,
                 identifier_value=identifier_value,
             )
-            .select_related("customer")
+            .select_related("customer__individual", "customer__business")
             .first()
         )
         customer = identifier.customer if identifier else None

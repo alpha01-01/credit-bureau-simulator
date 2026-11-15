@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
+from typing import Any
 
 from django.db import transaction
 from django.db.models import Max
@@ -33,10 +34,11 @@ from apps.world.provider_files import month_end as period_end
 
 from . import bookkeeping
 from .bridge import deliver
+from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
 from .enquiries import handle_application, schedule_applications
 from .judgement import rng_for, sync_work_items
-from .models import EventStatus, EventType, Game, ScheduledEvent, TickLog
+from .models import CheckpointKind, EventStatus, EventType, Game, ScheduledEvent, TickLog
 
 
 class ClockError(Exception):
@@ -136,12 +138,15 @@ def run_tick(game_id: int, tick: int) -> bool:
         due = ScheduledEvent.objects.filter(
             game=game, status=EventStatus.PENDING, due_tick__lte=tick
         ).order_by("due_tick", "sequence")
+        handled = []
+        memo: dict[object, Any] = {}  # lookups that cannot change within a tick
         for event in due:
-            _handle(game, event, cal.tick_start(tick))
+            _handle(game, event, cal.tick_start(tick), memo)
             event.status = EventStatus.DONE
             event.processed_tick = tick
-            event.save(update_fields=["status", "processed_tick"])
-            processed += 1
+            handled.append(event)
+        ScheduledEvent.objects.bulk_update(handled, ["status", "processed_tick"], batch_size=1000)
+        processed += len(handled)
 
         if has_work(game.organization):
             processed += work_tick(
@@ -167,6 +172,8 @@ def run_tick(game_id: int, tick: int) -> bool:
         )
         game.current_tick = tick
         game.save(update_fields=["current_tick"])
+        if cal.is_last_tick_of_month(tick):
+            take_checkpoint(game, CheckpointKind.MONTH_END, cal.tick_end(tick))
         return True
 
 
@@ -232,9 +239,9 @@ def _schedule_month(game: Game, cal: Calendar, tick: int) -> None:
         sequence += 1
 
 
-def _handle(game: Game, event: ScheduledEvent, at: datetime) -> None:
+def _handle(game: Game, event: ScheduledEvent, at: datetime, memo: dict[object, Any]) -> None:
     if event.event_type == EventType.CREDIT_APPLICATION:
-        handle_application(game, event.payload, at)
+        handle_application(game, event.payload, at, memo)
         return
     if event.event_type in bookkeeping.FINANCE_EVENTS:
         bookkeeping.handle(game, event, at)

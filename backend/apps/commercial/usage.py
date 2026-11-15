@@ -25,12 +25,20 @@ def active_contract(subscriber_id: int, product: Product, on: object) -> Contrac
     return contract
 
 
-def record_usage(enquiry: Enquiry) -> UsageRecord:
-    """One billable unit per enquiry, priced by the subscriber's contract."""
-    product = Product.objects.get(
-        organization_id=enquiry.organization_id, product_code=enquiry.product_code
-    )
-    contract = active_contract(enquiry.subscriber_id, product, enquiry.enquired_at.date())
+def record_usage(
+    enquiry: Enquiry, product: Product | None = None, contract: Contract | None = None
+) -> UsageRecord:
+    """One billable unit per enquiry, priced by the subscriber's contract.
+
+    A caller that has already looked up the product and the contract in force
+    may pass them in.
+    """
+    if product is None:
+        product = Product.objects.get(
+            organization_id=enquiry.organization_id, product_code=enquiry.product_code
+        )
+    if contract is None:
+        contract = active_contract(enquiry.subscriber_id, product, enquiry.enquired_at.date())
     return UsageRecord.objects.create(
         organization_id=enquiry.organization_id,
         subscriber_id=enquiry.subscriber_id,

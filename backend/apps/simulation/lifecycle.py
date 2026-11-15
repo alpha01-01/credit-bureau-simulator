@@ -10,7 +10,10 @@ organisation goes, children before parents, with set-based SQL.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
 from django.db import connection, transaction
@@ -39,9 +42,11 @@ from apps.workitems.models import WorkItem
 from apps.world.generation.persist import delete_world
 
 from .models import (
+    Checkpoint,
     Delivery,
     EnquiryJudgement,
     Game,
+    HistoryTemplate,
     PlayerAction,
     ScheduledEvent,
     SubscriberView,
@@ -55,8 +60,12 @@ def _table(model: type[Model]) -> str:
 
 # (table, SQL condition selecting the game's rows; %(org)s / %(game)s parameters)
 _SUBMISSIONS = f"SELECT id FROM {_table(Submission)} WHERE organization_id = %(org)s"
-_RUNS = f"SELECT id FROM {_table(ProcessingRun)} WHERE submission_id IN ({_SUBMISSIONS})"
-_RECORDS = f"SELECT id FROM {_table(StagingRecord)} WHERE run_id IN ({_RUNS})"
+# A game's processing runs and staging records sit two and three steps below its
+# organisation. Their ids are gathered first into small temporary tables with exact
+# statistics (``game_scope``): nested subqueries on stale statistics once made the
+# planner take minutes over a delete (P2.1).
+_RUNS = "SELECT id FROM scope_runs"
+_RECORDS = "SELECT id FROM scope_records"
 _CUSTOMERS = f"SELECT id FROM {_table(Customer)} WHERE organization_id = %(org)s"
 _INSTITUTIONS = f"SELECT id FROM {_table(Institution)} WHERE organization_id = %(org)s"
 
@@ -109,6 +118,8 @@ _ORDER: tuple[tuple[type[Model], str], ...] = (
     (ScheduledEvent, "game_id = %(game)s"),
     (TickLog, "game_id = %(game)s"),
     (PlayerAction, "game_id = %(game)s"),
+    (Checkpoint, "game_id = %(game)s"),
+    (HistoryTemplate, "game_id = %(game)s"),
     (Game, "id = %(game)s"),
     (Employee, "organization_id = %(org)s"),
     (Organization, "id = %(org)s"),
@@ -119,10 +130,42 @@ def delete_game(game: Game) -> None:
     """Delete a game, its bureau and every record and file the bureau holds."""
     params = {"org": game.organization_id, "game": game.pk}
     folder = Path(settings.STORAGE_ROOT) / "bureau" / f"org_{game.organization_id}"
-    with transaction.atomic(), connection.cursor() as cursor:
+    with transaction.atomic(), connection.cursor() as cursor, game_scope(cursor, params):
         for model, condition in _ORDER:
             cursor.execute(f"DELETE FROM {_table(model)} WHERE {condition}", params)
         transaction.on_commit(lambda: shutil.rmtree(folder, ignore_errors=True))
+
+
+@contextmanager
+def game_scope(
+    cursor: Any, params: dict[str, Any], *, records_view: bool = False
+) -> Iterator[None]:
+    """Gather the game's run and record ids for the ``_ORDER`` conditions to use.
+
+    Deleting and copying go through every staging record, so their ids are stored.
+    A reader that only counts (``records_view``) gets a view instead, which costs
+    nothing to set up. Both are created in the caller's transaction, so an error
+    that rolls it back removes them too.
+    """
+    cursor.execute(
+        "CREATE TEMP TABLE scope_runs AS SELECT id FROM "
+        + _table(ProcessingRun)
+        + f" WHERE submission_id IN ({_SUBMISSIONS})",
+        params,
+    )
+    cursor.execute("ANALYZE scope_runs")
+    records = f"SELECT id FROM {_table(StagingRecord)} WHERE run_id IN (SELECT id FROM scope_runs)"
+    if records_view:
+        cursor.execute("CREATE TEMP VIEW scope_records AS " + records)
+    else:
+        cursor.execute("CREATE TEMP TABLE scope_records AS " + records)
+        cursor.execute("ANALYZE scope_records")
+    try:
+        yield
+    finally:
+        # Dropped now, not at commit: a caller's transaction may handle several games.
+        cursor.execute(f"DROP {'VIEW' if records_view else 'TABLE'} scope_records")
+        cursor.execute("DROP TABLE scope_runs")
 
 
 def delete_world_with_games(world_id: int) -> None:

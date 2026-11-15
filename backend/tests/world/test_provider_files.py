@@ -475,3 +475,16 @@ def test_files_are_pipe_delimited_csv_with_a_header() -> None:
     lines = to_bytes(rendered).decode("utf-8").split("\r\n")
     assert lines[0] == DELIMITER.join(header(kind))
     assert lines[1].startswith('"a|b"|x|')  # a delimiter inside a value is quoted
+
+
+def test_truth_for_some_loans_equals_the_full_files_records(world: World) -> None:
+    lender = _lender(world)
+    period = world.history_end
+    for kind in (FileKind.INDIVIDUAL, FileKind.COMMERCIAL):
+        full = {r.loan_id: r for r in load_truth(world.pk, lender.pk, lender.code, period, kind)}
+        wanted = sorted(full)[::7][:5]
+        some = load_truth(world.pk, lender.pk, lender.code, period, kind, loan_ids=wanted)
+        assert sorted(r.loan_id for r in some) == wanted
+        for record in some:
+            assert record.values == full[record.loan_id].values
+            assert record.previous == full[record.loan_id].previous

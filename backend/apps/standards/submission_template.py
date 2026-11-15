@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
+from functools import lru_cache
 
 TEMPLATE_VERSION = "1.1"
 DATE_FORMAT = "%Y%m%d"
@@ -484,6 +485,7 @@ def luhn_check_digit(digits: str) -> int:
     return (10 - total % 10) % 10
 
 
+@lru_cache(maxsize=1 << 16)
 def is_valid_ghana_card(value: str) -> bool:
     match = GHANA_CARD_PATTERN.fullmatch(value)
     if match is None:

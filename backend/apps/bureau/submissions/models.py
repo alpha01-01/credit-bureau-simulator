@@ -141,14 +141,16 @@ class StagingRecord(models.Model):
     """One source row. ``raw`` is exactly as received; ``cleansed`` after cleansing rules.
 
     JSON keeps staging independent of the template edition: a record keeps the
-    columns of the data standard it was submitted under (D19).
+    columns of the data standard it was submitted under (D19). Only the fields
+    cleansing or a reviewer changed are stored (``changes``); ``cleansed`` is the
+    raw row with those changes applied (P2.1: half the storage, faster copies).
     """
 
     run = models.ForeignKey(ProcessingRun, on_delete=models.CASCADE, related_name="records")
     file = models.ForeignKey(SubmissionFile, on_delete=models.CASCADE, related_name="records")
     source_row_number = models.IntegerField(help_text="1 = first row after the header")
     raw = models.JSONField()
-    cleansed = models.JSONField()
+    changes = models.JSONField(default=dict, help_text="Fields whose cleansed value differs")
     record_status = models.CharField(max_length=20, choices=RecordStatus.choices)
     duplicate_of_row = models.IntegerField(null=True, blank=True)
 
@@ -161,3 +163,16 @@ class StagingRecord(models.Model):
 
     def __str__(self) -> str:
         return f"{self.file_id}:{self.source_row_number}"
+
+    @property
+    def cleansed(self) -> dict[str, str]:
+        return {**self.raw, **self.changes}
+
+    @cleansed.setter
+    def cleansed(self, values: dict[str, str]) -> None:
+        self.changes = changes_from(self.raw, values)
+
+
+def changes_from(raw: dict[str, str], cleansed: dict[str, str]) -> dict[str, str]:
+    """The fields whose cleansed value differs from the raw one."""
+    return {k: v for k, v in cleansed.items() if raw.get(k) != v}

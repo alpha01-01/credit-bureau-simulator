@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
+from functools import lru_cache
 
 import numpy as np
 
@@ -75,9 +76,22 @@ def rng_for(game: Game) -> Callable[[int], np.random.Generator]:
 
 
 def sync_work_items(game: Game, tick: int) -> int:
-    """Create a work item, with its answer, for every review case that has none."""
+    """Create a work item, with its answer, for every review case that has none.
+
+    Only this function makes work items, one per case and numbered as the case, and
+    case numbers only grow; so cases without one all come after the highest item
+    number. Looking there first keeps the every-tick check cheap (P2.1).
+    """
+    last = (
+        WorkItem.objects.filter(organization=game.organization)
+        .order_by("-item_number")
+        .values_list("item_number", flat=True)
+        .first()
+    )
     cases = list(
-        ReviewCase.objects.filter(organization=game.organization, work_item__isnull=True)
+        ReviewCase.objects.filter(
+            organization=game.organization, case_number__gt=last or 0, work_item__isnull=True
+        )
         .select_related("record__file", "record__run__submission__institution")
         .order_by("case_number")
     )
@@ -128,6 +142,12 @@ def record_borrower(game: Game, file_id: int, row_number: int) -> Borrower:
 
 def customer_borrower(game: Game, customer_id: int) -> Borrower:
     """The real borrower behind a bureau customer: via the first provider link that created it."""
+    return _customer_borrower(game.world_id, customer_id)
+
+
+# A customer's first provider link never changes, so neither does its answer (P2.1).
+@lru_cache(maxsize=1 << 17)
+def _customer_borrower(world_id: int, customer_id: int) -> Borrower:
     link = (
         ProviderCustomerLink.objects.filter(customer_id=customer_id)
         .select_related("institution")
@@ -137,7 +157,7 @@ def customer_borrower(game: Game, customer_id: int) -> Borrower:
     if link is None:
         raise LookupError(f"Bureau customer {customer_id} has no provider link")
     lender_customer = LenderCustomer.objects.get(
-        world=game.world,
+        world_id=world_id,
         lender__code=link.institution.institution_code,
         customer_number=link.provider_customer_number,
     )
@@ -172,19 +192,21 @@ def _triage_answer(
     record = case.record
     submission = record.run.submission
     code = submission.institution.institution_code
-    key = (code, submission.reporting_period, record.file.file_kind)
-    if key not in cache:
-        lender = Lender.objects.get(world=game.world, code=code)
-        cache[key] = {
-            r.loan_id: r.values
-            for r in load_truth(
-                game.world.pk, lender.pk, code, submission.reporting_period, FileKind(key[2])
-            )
-        }
     delivery = Delivery.objects.get(game=game, bureau_file_id=record.file_id)
     loan_id = ProviderFileRow.objects.get(
         file_id=delivery.world_file_id, row_number=record.source_row_number
     ).loan_id
+    key = (code, submission.reporting_period, record.file.file_kind)
+    if key not in cache:
+        cache[key] = {}
+    if loan_id not in cache[key]:
+        # Only this record's truth: rebuilding the provider's whole month is far slower.
+        lender = Lender.objects.get(world=game.world, code=code)
+        for r in load_truth(
+            game.world.pk, lender.pk, code, submission.reporting_period, FileKind(key[2]),
+            loan_ids=[loan_id],
+        ):  # fmt: skip
+            cache[key][r.loan_id] = r.values
     truth = cache[key][loan_id]
     wrong = {f: (v, truth.get(f)) for f, v in case.proposal.items() if truth.get(f) != v}
     if not wrong:

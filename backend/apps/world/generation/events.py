@@ -42,7 +42,7 @@ from apps.world.models import (
     World,
 )
 
-from .persist import loan_month_partition
+from .persist import analyze, loan_month_partition
 from .rng import stream
 
 CHEQUE_LENDER_TYPES = ("COMMERCIAL_BANK", "SAVINGS_AND_LOANS")
@@ -82,6 +82,7 @@ def ensure_events(world: World, period: date) -> None:
         DishonouredCheque.objects.bulk_create(_cheques(world, period), batch_size=2000)
         CourtJudgment.objects.bulk_create(_judgments(world, period), batch_size=2000)
         EventMonth.objects.create(world=world, period=period)
+        analyze(DishonouredCheque, CourtJudgment)
 
 
 def _loan_months(world: World, where: str, params: list[Any]) -> list[tuple[Any, ...]]:
