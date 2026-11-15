@@ -5,6 +5,7 @@ import { Failed, Loading } from '../components/ui'
 import { BriefingPage } from '../pages/BriefingPage'
 import { CustomerPage, CustomersPage } from '../pages/CustomersPage'
 import { DashboardPage } from '../pages/DashboardPage'
+import { DisputesPage } from '../pages/DisputesPage'
 import { EnquiriesPage } from '../pages/EnquiriesPage'
 import { EventsPage } from '../pages/EventsPage'
 import { FinanceLayout, InvoicesPage, LedgerPage, StatementsPage } from '../pages/FinancePage'
@@ -74,6 +75,7 @@ const routes = [
               { path: 'reviews', element: <ReviewsPage /> },
               { path: 'rules', element: <RulesPage /> },
               { path: 'providers', element: <ProvidersPage /> },
+              { path: 'disputes', element: <DisputesPage /> },
               { path: 'reviews/:period', element: <ReviewPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },

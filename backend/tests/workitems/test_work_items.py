@@ -126,12 +126,13 @@ def test_pipeline_opens_cases_and_the_simulation_supplies_answers(world: World) 
     assert {Decision.DIFFERENT_CUSTOMER, Decision.CORRECT_AND_LOAD} <= answers
     # Held records are not loaded until someone decides.
     for item in items.filter(item_type=CaseType.MATCH_REVIEW):
-        assert item.case.record.record_status == RecordStatus.PENDING_REVIEW
+        held = item.case.record
+        assert held is not None and held.record_status == RecordStatus.PENDING_REVIEW
     # The answer agrees with the truth behind the record and the candidate.
     for item in items.filter(item_type=CaseType.MATCH_REVIEW):
         record = item.case.record
         candidate = item.case.candidate_customer_id
-        assert candidate is not None
+        assert record is not None and candidate is not None
         same = record_borrower(game, record.file_id, record.source_row_number) == customer_borrower(
             game, candidate
         )
@@ -170,9 +171,10 @@ def test_wrong_decisions_merge_people_and_lose_records(world: World) -> None:
             merged += 1
         elif item.correct_decision == Decision.CORRECT_AND_LOAD:
             controls.resolve_item(game, item.item_number, Decision.RETURN_TO_PROVIDER)
+            sent_back = item.case.record
+            assert sent_back is not None
             assert not AccountObservation.objects.filter(
-                source_file=item.case.record.file,
-                source_row_number=item.case.record.source_row_number,
+                source_file=sent_back.file, source_row_number=sent_back.source_row_number
             ).exists()
             returned += 1
         else:

@@ -35,6 +35,8 @@ from apps.bureau.core.models import (
 from apps.bureau.providers.models import Institution, InstitutionBranch
 from apps.bureau.quality.models import (
     CleansingRule,
+    CorrectionRecord,
+    Dispute,
     ReviewCase,
     TransformationLog,
     ValidationIssue,
@@ -64,6 +66,8 @@ from .models import (
     Notice,
     PlayerAction,
     ProviderRelationship,
+    RegulatorFinding,
+    RegulatorStanding,
     ScheduledEvent,
     SubscriberView,
     TickLog,
@@ -111,6 +115,8 @@ _ORDER: tuple[tuple[type[Model], str], ...] = (
     (Product, "organization_id = %(org)s"),
     (WorkItem, "organization_id = %(org)s"),
     (ReviewCase, "organization_id = %(org)s"),
+    (CorrectionRecord, "organization_id = %(org)s"),
+    (Dispute, "organization_id = %(org)s"),
     (TransformationLog, f"record_id IN ({_RECORDS})"),
     (ValidationIssue, f"run_id IN ({_RUNS})"),
     (
@@ -141,6 +147,8 @@ _ORDER: tuple[tuple[type[Model], str], ...] = (
     (PlayerAction, "game_id = %(game)s"),
     (Checkpoint, "game_id = %(game)s"),
     (ProviderRelationship, "game_id = %(game)s"),
+    (RegulatorFinding, "game_id = %(game)s"),
+    (RegulatorStanding, "game_id = %(game)s"),
     (Notice, "game_id = %(game)s"),
     (HistoryTemplate, "game_id = %(game)s"),
     (Game, "id = %(game)s"),

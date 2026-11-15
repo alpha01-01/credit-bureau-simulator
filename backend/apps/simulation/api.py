@@ -14,7 +14,7 @@ Players may only see and drive their own games.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from django.http import Http404, HttpResponse
@@ -24,8 +24,8 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from apps.bureau.core.models import AccountObservation, Enquiry
-from apps.bureau.quality.models import ALLOWED_DECISIONS, CleansingRule, RuleAction
+from apps.bureau.core.models import AccountObservation, CreditAccount, Enquiry
+from apps.bureau.quality.models import ALLOWED_DECISIONS, CleansingRule, Dispute, RuleAction
 from apps.bureau.quality.rules import POLICIES, RELAXABLE, RULES
 from apps.bureau.submissions.feedback import as_csv, build_report
 from apps.bureau.submissions.models import StagingRecord, Submission
@@ -36,7 +36,7 @@ from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 from apps.workitems.work import WorkError
 
-from . import assets, controls, providers
+from . import assets, compliance, controls, providers
 from .engine import ClockError
 from .models import DataQualityReview, Game
 
@@ -166,6 +166,62 @@ def feedback(request: Request, game_id: int, reference: str) -> HttpResponse:
         return response
     sent = submission.feedback_reports.order_by("-sent_at", "-pk").values_list("sent_at", flat=True)
     return Response({**report, "sent": list(sent)})
+
+
+@api_view(["GET"])
+def disputes(request: Request, game_id: int) -> Response:
+    """Disputes and where the bureau stands with the regulator (P2.7)."""
+    game = _game(request, game_id)
+    items = dict(
+        WorkItem.objects.filter(
+            organization=game.organization, case__dispute__isnull=False
+        ).values_list("case__dispute_id", "item_number")
+    )
+    standing = compliance.standing(game)
+    since = controls.state(game).now - timedelta(days=compliance.FINDINGS_WINDOW_DAYS)
+    return Response(
+        {
+            "disputes": [
+                {
+                    "number": d.dispute_number,
+                    "subject": d.subject_name,
+                    "claim": d.claim,
+                    "accounts": d.accounts,
+                    "received_at": d.received_at,
+                    "due_date": d.due_date,
+                    "status": d.status,
+                    "outcome": d.outcome,
+                    "resolved_at": d.resolved_at,
+                    "work_item": items.get(d.pk),
+                    "corrections": d.corrections.count(),
+                    "overdue": d.status == "OPEN" and d.due_date < controls.state(game).now.date(),
+                }
+                for d in Dispute.objects.filter(organization=game.organization).order_by(
+                    "-dispute_number"
+                )
+            ],
+            "regulator": {
+                "level": standing.level,
+                "standing": compliance.LEVEL_NAMES[standing.level],
+                "findings_recent": game.findings.filter(raised_at__gte=since).count(),
+                "ladder": [
+                    {"findings": threshold, "level": level, "what": text}
+                    for threshold, level, text in reversed(compliance.LADDER)
+                ],
+                "history": standing.history,
+                "findings": [
+                    {
+                        "kind": f.kind,
+                        "reference": f.reference,
+                        "raised_at": f.raised_at,
+                        "detail": f.detail,
+                    }
+                    for f in game.findings.order_by("-raised_at")
+                ],
+            },
+            "statutory_working_days": compliance.STATUTORY_WORKING_DAYS,
+        }
+    )
 
 
 def _cooperation(goodwill: float) -> str:
@@ -418,6 +474,47 @@ def work_item(request: Request, game_id: int, number: int) -> Response:
             if business and business.registration_date
             else None,
         }
+    if case.record is None:  # a dispute: the subject's claim and their report (P2.7)
+        dispute = case.dispute
+        flagged = {tuple(a) for a in dispute.accounts} if dispute else set()
+        return Response(
+            _item_summary(item)
+            | {
+                "provider": None,
+                "record": None,
+                "candidate": candidate,
+                "dispute": {
+                    "number": dispute.dispute_number,
+                    "subject": dispute.subject_name,
+                    "claim": dispute.claim,
+                    "received_at": dispute.received_at,
+                    "due_date": dispute.due_date,
+                    "status": dispute.status,
+                    "outcome": dispute.outcome,
+                    "enquiry": dispute.enquiry.enquiry_reference if dispute.enquiry else None,
+                }
+                if dispute
+                else None,
+                "accounts": [
+                    {
+                        "provider": a.institution.institution_code,
+                        "account": a.facility_account_number,
+                        "opened": a.disbursement_date,
+                        "status": a.account_status,
+                        "disputed": (a.institution.institution_code, a.facility_account_number)
+                        in flagged,
+                    }
+                    for a in CreditAccount.objects.filter(
+                        customer_id=case.candidate_customer_id or 0
+                    )
+                    .select_related("institution")
+                    .order_by("institution__institution_code", "facility_account_number")
+                ],
+                "evidence": case.evidence,
+                "allowed_decisions": list(ALLOWED_DECISIONS[case.case_type]),
+                "explanation": item.explanation or None,
+            }
+        )
     institution = case.record.file.submission.institution
     return Response(
         _item_summary(item)
@@ -656,8 +753,10 @@ def _item_rows(game: Game, numbers: list[int]) -> list[dict[str, Any]]:
             "resolved_by": i.resolved_by,
             "employee": f"{i.assignee.first_name} {i.assignee.last_name}" if i.assignee else None,
             "why_right": i.correct_basis,
-            "submission": i.case.record.run.submission.submission_reference,
-            "row": i.case.record.source_row_number,
+            "submission": (
+                i.case.record.run.submission.submission_reference if i.case.record else None
+            ),
+            "row": i.case.record.source_row_number if i.case.record else None,
         }
         for i in items
     ]

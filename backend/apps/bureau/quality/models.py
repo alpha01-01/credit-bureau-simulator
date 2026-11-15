@@ -99,6 +99,7 @@ class CleansingRule(models.Model):
 class CaseType(models.TextChoices):
     MATCH_REVIEW = "MATCH_REVIEW", "Uncertain customer match"
     UNLOADABLE_TRIAGE = "UNLOADABLE_TRIAGE", "Unloadable record with a possible correction"
+    DISPUTE = "DISPUTE", "A subject disputes accounts on their report"
 
 
 class CaseStatus(models.TextChoices):
@@ -111,6 +112,8 @@ class Decision(models.TextChoices):
     DIFFERENT_CUSTOMER = "DIFFERENT_CUSTOMER", "Different customer: create a new one"
     CORRECT_AND_LOAD = "CORRECT_AND_LOAD", "Apply the proposed correction and load"
     RETURN_TO_PROVIDER = "RETURN_TO_PROVIDER", "Return to the provider for correction"
+    UPHOLD_DISPUTE = "UPHOLD_DISPUTE", "Uphold: the accounts are not the subject's; correct"
+    REJECT_DISPUTE = "REJECT_DISPUTE", "Reject: the accounts are the subject's"
 
 
 ALLOWED_DECISIONS: dict[str, tuple[str, ...]] = {
@@ -120,6 +123,7 @@ ALLOWED_DECISIONS: dict[str, tuple[str, ...]] = {
         Decision.RETURN_TO_PROVIDER,
     ),
     CaseType.UNLOADABLE_TRIAGE: (Decision.CORRECT_AND_LOAD, Decision.RETURN_TO_PROVIDER),
+    CaseType.DISPUTE: (Decision.UPHOLD_DISPUTE, Decision.REJECT_DISPUTE),
 }
 
 
@@ -136,7 +140,12 @@ class ReviewCase(models.Model):
     )
     case_number = models.BigIntegerField()
     case_type = models.CharField(max_length=30, choices=CaseType.choices)
-    record = models.ForeignKey(StagingRecord, on_delete=models.CASCADE, related_name="cases")
+    record = models.ForeignKey(
+        StagingRecord, on_delete=models.CASCADE, null=True, blank=True, related_name="cases"
+    )
+    dispute = models.ForeignKey(
+        "Dispute", on_delete=models.CASCADE, null=True, blank=True, related_name="cases"
+    )
     candidate_customer = models.ForeignKey(
         "bureau_core.Customer", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
     )
@@ -159,3 +168,80 @@ class ReviewCase(models.Model):
 
     def __str__(self) -> str:
         return f"Case {self.case_number} ({self.case_type})"
+
+
+class DisputeStatus(models.TextChoices):
+    OPEN = "OPEN", "Open"
+    RESOLVED = "RESOLVED", "Resolved"
+
+
+class Dispute(models.Model):
+    """A subject says their credit report is wrong (P2.7; L.I. 2394, Regulations 23-26).
+
+    ``accounts`` are the disputed accounts as (institution code, account number).
+    While a dispute is open its accounts are flagged on reports. It must be settled
+    by ``due_date`` (ASSUMPTION A-056 until reference R7 gives the statutory period).
+    """
+
+    organization = models.ForeignKey(
+        "org.Organization", on_delete=models.CASCADE, related_name="disputes"
+    )
+    dispute_number = models.BigIntegerField()
+    customer = models.ForeignKey(
+        "bureau_core.Customer", on_delete=models.CASCADE, related_name="disputes"
+    )
+    enquiry = models.ForeignKey(
+        "bureau_core.Enquiry", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    subject_name = models.CharField(max_length=200)
+    claim = models.CharField(max_length=500)
+    accounts = models.JSONField(default=list)
+    received_at = models.DateTimeField()
+    due_date = models.DateField()
+    status = models.CharField(
+        max_length=10, choices=DisputeStatus.choices, default=DisputeStatus.OPEN
+    )
+    outcome = models.CharField(max_length=30, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.CharField(max_length=120, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "dispute_number"], name="dispute_unique_number"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Dispute {self.dispute_number}"
+
+
+class CorrectionRecord(models.Model):
+    """A controlled correction (Document 04, Section 19): nothing is silently overwritten.
+
+    One row per account moved off a customer it did not belong to: what moved, from
+    and to whom, why, on whose authority, and from which dispute.
+    """
+
+    organization = models.ForeignKey(
+        "org.Organization", on_delete=models.CASCADE, related_name="corrections"
+    )
+    kind = models.CharField(max_length=30, default="ACCOUNT_REASSIGNED")
+    credit_account = models.ForeignKey(
+        "bureau_core.CreditAccount", on_delete=models.CASCADE, related_name="corrections"
+    )
+    from_customer = models.ForeignKey(
+        "bureau_core.Customer", on_delete=models.CASCADE, related_name="+"
+    )
+    to_customer = models.ForeignKey(
+        "bureau_core.Customer", on_delete=models.CASCADE, related_name="+"
+    )
+    dispute = models.ForeignKey(
+        Dispute, on_delete=models.CASCADE, null=True, blank=True, related_name="corrections"
+    )
+    reason = models.CharField(max_length=300)
+    approved_by = models.CharField(max_length=120)
+    corrected_at = models.DateTimeField()
+
+    def __str__(self) -> str:
+        return f"{self.kind} {self.credit_account_id}"

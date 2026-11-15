@@ -36,6 +36,7 @@ from apps.org.models import Employee
 from apps.standards.calendar import is_working_day
 from apps.workitems.models import ItemStatus, WorkItem
 
+from . import compliance
 from .clock import TICKS_PER_DAY, previous_month_end
 from .models import Game, GameStatus, Notice, Severity
 
@@ -221,6 +222,7 @@ class Feed:
         self._overdue_invoices(today, yesterday)
         self._cash(today)
         self._deadlines()
+        compliance.morning_review(self.game, today, self.at, self.add)
 
     def _overdue_data(self, today: date, yesterday: date) -> None:
         period = previous_month_end(today)

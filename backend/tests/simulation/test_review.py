@@ -165,6 +165,7 @@ def test_the_review_counts_decisions_as_the_truth_confirms(world: World) -> None
     merges, splits, right = [], [], []
     for item in items.filter(item_type=CaseType.MATCH_REVIEW):
         case = item.case
+        assert case.record is not None
         actual = _row_borrower(game, case.record.file_id, case.record.source_row_number)
         same = (
             case.candidate_customer_id is not None
@@ -332,6 +333,7 @@ def test_a_wrong_merge_is_traced_from_the_report_back_to_the_decision(world: Wor
     chain = next(c for c in mixed if c.work_item_id == wrong.pk)
     assert chain.cause == "DECISION"
     assert f"work item {wrong.item_number}" in chain.detail and "by you" in chain.detail
+    assert wrong.case.record is not None
     assert wrong.case.record.cleansed["CustomerID"] == chain.provider_customer
 
 

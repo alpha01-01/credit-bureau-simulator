@@ -42,7 +42,7 @@ from apps.world.generation.rng import stream
 from apps.world.models import Lender, ProviderSubmission
 from apps.world.provider_files import month_end as period_end
 
-from . import bookkeeping, providers
+from . import bookkeeping, compliance, providers
 from .bridge import deliver
 from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
@@ -314,6 +314,17 @@ def _handle(
         return
     if event.event_type in bookkeeping.FINANCE_EVENTS:
         bookkeeping.handle(game, event, at, feed)
+        return
+    if event.event_type == EventType.DISPUTE_FILED:
+        dispute = compliance.file_dispute(game, event.payload, at)
+        if dispute is not None:
+            feed.add(
+                "DISPUTE_RECEIVED",
+                Severity.WARNING,
+                f"Dispute {dispute.dispute_number} from {dispute.subject_name}",
+                f"{dispute.claim} Due by {dispute.due_date:%d %B}.",
+                {"screen": "disputes", "params": {}},
+            )
         return
     if event.event_type == EventType.PROVIDER_FILES_ARRIVE:
         world_sub = ProviderSubmission.objects.get(
