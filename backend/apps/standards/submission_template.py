@@ -41,14 +41,20 @@ class FileKind(StrEnum):
     COMMERCIAL = "BUSC"  # Business Credit data file
     CHEQUE = "COND"  # Consumer Dishonoured Cheque data file
     JUDGMENT = "CONJ"  # Consumer Judgment data file
+    # ASSUMPTION A-041: the business identifiers, by analogy with BUSC and COND/CONJ.
+    BUSINESS_CHEQUE = "BUSD"  # Business Dishonoured Cheque data file
+    BUSINESS_JUDGMENT = "BUSJ"  # Business Judgment data file
 
 
 # Credit files report facilities month by month; event files report one-off
-# events (a bounced cheque, a court judgment) about a person.
+# events (a bounced cheque, a court judgment) about a person or a business.
 CREDIT_KINDS = (FileKind.INDIVIDUAL, FileKind.COMMERCIAL)
-EVENT_KINDS = (FileKind.CHEQUE, FileKind.JUDGMENT)
-# File kinds whose subject is an individual (the consumer identity block).
+CHEQUE_KINDS = (FileKind.CHEQUE, FileKind.BUSINESS_CHEQUE)
+JUDGMENT_KINDS = (FileKind.JUDGMENT, FileKind.BUSINESS_JUDGMENT)
+EVENT_KINDS = (*CHEQUE_KINDS, *JUDGMENT_KINDS)
+# File kinds by subject: an individual (the consumer identity block) or a business.
 CONSUMER_KINDS = (FileKind.INDIVIDUAL, FileKind.CHEQUE, FileKind.JUDGMENT)
+BUSINESS_KINDS = (FileKind.COMMERCIAL, FileKind.BUSINESS_CHEQUE, FileKind.BUSINESS_JUDGMENT)
 
 
 class Option(StrEnum):
@@ -193,12 +199,16 @@ COMMERCIAL_FIELDS: tuple[Field, ...] = (
     *_GUARANTOR,
 )
 
-# The dishonoured cheque and judgment files open with the consumer identity
-# block: the first 32 columns of the consumer credit file (proposal v2, s.11).
-_IDENTITY = INDIVIDUAL_FIELDS[: [f.name for f in INDIVIDUAL_FIELDS].index("OldCustomerID")]
 
-CHEQUE_FIELDS: tuple[Field, ...] = (
-    *_IDENTITY,
+# The dishonoured cheque and judgment files open with the identity block of the
+# credit file for the same subject: its columns up to the earlier references
+# (proposal v2, s.11). The event columns are the same for consumers and businesses
+# (owner, 14 November 2026).
+def _identity(fields: tuple[Field, ...]) -> tuple[Field, ...]:
+    return fields[: [f.name for f in fields].index("OldCustomerID")]
+
+
+_CHEQUE = (
     _f("ChequeNumber", M, "text", 20),
     _f("AccountOpened", A, "date", 8),
     _f("DateIssued", M, "date", 8),
@@ -208,8 +218,7 @@ CHEQUE_FIELDS: tuple[Field, ...] = (
     _f("ChequeAmount", M, "numeric", 15),
 )
 
-JUDGMENT_FIELDS: tuple[Field, ...] = (
-    *_IDENTITY,
+_JUDGMENT = (
     _f("CourtName", M, "text", 50),
     _f("CourtLocation", M, "text", 50),
     _f("CourtType", M, "text", 50),
@@ -221,11 +230,18 @@ JUDGMENT_FIELDS: tuple[Field, ...] = (
     _f("Amount", M, "numeric", 15),
 )
 
+CHEQUE_FIELDS: tuple[Field, ...] = (*_identity(INDIVIDUAL_FIELDS), *_CHEQUE)
+JUDGMENT_FIELDS: tuple[Field, ...] = (*_identity(INDIVIDUAL_FIELDS), *_JUDGMENT)
+BUSINESS_CHEQUE_FIELDS: tuple[Field, ...] = (*_identity(COMMERCIAL_FIELDS), *_CHEQUE)
+BUSINESS_JUDGMENT_FIELDS: tuple[Field, ...] = (*_identity(COMMERCIAL_FIELDS), *_JUDGMENT)
+
 FIELDS: dict[FileKind, tuple[Field, ...]] = {
     FileKind.INDIVIDUAL: INDIVIDUAL_FIELDS,
     FileKind.COMMERCIAL: COMMERCIAL_FIELDS,
     FileKind.CHEQUE: CHEQUE_FIELDS,
     FileKind.JUDGMENT: JUDGMENT_FIELDS,
+    FileKind.BUSINESS_CHEQUE: BUSINESS_CHEQUE_FIELDS,
+    FileKind.BUSINESS_JUDGMENT: BUSINESS_JUDGMENT_FIELDS,
 }
 FIELD_BY_NAME: dict[FileKind, dict[str, Field]] = {
     kind: {f.name: f for f in fields} for kind, fields in FIELDS.items()
@@ -251,6 +267,13 @@ CORE_FIELDS: dict[FileKind, frozenset[str]] = {
         "CustomerID", "Surname", "FirstName", "DOB", "CourtName", "CaseNumber", "FilingDate",
         "Amount",
     }),
+    FileKind.BUSINESS_CHEQUE: frozenset({
+        "FacilityAccNum", "CustomerID", "BusinessName", "ChequeNumber", "DateBounced",
+        "ChequeAmount",
+    }),
+    FileKind.BUSINESS_JUDGMENT: frozenset({
+        "CustomerID", "BusinessName", "CourtName", "CaseNumber", "FilingDate", "Amount",
+    }),
 }  # fmt: skip
 
 # Identifiers that satisfy "at least one ID" for an individual, in matching priority.
@@ -274,7 +297,7 @@ def file_name(
 
 FILE_NAME_PATTERN = re.compile(
     r"(?P<srn>\d{5})-(?P<period>\d{8})-(?P<created>\d{8})-(?P<version>\d+\.\d+)"
-    r"-(?P<kind>CONC|BUSC|COND|CONJ)-(?P<sequence>\d+)\.csv"
+    r"-(?P<kind>CONC|BUSC|COND|CONJ|BUSD|BUSJ)-(?P<sequence>\d+)\.csv"
 )
 
 

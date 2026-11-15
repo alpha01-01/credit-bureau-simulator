@@ -36,12 +36,15 @@ from apps.standards.submission_template import (
     is_valid_ghana_card,
 )
 
-# The date a record is about: what the ID rule and the future-date check go by.
+# The date a record is about: what the ID rule and the future-date check go by. For a
+# cheque it is the day it was issued (owner, 14 November 2026).
 RECORD_DATE = {
     FileKind.INDIVIDUAL: "DisbursementDate",
     FileKind.COMMERCIAL: "DisbursementDate",
-    FileKind.CHEQUE: "DateBounced",
+    FileKind.CHEQUE: "DateIssued",
     FileKind.JUDGMENT: "FilingDate",
+    FileKind.BUSINESS_CHEQUE: "DateIssued",
+    FileKind.BUSINESS_JUDGMENT: "FilingDate",
 }
 
 STANDARD, CORE = "STANDARD", "CORE"
@@ -279,7 +282,7 @@ def validate(
             problem("F014", name)
 
     # Identity: at least one valid ID, mandatory from 2020 (owner's rule) by the record's
-    # own date: disbursement for a facility, the bounce or the filing for an event.
+    # own date: disbursement for a facility, issue for a cheque, filing for a case.
     disbursed = parse_date(values.get("DisbursementDate", ""))
     dated = parse_date(values.get(RECORD_DATE[kind], ""))
     if kind in CONSUMER_KINDS:

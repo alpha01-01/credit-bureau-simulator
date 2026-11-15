@@ -56,6 +56,8 @@ from apps.dbcopy import copy_insert
 from apps.org.models import Organization
 from apps.standards.rulebook import DATA_STANDARDS
 from apps.standards.submission_template import (
+    BUSINESS_KINDS,
+    CHEQUE_KINDS,
     CONSUMER_KINDS,
     CREDIT_KINDS,
     EVENT_KINDS,
@@ -122,7 +124,7 @@ def process_submission(submission: Submission, at: datetime | None = None) -> Pr
         pending = Pending()
         # Files about the same kind of subject share one referencer: a person named in
         # the credit file and the cheque file is one customer, created once.
-        for kinds in (CONSUMER_KINDS, (FileKind.COMMERCIAL,)):
+        for kinds in (CONSUMER_KINDS, BUSINESS_KINDS):
             batches = {
                 kind: [
                     r
@@ -233,6 +235,8 @@ DUPLICATE_KEYS = {
     FileKind.COMMERCIAL: ("FacilityAccNum", "CustomerID", "DisbursementDate"),
     FileKind.CHEQUE: ("FacilityAccNum", "CustomerID", "ChequeNumber"),
     FileKind.JUDGMENT: ("CaseNumber", "CustomerID", "FilingDate"),
+    FileKind.BUSINESS_CHEQUE: ("FacilityAccNum", "CustomerID", "ChequeNumber"),
+    FileKind.BUSINESS_JUDGMENT: ("CaseNumber", "CustomerID", "FilingDate"),
 }
 
 
@@ -243,7 +247,7 @@ def _mark_duplicates(kind: FileKind, rows: list[_Row]) -> None:
     lower balance is kept (owner's rule, strictly enforced); on equal balances,
     the first. A provider who disagrees raises a dispute.
     """
-    names = ("BusinessName",) if kind is FileKind.COMMERCIAL else ("Surname", "FirstName")
+    names = ("BusinessName",) if kind in BUSINESS_KINDS else ("Surname", "FirstName")
     fields = DUPLICATE_KEYS[kind]
     groups: dict[tuple[str, ...], list[_Row]] = {}
     for row in rows:
@@ -329,7 +333,7 @@ def _reference_events(
 
 def event_key(kind: FileKind, values: dict[str, str]) -> tuple[str, tuple[str, ...]]:
     """The field to report a conflict on, and the event's identity at its institution."""
-    if kind is FileKind.CHEQUE:
+    if kind in CHEQUE_KINDS:
         return "ChequeNumber", (values["FacilityAccNum"], values["ChequeNumber"])
     return "CaseNumber", (values["CaseNumber"],)
 
@@ -338,7 +342,7 @@ def loaded_events(
     submission: Submission, kind: FileKind, records: list[dict[str, str]]
 ) -> set[tuple[str, ...]]:
     """Events of these records the bureau already holds from this institution."""
-    if kind is FileKind.CHEQUE:
+    if kind in CHEQUE_KINDS:
         numbers = {r["ChequeNumber"] for r in records}
         return set(
             DishonouredCheque.objects.filter(
@@ -437,7 +441,7 @@ def event(
         "source_row_number": row.number,
         "processing_run": run,
     }
-    if kind is FileKind.CHEQUE:
+    if kind in CHEQUE_KINDS:
         return DishonouredCheque(
             **common,
             amount=_amount(values, "ChequeAmount"),

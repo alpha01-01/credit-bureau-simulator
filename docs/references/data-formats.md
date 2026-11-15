@@ -109,6 +109,9 @@ These notes cover reference items **R1** (templates), **R2** (code lists), **R3*
 
 ### Dishonoured cheques and judgments
 
+The business formats are the consumer ones with the business demographics in place of the person's: the cheque columns (number, account opened, dates issued and bounced, reason, currency, amount) and the judgment columns (court, location, type, case number, filing date, case type and reason, currency, amount) are the same (owner, 14 November 2026). A valid ID is required for cheques issued from 1 January 2020 (owner: the issue date, not the bounce date) and for cases filed from that date.
+
+
 | List | Codes |
 | --- | --- |
 | Reason cheque returned | `11` insufficient funds, `12` fraud |
@@ -133,7 +136,6 @@ These notes cover reference items **R1** (templates), **R2** (code lists), **R3*
 
 | Item | Why |
 | --- | --- |
-| Business dishonoured cheque and business judgment formats | Only the consumer versions were supplied; the cleanser has business versions of both |
 | The scanned cleaning rules in text form, or confirmation they match `private/CLEANSER_RULES.md` | It could not be read |
 | Field 12 of the business format (registration date) | Not readable in the extracted text |
 | Whether the 2012 v1.1 manuals are still current | Templates change (D19); the game should start from the version in force |

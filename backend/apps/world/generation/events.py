@@ -4,22 +4,23 @@ Events that lenders report on their own files, grown out of the credit
 history so that they agree with it (ASSUMPTION A-040):
 
 * **Dishonoured cheques.** Banks and savings and loans companies give their
-  customers cheque books. In a month, a personal borrower's cheque bounces
-  with a chance that rises with arrears: 0.2% when current, 5% when in
-  arrears, 10% at 90 days or more. 4% of bounced cheques are returned for
-  fraud, the rest for insufficient funds. The amount is around 40% of the
-  drawer's monthly income. At most one per person, lender and month.
-* **Judgments.** A lender sues 35% of the personal borrowers whose loans it
-  writes off with at least GHS 1,000 outstanding, filing 2 to 8 months after
-  the write-off, for the balance written off plus 5 to 15% costs. The court is by amount: District Court below
-  GHS 50,000, Circuit Court below GHS 500,000, else the High Court
-  (Commercial Division), in the borrower's town. 70% end in judgment by
-  default, the rest in a court order.
+  customers cheque books. In a month, a borrower's cheque bounces with a
+  chance that rises with arrears: 0.2% when current, 5% when in arrears, 10%
+  at 90 days or more. 4% of bounced cheques are returned for fraud, the rest
+  for insufficient funds. The amount is around 40% of a person's monthly
+  income, or 25% of a business's monthly revenue. At most one per borrower,
+  lender and month.
+* **Judgments.** A lender sues 35% of the borrowers whose loans it writes off
+  with at least GHS 1,000 outstanding, filing 2 to 8 months after the
+  write-off, for the balance written off plus 5 to 15% costs. The court is by
+  amount: District Court below GHS 50,000, Circuit Court below GHS 500,000,
+  else the High Court (Commercial Division), in the borrower's town. 70% end
+  in judgment by default, the rest in a court order.
 
-Business borrowers are left out until the business cheque and judgment
-manuals arrive. Generation is lazy and deterministic: a month's events are
-created the first time they are needed, from the world seed, the same however
-often or in whatever order months are asked for.
+People and businesses draw from separate streams, so adding one never moves
+the other. Generation is lazy and deterministic: a month's events are created
+the first time they are needed, from the world seed, the same however often or
+in whatever order months are asked for.
 """
 
 from __future__ import annotations
@@ -30,7 +31,16 @@ from typing import Any
 
 from django.db import connection, transaction
 
-from apps.world.models import CourtJudgment, DishonouredCheque, EventMonth, Lender, Loan, World
+from apps.world.models import (
+    Business,
+    CourtJudgment,
+    DishonouredCheque,
+    EventMonth,
+    Lender,
+    Loan,
+    Person,
+    World,
+)
 
 from .persist import loan_month_partition
 from .rng import stream
@@ -86,16 +96,39 @@ def _loan_months(world: World, where: str, params: list[Any]) -> list[tuple[Any,
     return rows
 
 
+# Borrower kinds: (tag, account digit, share of monthly income or revenue a cheque is for).
+PERSON, BUSINESS = ("P", "1", 0.4), ("B", "2", 0.25)
+
+
 def _loans(loan_ids: list[int]) -> dict[int, tuple[Any, ...]]:
-    """Personal loans by id: (seq, account, disbursed, person id, person seq, income, town)."""
-    return {
-        row[0]: row[1:]
-        for row in Loan.objects.filter(pk__in=loan_ids, customer__person__isnull=False).values_list(
-            "pk", "seq_no", "account_number", "disbursement_date", "customer__person_id",
-            "customer__person__seq_no", "customer__person__monthly_income",
-            "customer__person__town",
-        )
-    }  # fmt: skip
+    """Loans by id: (seq, account, disbursed, borrower, borrower seq, monthly income, town).
+
+    ``borrower`` is (kind tag, world id) of the person or business.
+    """
+    out: dict[int, tuple[Any, ...]] = {}
+    for pk, seq, account, disbursed, person, business in Loan.objects.filter(
+        pk__in=loan_ids
+    ).values_list(
+        "pk", "seq_no", "account_number", "disbursement_date", "customer__person_id",
+        "customer__business_id",
+    ):  # fmt: skip
+        out[pk] = (seq, account, disbursed, ("P", person) if person else ("B", business))
+    people = {
+        pk: (seq, income, town)
+        for pk, seq, income, town in Person.objects.filter(
+            pk__in={v[3][1] for v in out.values() if v[3][0] == "P"}
+        ).values_list("pk", "seq_no", "monthly_income", "town")
+    }
+    businesses = {
+        pk: (seq, revenue, town)
+        for pk, seq, revenue, town in Business.objects.filter(
+            pk__in={v[3][1] for v in out.values() if v[3][0] == "B"}
+        ).values_list("pk", "seq_no", "monthly_revenue", "town")
+    }
+    for pk, (seq, account, disbursed, borrower) in list(out.items()):
+        details = (people if borrower[0] == "P" else businesses)[borrower[1]]
+        out[pk] = (seq, account, disbursed, borrower, *details)
+    return out
 
 
 def _cheques(world: World, period: date) -> list[DishonouredCheque]:
@@ -110,38 +143,48 @@ def _cheques(world: World, period: date) -> list[DishonouredCheque]:
         world, "period = %s AND status = 'ACTIVE' AND lender_id = ANY(%s)", [period, list(banks)]
     )
     loans = _loans([m[0] for m in months])
-    rows = sorted(
-        (
-            (lender_id, loan_id, dpd, *loans[loan_id])
-            for loan_id, lender_id, _, dpd, _ in months
-            if loan_id in loans
-        ),
-        key=lambda r: (banks[r[0]], r[7], r[4]),  # lender code, person seq, account
-    )
-    rows = [
-        (lender_id, loan_id, dpd, account, disbursed, person_id, seq, income)
-        for lender_id, loan_id, dpd, _, account, disbursed, person_id, seq, income, _ in rows
-    ]
+    out: list[DishonouredCheque] = []
+    for kind, stream_name in ((PERSON, "cheques"), (BUSINESS, "business-cheques")):
+        rows = sorted(
+            (
+                (lender_id, loan_id, dpd, *loans[loan_id])
+                for loan_id, lender_id, _, dpd, _ in months
+                if loans[loan_id][3][0] == kind[0]
+            ),
+            key=lambda r: (banks[r[0]], r[7], r[4]),  # lender code, borrower seq, account
+        )
+        out += _bounced(
+            world, period, kind, stream(world.seed, stream_name, _month_index(period)), rows
+        )
+    return out
 
+
+def _bounced(
+    world: World,
+    period: date,
+    kind: tuple[str, str, float],
+    rng: Any,
+    rows: list[tuple[Any, ...]],
+) -> list[DishonouredCheque]:
+    _, digit, share = kind
     index = _month_index(period)
-    rng = stream(world.seed, "cheques", index)
     days = period.day
     out: list[DishonouredCheque] = []
-    seen: set[tuple[int, int]] = set()
-    for lender_id, loan_id, dpd, account, disbursed, person_id, seq, income in rows:
-        if (lender_id, person_id) in seen:  # one chance per person and lender a month
+    seen: set[tuple[int, Any]] = set()
+    for lender_id, loan_id, dpd, _, account, disbursed, borrower, seq, income, _ in rows:
+        if (lender_id, borrower) in seen:  # one chance per borrower and lender a month
             continue
-        seen.add((lender_id, person_id))
+        seen.add((lender_id, borrower))
         chance = next(p for floor, p in reversed(BOUNCE_CHANCE) if dpd >= floor)
         draw = rng.random(5)
         if draw[0] >= chance:
             continue
         bounced = period.replace(day=1 + int(draw[1] * days))
-        amount = max(Decimal("50"), _whole(Decimal(income) * Decimal(0.4 * (0.5 + draw[2]))))
+        amount = max(Decimal("50"), _whole(Decimal(income) * Decimal(share * (0.5 + draw[2]))))
         out.append(
             DishonouredCheque(
                 world=world, lender_id=lender_id, loan_id=loan_id, period=period,
-                account_number=f"{account[:4]}1{seq:09d}",
+                account_number=f"{account[:4]}{digit}{seq:09d}",
                 account_opened=disbursed - timedelta(days=365 * (1 + seq % 5)),
                 cheque_number=f"{index % 100000:05d}{int(draw[3] * 10)}",
                 date_issued=bounced - timedelta(days=1 + int(draw[3] * 10)),
@@ -166,7 +209,6 @@ def _judgments(world: World, period: date) -> list[CourtJudgment]:
         (
             (lender_id, loan_id, loans[loan_id][0], written_off, balance, loans[loan_id][6])
             for loan_id, lender_id, written_off, _, balance in months
-            if loan_id in loans
         ),
         key=lambda r: r[2],  # by the loan's place in the world
     )
