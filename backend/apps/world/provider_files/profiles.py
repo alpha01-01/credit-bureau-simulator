@@ -130,3 +130,22 @@ def profile_for(lender_code: str, lender_type: str, sophistication: float) -> Da
     if sophistication >= 0.4:
         return AVERAGE
     return POOR
+
+
+# Row-level defect rates, which a provider can bring down (P2.6).
+ROW_RATES = (
+    "missing_field", "phone_format", "amount_format", "name_typo", "name_swap",
+    "wrong_identifier", "stale_values", "inconsistent_status", "date_format", "future_date",
+    "duplicate_row", "omit_account", "code_words",
+)  # fmt: skip
+QUALITY_STEP = 0.2  # each quality level removes a fifth of the usual defects (A-054)
+MAX_QUALITY = 4
+
+
+def improved(profile: DataQualityProfile, level: int) -> DataQualityProfile:
+    """The profile of a provider that has improved its data ``level`` steps (0 = as usual)."""
+    if level <= 0:
+        return profile
+    factor = 1 - QUALITY_STEP * min(level, MAX_QUALITY)
+    rates = {name: getattr(profile, name) * factor for name in ROW_RATES}
+    return replace(profile, name=f"{profile.name}+{level}", **rates)

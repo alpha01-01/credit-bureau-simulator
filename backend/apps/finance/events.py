@@ -51,7 +51,7 @@ from .ledger import (
     money,
     post,
 )
-from .models import Account, Invoice, InvoiceLine, JournalLine, Payment
+from .models import Account, AccountType, Invoice, InvoiceLine, JournalLine, Payment
 
 # Tax and payroll rates come from the rule book edition in force (apps.standards.rulebook).
 MONTHLY_RENT = Decimal("45000.00")
@@ -275,3 +275,21 @@ def file_vat(organization: Organization, on: date, at: datetime) -> None:
 
 def account_exists(organization: Organization) -> bool:
     return Account.objects.filter(organization=organization).exists()
+
+
+PROVIDER_TRAINING = ("5300", "Provider relations and training")
+
+
+def provider_training(
+    organization: Organization, provider: str, amount: Decimal, on: date, at: datetime
+) -> None:
+    """A data-quality training session for a provider's staff, paid by the bureau (P2.6)."""
+    code, name = PROVIDER_TRAINING
+    Account.objects.get_or_create(
+        organization=organization, code=code,
+        defaults={"name": name, "account_type": AccountType.EXPENSE},
+    )  # fmt: skip
+    post(
+        organization, on, f"Data quality training for {provider}",
+        [dr(code, amount), cr(BANK, amount)], "PROVIDER_TRAINING", at,
+    )  # fmt: skip

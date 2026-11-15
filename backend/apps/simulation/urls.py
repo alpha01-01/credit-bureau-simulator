@@ -41,6 +41,7 @@ urlpatterns = [
     path("games/<int:game_id>/rejection-policy/", api.rejection_policy, name="rejection-policy"),
     path("games/<int:game_id>/matching-policy/", api.matching_policy, name="matching-policy"),
     path("games/<int:game_id>/rules/", api.rules, name="rules"),
+    path("games/<int:game_id>/providers/", api.provider_relations, name="providers"),
     path(
         "games/<int:game_id>/submissions/<str:reference>/feedback/",
         api.feedback,

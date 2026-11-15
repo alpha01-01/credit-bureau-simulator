@@ -36,7 +36,7 @@ from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 from apps.workitems.work import WorkError
 
-from . import assets, controls
+from . import assets, controls, providers
 from .engine import ClockError
 from .models import DataQualityReview, Game
 
@@ -166,6 +166,68 @@ def feedback(request: Request, game_id: int, reference: str) -> HttpResponse:
         return response
     sent = submission.feedback_reports.order_by("-sent_at", "-pk").values_list("sent_at", flat=True)
     return Response({**report, "sent": list(sent)})
+
+
+def _cooperation(goodwill: float) -> str:
+    """How a provider comes across to the bureau's account managers (its goodwill is hidden)."""
+    if goodwill >= 0.6:
+        return "cooperative"
+    if goodwill >= 0.4:
+        return "lukewarm"
+    return "strained"
+
+
+@api_view(["GET", "POST"])
+def provider_relations(request: Request, game_id: int) -> Response:
+    """The bureau's providers: their recent files and how they cooperate (P2.6).
+
+    POST {"action": "train" | "penalise", "provider": "ATB"}.
+    """
+    game = _game(request, game_id)
+    if request.method == "POST":
+        action, code = str(request.data.get("action", "")), str(request.data.get("provider", ""))
+        try:
+            if action == "train":
+                controls.train_provider(game, code)
+            elif action == "penalise":
+                controls.penalise_provider(game, code)
+            else:
+                return _error(ValueError("action must be train or penalise"))
+        except ClockError as exc:
+            return _error(exc)
+    org = game.organization
+    relations = {r.provider_code: r for r in game.provider_relations.all()}
+    rows = []
+    for institution in org.institutions.order_by("institution_code"):
+        code = institution.institution_code
+        rel = relations.get(code)
+        recent = []
+        for sub in Submission.objects.filter(organization=org, institution=institution).order_by(
+            "-reporting_period", "-received_at"
+        )[:6]:
+            run = sub.runs.order_by("-run_number").first()
+            recent.append(
+                {
+                    "reference": sub.submission_reference,
+                    "period": sub.reporting_period,
+                    "received_at": sub.received_at,
+                    "days_late": max((sub.received_at.date() - sub.due_date).days, 0),
+                    "records": run.records_received if run else None,
+                    "unloadable": run.records_unloadable if run else None,
+                    "feedback_sent": sub.feedback_reports.exists(),
+                }
+            )
+        rows.append(
+            {
+                "code": code,
+                "name": institution.institution_name,
+                "cooperation": _cooperation(rel.goodwill if rel else 0.7),
+                "trained_this_month": bool(rel and rel.trainings),
+                "penalties_this_month": rel.penalties if rel else 0,
+                "recent": recent,
+            }
+        )
+    return Response({"providers": rows, "training_cost": str(providers.TRAINING_COST)})
 
 
 @api_view(["GET", "POST"])

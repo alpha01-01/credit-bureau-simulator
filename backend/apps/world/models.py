@@ -355,12 +355,17 @@ class ProviderSubmission(models.Model):
     arrival_date = models.DateField(help_text="Date the provider actually sends the files")
     profile = models.JSONField(help_text="Data Quality Profile in force for this submission")
     template_version = models.CharField(max_length=20)
+    variant = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="'' for the provider's usual files; q1..q4 when it has improved (P2.6)",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["lender", "period"], name="world_submission_unique_period"
+                fields=["lender", "period", "variant"], name="world_submission_unique_period"
             )
         ]
 

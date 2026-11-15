@@ -256,6 +256,31 @@ export type OwnRules = {
   providers: string[]
 }
 
+export type ProviderRow = {
+  code: string
+  name: string
+  cooperation: 'cooperative' | 'lukewarm' | 'strained'
+  trained_this_month: boolean
+  penalties_this_month: number
+  recent: {
+    reference: string
+    period: string
+    received_at: string
+    days_late: number
+    records: number | null
+    unloadable: number | null
+    feedback_sent: boolean
+  }[]
+}
+
+export function useProviders(id: number) {
+  return useQuery({
+    queryKey: [id, 'providers'],
+    queryFn: () =>
+      apiGet<{ providers: ProviderRow[]; training_cost: string }>(`${game(id)}/providers/`),
+  })
+}
+
 export function useFeedback(id: number, reference: string) {
   return useQuery({
     queryKey: [id, 'feedback', reference],

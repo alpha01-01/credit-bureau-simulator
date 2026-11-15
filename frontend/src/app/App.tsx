@@ -10,6 +10,7 @@ import { EventsPage } from '../pages/EventsPage'
 import { FinanceLayout, InvoicesPage, LedgerPage, StatementsPage } from '../pages/FinancePage'
 import { GamesPage } from '../pages/GamesPage'
 import { LoginPage } from '../pages/LoginPage'
+import { ProvidersPage } from '../pages/ProvidersPage'
 import { QueuePage, WorkItemPage } from '../pages/QueuePage'
 import { ReviewPage, ReviewsPage } from '../pages/ReviewPage'
 import { RulesPage } from '../pages/RulesPage'
@@ -72,6 +73,7 @@ const routes = [
               { path: 'events', element: <EventsPage /> },
               { path: 'reviews', element: <ReviewsPage /> },
               { path: 'rules', element: <RulesPage /> },
+              { path: 'providers', element: <ProvidersPage /> },
               { path: 'reviews/:period', element: <ReviewPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },
