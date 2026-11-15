@@ -43,6 +43,8 @@ from apps.world.generation.persist import delete_world
 
 from .models import (
     Checkpoint,
+    Consequence,
+    DataQualityReview,
     Delivery,
     EnquiryJudgement,
     Game,
@@ -73,6 +75,8 @@ _INSTITUTIONS = f"SELECT id FROM {_table(Institution)} WHERE organization_id = %
 _ENTRIES = f"SELECT id FROM {_table(JournalEntry)} WHERE organization_id = %(org)s"
 
 _ORDER: tuple[tuple[type[Model], str], ...] = (
+    (Consequence, "game_id = %(game)s"),
+    (DataQualityReview, "game_id = %(game)s"),
     (Payment, "organization_id = %(org)s"),
     (
         InvoiceLine,

@@ -23,6 +23,7 @@ from apps.world.generation.rng import stream
 from apps.world.models import Lender, Loan, LoanApplication
 
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar
+from .consequences import trace
 from .demand import REFERENCE_PRICE, p_enquire, update_perception
 from .feed import AT_RISK, RECOVERED, Feed
 from .judgement import customer_borrower
@@ -165,6 +166,8 @@ def handle_application(
     view.hits += int(hit)
     view.wrong_person += int(outcome == "WRONG_PERSON")
     view.perceived_value = round(update_perception(view.perceived_value, outcome), 6)
+    if hit:
+        trace(game, enquiry, borrower, code, feed.tick if feed else game.current_tick, at)
     if feed is not None:
         if outcome == "WRONG_PERSON":
             feed.wrong_person(subscriber.subscriber_name, enquiry.enquiry_reference)

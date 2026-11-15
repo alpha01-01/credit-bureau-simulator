@@ -39,7 +39,17 @@ from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_mo
 from .enquiries import handle_application, schedule_applications
 from .feed import Feed, money
 from .judgement import rng_for, sync_work_items
-from .models import CheckpointKind, EventStatus, EventType, Game, Notice, ScheduledEvent, TickLog
+from .models import (
+    CheckpointKind,
+    EventStatus,
+    EventType,
+    Game,
+    Notice,
+    ScheduledEvent,
+    Severity,
+    TickLog,
+)
+from .review import build_review
 
 
 class ClockError(Exception):
@@ -184,6 +194,19 @@ def run_tick(game_id: int, tick: int) -> bool:
 
         # Review cases opened this tick (by the batch or by decisions) become work items.
         sync_work_items(game, tick)
+
+        if cal.is_last_tick_of_month(tick):
+            today = cal.tick_start(tick).date()
+            period = period_end(today.year, today.month)
+            build_review(game, cal, period, tick)
+            feed.add(
+                "REVIEW_READY",
+                Severity.INFO,
+                f"The Data Quality Review for {period:%B} is ready",
+                "How many decisions were right, which records were wrongly rejected, and the "
+                "true state of the data.",
+                {"screen": "review", "params": {"period": f"{period:%Y-%m}"}},
+            )
 
         feed.save()
         TickLog.objects.create(

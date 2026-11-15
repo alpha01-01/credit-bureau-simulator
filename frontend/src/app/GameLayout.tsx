@@ -16,6 +16,7 @@ const NAV = [
   ['customers', 'Customers'],
   ['enquiries', 'Enquiries'],
   ['finance', 'Finance'],
+  ['reviews', 'Reviews'],
 ] as const
 
 export function GameLayout() {
