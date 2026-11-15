@@ -54,6 +54,32 @@ class Game(models.Model):
         return f"Game {self.pk} ({self.organization})"
 
 
+class HistoryTemplate(models.Model):
+    """A world's established bureau, built once and copied into each new game (P2.1).
+
+    Pre-loading history is deterministic: the same world and number of months
+    always give the same bureau. So it is built once, in a hidden game with no
+    owner, and every new game with that history gets a copy (``copy_bureau``),
+    in seconds instead of minutes. ``code_version`` names the code that built
+    it; a template built by other code is rebuilt rather than copied.
+    """
+
+    world = models.ForeignKey(World, on_delete=models.CASCADE, related_name="+")
+    months = models.PositiveSmallIntegerField()
+    game = models.OneToOneField(Game, on_delete=models.CASCADE, related_name="+")
+    code_version = models.CharField(max_length=60)
+    build_seconds = models.FloatField(default=0)
+    built_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["world", "months"], name="history_template_unique")
+        ]
+
+    def __str__(self) -> str:
+        return f"World {self.world_id}, {self.months} months"
+
+
 class TickLog(models.Model):
     """One row per completed tick: what makes ticks idempotent."""
 

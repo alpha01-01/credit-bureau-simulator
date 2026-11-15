@@ -7,6 +7,7 @@ would: the provider's public details at onboarding, and file bytes on arrival.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any
@@ -42,29 +43,49 @@ def start_game(
     """Create a bureau for a world, onboard the reporting providers, and set the clock.
 
     Play starts on the first day of the month after the world's history.
-    ``history_months`` pre-loads that many months of provider files, so the
-    bureau starts established (the Established scenario uses 12).
+    ``history_months`` gives the bureau that many months of past provider files,
+    so it starts established (the Established scenario uses 12). That history is
+    built once per world and copied into each game (``templates``).
     """
+    game = new_game(world, owner, bureau_name)
+    if history_months:
+        install_history(game, history_months)
+    else:
+        set_up_bureau(game)
+    return game
+
+
+def new_game(world: World, owner: Any = None, bureau_name: str = "SimB Credit Bureau") -> Game:
+    """A game with its clock and an empty bureau."""
     organization = Organization.objects.create(
         name=bureau_name, organization_code=f"BUREAU-{uuid.uuid4().hex[:10].upper()}"
     )
-    start = play_start(world)
-    game = Game.objects.create(
+    return Game.objects.create(
         world=world,
         organization=organization,
         owner=owner,
-        clock_start=start.replace(day=1),
+        clock_start=play_start(world).replace(day=1),
     )
+
+
+def set_up_bureau(game: Game) -> None:
+    """A new bureau: its providers onboarded, its first team, products and books."""
+    world = game.world
     for code in REPORTING_PROVIDERS:
         onboard(game, Lender.objects.get(world=world, code=code), world.history_start)
     hire_starting_team(game, world.history_start)
     set_up_commercial(game, world.history_start)
     open_game_books(game)
-    if history_months:
-        from .history import preload_history  # history uses deliver(), defined below
 
-        preload_history(game, history_months)
-    return game
+
+def install_history(game: Game, months: int, progress: Callable[[str], None] | None = None) -> None:
+    """Give a new, empty game the world's established history (built once, then copied)."""
+    from .templates import copy_bureau, ensure_template
+
+    template = ensure_template(game.world, months, progress)
+    if progress is not None:
+        progress("Copying the bureau's history")
+    copy_bureau(template.game, game)
 
 
 def onboard(game: Game, lender: Lender, onboarding_date: date) -> Institution:

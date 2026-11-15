@@ -126,7 +126,7 @@ def fingerprint(game: Game) -> str:
         .order_by(run_sub, "run__run_number", "file__storage_path", "source_row_number")
         .values_list(
             run_sub, "run__run_number", "file__file_name", "source_row_number", "raw",
-            "cleansed", "record_status", "duplicate_of_row",
+            "changes", "record_status", "duplicate_of_row",
         ),
     )  # fmt: skip
     _section(

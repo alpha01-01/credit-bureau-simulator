@@ -74,6 +74,7 @@ from .models import (
     Submission,
     SubmissionFile,
     SubmissionStatus,
+    changes_from,
 )
 
 PROCESSING_VERSION = "pipeline-v2"
@@ -505,7 +506,7 @@ def _save_rows(
             file=row.file,
             source_row_number=row.number,
             raw=row.raw,
-            cleansed=row.cleansed,
+            changes=changes_from(row.raw, row.cleansed),
             record_status=row.status,
             duplicate_of_row=row.duplicate_of,
         )

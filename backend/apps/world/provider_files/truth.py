@@ -42,6 +42,7 @@ from apps.standards.submission_template import (
 from apps.world.models import World
 
 from ..generation.events import ensure_events
+from ..generation.persist import loan_month_partition
 from .details import business_details, person_details
 
 # Fields a provider forgets to refresh when it re-sends last month's extract.
@@ -175,6 +176,29 @@ def previous_month_end(period: date) -> date:
     return date(period.year, period.month, 1) - timedelta(days=1)
 
 
+def _for_loans(sql: str, world_id: int) -> str:
+    """The credit truth query for given loans only, driven by the loan-month key.
+
+    It reads the world's own partition by (loan, period), the partition's unique
+    key, so it stays one index lookup per loan however stale the planner's
+    statistics are (for a single record the whole-file plan can be very slow).
+    """
+    partition = loan_month_partition(world_id)
+    for before, after in (
+        ("FROM world_loanmonth m", f"FROM {partition} m"),
+        ("LEFT JOIN world_loanmonth pm", f"LEFT JOIN {partition} pm"),
+        ("ON pm.world_id = m.world_id AND pm.loan_id", "ON pm.loan_id"),
+        (
+            "WHERE m.world_id = %(world)s AND m.lender_id = %(lender)s AND m.period = %(period)s",
+            "WHERE m.loan_id = ANY(%(loans)s) AND m.period = %(period)s",
+        ),
+    ):
+        if before not in sql:
+            raise ValueError(f"Truth query has changed: {before!r} not found")
+        sql = sql.replace(before, after, 1)
+    return sql
+
+
 def load_truth(
     world_id: int,
     lender_id: int,
@@ -198,9 +222,10 @@ def load_truth(
     else:
         sql = _INDIVIDUAL_SQL if kind is FileKind.INDIVIDUAL else _COMMERCIAL_SQL
         build = _record
-    if loan_ids is not None:
-        alias = "e" if kind in EVENT_KINDS else "m"
-        sql = sql.replace(" ORDER BY", f" AND {alias}.loan_id = ANY(%(loans)s) ORDER BY", 1)
+    if loan_ids is not None and kind in EVENT_KINDS:
+        sql = sql.replace(" ORDER BY", " AND e.loan_id = ANY(%(loans)s) ORDER BY", 1)
+    elif loan_ids is not None:
+        sql = _for_loans(sql, world_id)
     with connection.cursor() as cursor:
         cursor.execute(sql, params)
         rows = cursor.fetchall()
