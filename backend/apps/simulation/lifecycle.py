@@ -56,6 +56,7 @@ from apps.workitems.models import WorkItem
 from apps.world.generation.persist import delete_world
 
 from .models import (
+    Candidate,
     Checkpoint,
     Consequence,
     DataQualityReview,
@@ -63,9 +64,11 @@ from .models import (
     EnquiryJudgement,
     Game,
     HistoryTemplate,
+    Incident,
     LendingDecision,
     Notice,
     PlayerAction,
+    Proposal,
     ProviderRelationship,
     RegulatorFinding,
     RegulatorStanding,
@@ -151,6 +154,9 @@ _ORDER: tuple[tuple[type[Model], str], ...] = (
     (ProviderRelationship, "game_id = %(game)s"),
     (RegulatorFinding, "game_id = %(game)s"),
     (RegulatorStanding, "game_id = %(game)s"),
+    (Candidate, "game_id = %(game)s"),
+    (Proposal, "game_id = %(game)s"),
+    (Incident, "game_id = %(game)s"),
     (Notice, "game_id = %(game)s"),
     (HistoryTemplate, "game_id = %(game)s"),
     (Game, "id = %(game)s"),

@@ -19,6 +19,9 @@ const NAV = [
   ['customers', 'Customers'],
   ['enquiries', 'Enquiries'],
   ['subscribers', 'Subscribers'],
+  ['sales', 'Sales'],
+  ['staff', 'Staff'],
+  ['it', 'IT'],
   ['finance', 'Finance'],
   ['reviews', 'Reviews'],
 ] as const

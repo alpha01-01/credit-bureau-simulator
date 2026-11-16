@@ -51,6 +51,8 @@ def work_tick(
     for employee in Employee.objects.filter(organization=organization, is_active=True).order_by(
         "employee_number"
     ):
+        if employee.away_until_tick >= tick:
+            continue  # away on a training course (P2.9)
         if employee.work_day != day_index:
             employee.work_day, employee.done_today = day_index, 0
         budget = minutes

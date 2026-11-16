@@ -794,3 +794,94 @@ export function useGameCommand<T>(id: number, path: string) {
     onSuccess: () => client.invalidateQueries({ queryKey: [id] }),
   })
 }
+
+// --- Departments (P2.9) ---------------------------------------------------------------
+
+export type StaffData = {
+  team: {
+    number: string
+    name: string
+    job_title: string
+    skills: Record<string, number>
+    morale: number
+    salary: string
+    market_salary: string
+    hired_on: string
+    active: boolean
+    away: boolean
+  }[]
+  candidates: {
+    number: number
+    name: string
+    job_title: string
+    skills: Record<string, number>
+    asking_salary: string
+    hired: boolean
+  }[]
+  month: string
+  training_cost: string
+  training_types: string[]
+}
+
+export function useStaff(id: number) {
+  return useQuery({
+    queryKey: [id, 'staff'],
+    queryFn: () => apiGet<StaffData>(`${game(id)}/staff/`),
+  })
+}
+
+export type Proposal = {
+  number: number
+  lender: string
+  price: string
+  sent_at: string
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED'
+  answered_at: string | null
+}
+
+export type SalesData = {
+  reputation: { score: number; hit_rate: number; accuracy: number; enquiries: number }
+  list_price: string
+  answer_days: number
+  subscribers: {
+    code: string
+    name: string
+    active: boolean
+    since: string
+    price: string | null
+  }[]
+  prospects: { code: string; name: string; type: string; waiting: boolean }[]
+  proposals: Proposal[]
+}
+
+export function useSales(id: number) {
+  return useQuery({
+    queryKey: [id, 'sales'],
+    queryFn: () => apiGet<SalesData>(`${game(id)}/sales/`),
+  })
+}
+
+export type ItData = {
+  capacity: 'STANDARD' | 'HIGH'
+  levels: { level: 'STANDARD' | 'HIGH'; files_per_night: number; monthly_cost: string }[]
+  files_waiting: number
+  down: boolean
+  vendor_cost: string
+  incidents: {
+    number: number
+    kind: string
+    detail: string
+    started_tick: number
+    ends_tick: number
+    hours: number
+    response: '' | 'VENDOR' | 'BACKUP'
+    active: boolean
+  }[]
+}
+
+export function useIt(id: number) {
+  return useQuery({
+    queryKey: [id, 'it'],
+    queryFn: () => apiGet<ItData>(`${game(id)}/it/`),
+  })
+}

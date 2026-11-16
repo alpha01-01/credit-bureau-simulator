@@ -8,7 +8,8 @@ the same result; that is the replay guarantee tested in S4.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from django.db import transaction
@@ -21,11 +22,12 @@ from apps.bureau.submissions.feedback import send_report
 from apps.bureau.submissions.mapping import MappingError, save_mapping
 from apps.bureau.submissions.models import FeedbackReport, FileStatus, Submission, SubmissionFile
 from apps.bureau.submissions.pipeline import process_submission
+from apps.org.models import Employee
 from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
-from . import providers
+from . import hr, it, providers, sales
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
@@ -36,8 +38,10 @@ from .models import (
     EventStatus,
     Game,
     GameStatus,
+    Incident,
     Notice,
     PlayerAction,
+    Proposal,
     Severity,
 )
 
@@ -319,6 +323,99 @@ def set_matching_tooling(game: Game, level: str) -> Game:
     return game
 
 
+# --- Departments (P2.9) ---------------------------------------------------------------
+
+
+def _now(game: Game) -> tuple[int, datetime]:
+    """The clock position a player action happens at: between the last tick and the next."""
+    cal = calendar(game)
+    at = cal.tick_end(game.current_tick) if game.current_tick else cal.tick_start(1)
+    return game.current_tick, at
+
+
+def this_month(game: Game) -> date:
+    """The month of the next tick: the month the player is in."""
+    return calendar(game).tick_start(game.current_tick + 1).date().replace(day=1)
+
+
+def _employee(game: Game, number: str) -> Employee:
+    try:
+        return Employee.objects.get(organization=game.organization, employee_number=number)
+    except Employee.DoesNotExist as exc:
+        raise ClockError(f"No employee {number}") from exc
+
+
+def hire_candidate(game: Game, number: int) -> Employee:
+    candidate = next((c for c in hr.candidates_for(game, this_month(game)) if c.number == number),
+                     None)  # fmt: skip
+    if candidate is None:
+        raise ClockError(f"No candidate {number} this month")
+    _, at = _now(game)
+    with transaction.atomic():
+        try:
+            employee = hr.hire(game, candidate, at.date())
+        except hr.HRError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "HIRE", {"candidate": number})
+    return employee
+
+
+def train_employee(game: Game, number: str, work_type: str) -> Employee:
+    employee = _employee(game, number)
+    tick, at = _now(game)
+    with transaction.atomic():
+        try:
+            hr.train(employee, work_type, tick, at.date(), at)
+        except hr.HRError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "TRAIN_EMPLOYEE", {"employee": number, "work_type": work_type})
+    return employee
+
+
+def set_salary(game: Game, number: str, salary: Decimal) -> Employee:
+    employee = _employee(game, number)
+    with transaction.atomic():
+        try:
+            hr.set_salary(employee, salary)
+        except hr.HRError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "SET_SALARY", {"employee": number, "salary": str(employee.monthly_salary)})
+    return employee
+
+
+def send_proposal(game: Game, lender: str, price: Decimal) -> Proposal:
+    tick, at = _now(game)
+    with transaction.atomic():
+        try:
+            # The answer is scheduled from the next tick: the one the player is waiting for.
+            proposal = sales.propose(game, lender, price, tick + 1, at)
+        except sales.SalesError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "SEND_PROPOSAL", {"lender": lender, "price": str(proposal.unit_price)})
+    return proposal
+
+
+def respond_to_outage(game: Game, response: str) -> Incident:
+    tick, at = _now(game)
+    with transaction.atomic():
+        try:
+            incident = it.respond(game, response, tick, at.date(), at)
+        except it.ITError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "RESPOND_TO_OUTAGE", {"response": response})
+    return incident
+
+
+def set_it_capacity(game: Game, level: str) -> Game:
+    """Buy (or drop) overnight processing capacity; billed from the next month."""
+    try:
+        it.set_capacity(game, level)
+    except it.ITError as exc:
+        raise ClockError(str(exc)) from exc
+    record(game, "SET_IT_CAPACITY", {"level": level})
+    return game
+
+
 def step(game: Game) -> Game:
     """One tick of a running clock, in real time. Not an action: speed is.
 
@@ -432,6 +529,19 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             target = set_pause_rules(
                 target, list(action.payload["severities"]), bool(action.payload["deadlines"])
             )
+        case "HIRE":
+            hire_candidate(target, int(action.payload["candidate"]))
+        case "TRAIN_EMPLOYEE":
+            p = action.payload
+            train_employee(target, str(p["employee"]), str(p["work_type"]))
+        case "SET_SALARY":
+            set_salary(target, str(action.payload["employee"]), Decimal(action.payload["salary"]))
+        case "SEND_PROPOSAL":
+            send_proposal(target, str(action.payload["lender"]), Decimal(action.payload["price"]))
+        case "RESPOND_TO_OUTAGE":
+            respond_to_outage(target, str(action.payload["response"]))
+        case "SET_IT_CAPACITY":
+            target = set_it_capacity(target, str(action.payload["level"]))
         case other:
             raise ClockError(f"Unknown action {other}")
     return target

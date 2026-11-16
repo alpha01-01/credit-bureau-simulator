@@ -22,7 +22,7 @@ from apps.standards.calendar import next_working_day
 from apps.world.generation.rng import stream
 from apps.world.models import Lender, Loan, LoanApplication
 
-from . import compliance, lending
+from . import compliance, it, lending
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar
 from .consequences import trace
 from .demand import REFERENCE_PRICE, p_enquire, update_perception
@@ -59,16 +59,31 @@ def set_up_commercial(game: Game, since: date) -> None:
         SubscriberView.objects.create(game=game, subscriber_code=code)
 
 
-def schedule_applications(game: Game, cal: Calendar, tick: int, period: date, sequence: int) -> int:
-    """Schedule this month's applications to subscribing lenders. Returns the next sequence."""
-    codes = list(
-        Subscriber.objects.filter(organization=game.organization, is_active=True)
-        .order_by("subscriber_code")
-        .values_list("subscriber_code", flat=True)
-    )
+def schedule_applications(
+    game: Game,
+    cal: Calendar,
+    tick: int,
+    period: date,
+    sequence: int,
+    codes: list[str] | None = None,
+    since: date | None = None,
+) -> int:
+    """Schedule this month's applications to subscribing lenders. Returns the next sequence.
+
+    ``codes`` and ``since`` limit it to some lenders' applications made on or after a day
+    (a lender that signs up during the month, P2.9).
+    """
+    if codes is None:
+        codes = list(
+            Subscriber.objects.filter(organization=game.organization, is_active=True)
+            .order_by("subscriber_code")
+            .values_list("subscriber_code", flat=True)
+        )
     applications = LoanApplication.objects.filter(
         world=game.world, period=period, lender__code__in=codes
     ).order_by("lender__code", "seq")
+    if since is not None:
+        applications = applications.filter(application_date__gte=since)
     events = []
     for application in applications.select_related("lender"):
         code = application.lender.code
@@ -121,7 +136,9 @@ def handle_application(
 
     view.opportunities += 1
     tick = feed.tick if feed else game.current_tick
-    if compliance.suspended(game):  # a suspended bureau may not serve enquiries (P2.7)
+    if compliance.suspended(game) or it.systems_down(game, tick, memo):
+        # A suspended bureau may not serve enquiries (P2.7); nor can one whose systems
+        # are down (P2.9). The lender lends without a report.
         view.save()
         lending.decide(game, application, code, None, tick)
         return None
