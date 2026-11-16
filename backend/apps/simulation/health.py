@@ -5,8 +5,11 @@ ASSUMPTION A-067, five dimensions each scored out of 100:
 * **Financial**: 70% runway (months of costs the bank balance covers; 12 months or
   more scores 100) and 30% the last three months' result (break-even scores 50,
   a loss as large as the costs scores 0, a profit of half the costs scores 100).
-* **Data quality**: half the audited accuracy, half the coverage of the market's
-  active borrowers, from the latest month-end figures.
+* **Data quality** (revised in P2.12, A-070): 40% the audited accuracy on an
+  error-sensitive scale (99% scores 80, 97.5% 50, 95% 0), 30% the coverage of the
+  market's active borrowers, 30% upheld disputes per 1,000 reports over three
+  months (none scores 100, 1 scores 85, 3 scores 55). Small differences in
+  accuracy are large differences to the people on the reports.
 * **Reputation**: the average of the three audiences (A-061).
 * **Compliance**: the regulator's score (A-061).
 * **Team**: the average morale of active staff; no staff scores 0.
@@ -23,6 +26,8 @@ from typing import Any
 
 from django.db.models import Avg, Count, Sum
 
+from apps.bureau.quality.models import Dispute
+from apps.commercial.models import UsageRecord
 from apps.finance.events import (
     IT_CAPACITY_COST,
     MATCHING_TOOLING_COST,
@@ -97,20 +102,47 @@ def financial(game: Game, today: date) -> dict[str, Any]:
     }
 
 
-def data_quality(game: Game) -> dict[str, Any]:
+def accuracy_score(accuracy: float) -> float:
+    """Errors matter at fractions of a percent: 99% scores 80, 97.5% 50, 95% 0."""
+    return _clamp(100 - 2000 * (1 - accuracy))
+
+
+def dispute_score(upheld: int, reports: int) -> float:
+    """Upheld disputes per 1,000 reports: 1 scores 85, 3 scores 55, 6 or more about 0."""
+    if not reports:
+        return 100.0
+    return _clamp(100 - 15 * 1000 * upheld / reports)
+
+
+def data_quality(game: Game, at: datetime) -> dict[str, Any]:
     latest = game.reviews.order_by("-period").first()
     if latest is None:
         return {"score": None, "as_of": None, "accuracy": None, "coverage": None}
     visible = latest.figures["assets"]["visible"]
     accuracy = visible["audit"]["accuracy"]["share"]
     coverage = visible["coverage"]["share"]
-    score = 100 * (0.5 * (accuracy or 0.0) + 0.5 * (coverage or 0.0))
+    since = at - timedelta(days=91)
+    upheld = Dispute.objects.filter(
+        organization=game.organization, outcome="UPHELD", resolved_at__gte=since
+    ).count()
+    reports = UsageRecord.objects.filter(
+        organization=game.organization, usage_at__gte=since
+    ).count()
+    score = (
+        0.4 * accuracy_score(accuracy)
+        + 0.3 * 100 * (coverage or 0.0)
+        + 0.3 * dispute_score(upheld, reports)
+        if accuracy is not None
+        else 0.0  # nothing on file to audit: no data, no quality (and no disputes either)
+    )
     return {
         "score": round(score, 1),
         "as_of": latest.period,
         "accuracy": accuracy,
         "coverage": coverage,
         "freshness_days": visible.get("freshness_days"),
+        "upheld_disputes_3_months": upheld,
+        "reports_3_months": reports,
     }
 
 
@@ -140,7 +172,7 @@ def health(game: Game, at: datetime) -> dict[str, Any]:
     level = rep["regulator"]["level"]
     parts: dict[str, dict[str, Any]] = {
         "financial": financial(game, today),
-        "data_quality": data_quality(game),
+        "data_quality": data_quality(game, at),
         "reputation": {
             "score": round(
                 (
