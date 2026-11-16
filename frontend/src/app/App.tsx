@@ -21,6 +21,8 @@ import { StaffPage } from '../pages/StaffPage'
 import { SalesPage } from '../pages/SalesPage'
 import { ItPage } from '../pages/ItPage'
 import { HealthPage } from '../pages/HealthPage'
+import { MissionsPage } from '../pages/MissionsPage'
+import { HandbookPage } from '../pages/HandbookPage'
 import { GameLayout } from './GameLayout'
 
 function Shell() {
@@ -86,6 +88,8 @@ const routes = [
               { path: 'sales', element: <SalesPage /> },
               { path: 'it', element: <ItPage /> },
               { path: 'health', element: <HealthPage /> },
+              { path: 'missions', element: <MissionsPage /> },
+              { path: 'handbook', element: <HandbookPage /> },
               { path: 'reviews/:period', element: <ReviewPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },

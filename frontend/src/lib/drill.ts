@@ -17,6 +17,7 @@ export function drillPath(gameId: number, drill: Drill): string {
     sales: `${base}/sales`,
     it: `${base}/it`,
     health: `${base}/health`,
+    missions: `${base}/missions`,
   }
   if (drill.screen === 'review') {
     return `${base}/reviews/${drill.params.period}`

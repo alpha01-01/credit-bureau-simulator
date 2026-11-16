@@ -9,6 +9,7 @@ import { useLiveClock } from './useLiveClock'
 
 const NAV = [
   ['', 'Briefing'],
+  ['missions', 'Missions'],
   ['events', 'Events'],
   ['dashboard', 'Dashboard'],
   ['health', 'Health'],
@@ -25,6 +26,7 @@ const NAV = [
   ['it', 'IT'],
   ['finance', 'Finance'],
   ['reviews', 'Reviews'],
+  ['handbook', 'Handbook'],
 ] as const
 
 export function GameLayout() {

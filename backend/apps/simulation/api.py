@@ -37,7 +37,7 @@ from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 from apps.workitems.work import WorkError
 
-from . import assets, compliance, controls, lending, providers
+from . import assets, assist, compliance, controls, lending, providers
 from .engine import ClockError
 from .models import DataQualityReview, Game
 from .reputation import reputation
@@ -448,6 +448,18 @@ def _field(request: Request, name: str) -> Any:
 # the player learns it from consequences and the debrief.
 
 
+def _assist(game: Game, item: WorkItem) -> dict[str, Any]:
+    """What the assistance toggles add to an open item (P2.11)."""
+    if item.status == "DONE":
+        return {}
+    extra: dict[str, Any] = {}
+    if game.assist_accuracy:
+        extra["estimated_accuracy"] = assist.estimated_accuracy(item, game.organization)
+    if game.assist_recommend:
+        extra["recommendation"] = assist.recommend(item.case, game.organization)
+    return {"assist": extra} if extra else {}
+
+
 def _item_summary(item: WorkItem) -> dict[str, Any]:
     return {
         "number": item.item_number,
@@ -544,6 +556,7 @@ def work_item(request: Request, game_id: int, number: int) -> Response:
                 "allowed_decisions": list(ALLOWED_DECISIONS[case.case_type]),
                 "explanation": item.explanation or None,
             }
+            | _assist(game, item)
         )
     institution = case.record.file.submission.institution
     return Response(
@@ -562,6 +575,7 @@ def work_item(request: Request, game_id: int, number: int) -> Response:
             "allowed_decisions": list(ALLOWED_DECISIONS[case.case_type]),
             "explanation": item.explanation or None,
         }
+        | _assist(game, item)
     )
 
 
@@ -667,7 +681,7 @@ def enquiry_report(request: Request, game_id: int, reference: str) -> Response:
 # --- Finance ----------------------------------------------------------------------------
 #
 #   GET /api/v1/games/<id>/finance/   statements at the current game date:
-#       trial balance, month-to-date and year-to-date income statements,
+#       trial balance, last month's, month-to-date and year-to-date income statements,
 #       balance sheet and cash position, all derived from posted entries.
 
 
@@ -675,11 +689,15 @@ def enquiry_report(request: Request, game_id: int, reference: str) -> Response:
 def finance(request: Request, game_id: int) -> Response:
     game = _game(request, game_id)
     today = controls.state(game).now.date()
+    last_month_end = today.replace(day=1) - timedelta(days=1)
     org = game.organization
     return Response(
         {
             "as_of": today,
             "trial_balance": statements.trial_balance(org, today),
+            "income_last_month": statements.income_statement(
+                org, last_month_end.replace(day=1), last_month_end
+            ),
             "income_month_to_date": statements.income_statement(org, today.replace(day=1), today),
             "income_year_to_date": statements.income_statement(
                 org, today.replace(month=1, day=1), today

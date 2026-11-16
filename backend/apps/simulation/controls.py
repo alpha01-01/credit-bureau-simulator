@@ -27,10 +27,11 @@ from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
-from . import hr, it, providers, sales, solvency
+from . import hr, it, missions, providers, sales, solvency
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
+from .feed import Feed
 from .judgement import sync_work_items
 from .models import (
     SPEEDS,
@@ -421,6 +422,46 @@ def set_it_capacity(game: Game, level: str) -> Game:
     return game
 
 
+# --- Learning (P2.11) -----------------------------------------------------------------
+
+
+def answer_mission(game: Game, code: str, value: str) -> bool:
+    """Answer the current mission's question; a right answer may complete the mission."""
+    tick, at = _now(game)
+    with transaction.atomic():
+        try:
+            right = missions.answer(game, code, value, tick)
+        except missions.MissionError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "ANSWER_MISSION", {"code": code, "value": value})
+        feed = Feed(game, tick, at)
+        missions.update(game, tick, feed.add)
+        feed.save()
+    return right
+
+
+def set_campaign(game: Game, on: bool) -> Game:
+    with transaction.atomic():
+        record(game, "SET_CAMPAIGN", {"on": on})
+        game.campaign = on
+        game.save(update_fields=["campaign"])
+    return game
+
+
+ASSISTANCE = ("assist_accuracy", "assist_recommend", "assist_extended_deadlines")
+
+
+def set_assistance(game: Game, name: str, on: bool) -> Game:
+    """Turn one assistance toggle on or off (Document 07, Section 12.2)."""
+    if name not in ASSISTANCE:
+        raise ClockError(f"Assistance must be one of {', '.join(ASSISTANCE)}")
+    with transaction.atomic():
+        record(game, "SET_ASSISTANCE", {"name": name, "on": on})
+        setattr(game, name, on)
+        game.save(update_fields=[name])
+    return game
+
+
 def request_funding(game: Game, amount: Decimal) -> FundingRequest:
     """Ask the shareholders for new capital (P2.10). Their answer is immediate."""
     _, at = _now(game)
@@ -559,6 +600,12 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             respond_to_outage(target, str(action.payload["response"]))
         case "SET_IT_CAPACITY":
             target = set_it_capacity(target, str(action.payload["level"]))
+        case "ANSWER_MISSION":
+            answer_mission(target, str(action.payload["code"]), str(action.payload["value"]))
+        case "SET_CAMPAIGN":
+            target = set_campaign(target, bool(action.payload["on"]))
+        case "SET_ASSISTANCE":
+            target = set_assistance(target, str(action.payload["name"]), bool(action.payload["on"]))
         case "REQUEST_FUNDING":
             request_funding(target, Decimal(action.payload["amount"]))
         case other:

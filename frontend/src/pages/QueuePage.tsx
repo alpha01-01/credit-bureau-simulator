@@ -129,6 +129,33 @@ export function WorkItemPage() {
           <p className="text-sm">{i.explanation}</p>
         </Card>
       )}
+      {open && i.assist && (
+        <Card title="Assistance">
+          <dl className="grid gap-1 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-4">
+            {i.assist.estimated_accuracy && (
+              <>
+                <dt className="text-slate-500">Estimated accuracy</dt>
+                <dd>
+                  {percent(i.assist.estimated_accuracy.share)} if {i.assist.estimated_accuracy.by}{' '}
+                  decides it
+                </dd>
+              </>
+            )}
+            {i.assist.recommendation && (
+              <>
+                <dt className="text-slate-500">The bureau recommends</dt>
+                <dd>
+                  {DECISION_LABEL[
+                    i.assist.recommendation.decision as keyof typeof DECISION_LABEL
+                  ] ?? i.assist.recommendation.decision}
+                  : {i.assist.recommendation.why} It can be wrong: it sees only what the bureau
+                  sees.
+                </dd>
+              </>
+            )}
+          </dl>
+        </Card>
+      )}
       {open && (
         <Card title="Your decision">
           <div className="flex flex-wrap gap-2">

@@ -26,8 +26,9 @@ from apps.world.generation.rng import stream
 from apps.world.models import Lender, LenderCustomer, Loan, ProviderFileRow
 from apps.world.provider_files.truth import load_truth
 
+from .assist import EXTENDED_DAYS
 from .clock import TICKS_PER_DAY, Calendar
-from .feed import due_tick
+from .feed import WORK_ITEM_DAYS, due_tick
 from .models import Delivery, EnquiryJudgement, Game
 
 Borrower = tuple[str, int]  # ("person" | "business", world id)
@@ -101,8 +102,9 @@ def sync_work_items(game: Game, tick: int) -> int:
         return 0
     truth_cache: dict[tuple[str, date, str], dict[int, dict[str, str]]] = {}
     items = []
+    days = EXTENDED_DAYS if game.assist_extended_deadlines else WORK_ITEM_DAYS
     for case in cases:
-        due = due_tick(tick)
+        due = due_tick(tick, days)
         if case.case_type == CaseType.DISPUTE:
             correct, basis = _dispute_answer(game, case)
             difficulty = DISPUTE_DIFFICULTY

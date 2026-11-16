@@ -60,6 +60,7 @@ from .models import (
     Game,
     Incident,
     LendingDecision,
+    MissionState,
     Notice,
     PlayerAction,
     Proposal,
@@ -426,6 +427,11 @@ def fingerprint(game: Game) -> str:
             .order_by("number")
             .values_list("number", "requested_at", "amount", "granted", "reason"),
             (game.status == "ENDED", game.ended_tick, game.ended_reason),
+            (game.campaign, game.assist_accuracy, game.assist_recommend,
+             game.assist_extended_deadlines),
+            *MissionState.objects.filter(game=game)
+            .order_by("code")
+            .values_list("code", "answers", "completed_tick", "debrief"),
             *Contract.objects.filter(subscriber__organization_id=org)
             .order_by("subscriber__subscriber_code", "start_date")
             .values_list("subscriber__subscriber_code", "subscriber__is_active", "unit_price",

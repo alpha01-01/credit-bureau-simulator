@@ -463,6 +463,10 @@ export type WorkItemDetail = WorkItemRow & {
     registration_date: string | null
   } | null
   score: number | null
+  assist?: {
+    estimated_accuracy?: { share: number; by: string } | null
+    recommendation?: { decision: string; why: string } | null
+  }
   evidence: {
     identifier_field?: string
     identifier?: string
@@ -551,6 +555,7 @@ export type Finance = {
     total_debit: string
     total_credit: string
   }
+  income_last_month: IncomeStatement
   income_month_to_date: IncomeStatement
   income_year_to_date: IncomeStatement
   balance_sheet: {
@@ -949,5 +954,75 @@ export function useHealth(id: number) {
   return useQuery({
     queryKey: [id, 'health'],
     queryFn: () => apiGet<HealthData>(`${game(id)}/health/`),
+  })
+}
+
+// --- Learning: missions, assistance, the Handbook (P2.11) --------------------------------
+
+export type MissionRow = {
+  code: string
+  title: string
+  concept: string
+  handbook: string[]
+  status: 'DONE' | 'CURRENT' | 'LATER'
+  debrief: {
+    headline: string
+    figures: [string, string | number][]
+    lessons: string[]
+  } | null
+  objectives?: { text: string; done: boolean; progress: string }[]
+  question?: {
+    text: string
+    ready: boolean
+    unit: string
+    answered: boolean
+    attempts: number
+  } | null
+}
+
+export type MissionsData = {
+  campaign: boolean
+  missions: MissionRow[]
+  last_answer?: { right: boolean }
+}
+
+export function useMissions(id: number) {
+  return useQuery({
+    queryKey: [id, 'missions'],
+    queryFn: () => apiGet<MissionsData>(`${game(id)}/missions/`),
+  })
+}
+
+export type Assistance = {
+  assist_accuracy: boolean
+  assist_recommend: boolean
+  assist_extended_deadlines: boolean
+  pause_all: boolean
+}
+
+export function useAssistance(id: number) {
+  return useQuery({
+    queryKey: [id, 'assistance'],
+    queryFn: () => apiGet<Assistance>(`${game(id)}/assistance/`),
+  })
+}
+
+export type HandbookEntry = {
+  key: string
+  title: string
+  body: string
+  in_practice: string
+  screen: string
+  citations: { instrument: string; provision: string; reference: string; status: string }[]
+  regulatory: boolean
+  reviewed: boolean
+}
+
+export function useHandbook(id: number) {
+  return useQuery({
+    queryKey: ['handbook', id],
+    queryFn: () =>
+      apiGet<{ disclaimer: string; entries: HandbookEntry[] }>(`${game(id)}/handbook/`),
+    staleTime: Infinity,
   })
 }
