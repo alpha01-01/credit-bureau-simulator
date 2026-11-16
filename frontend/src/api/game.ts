@@ -14,7 +14,8 @@ export type Clock = {
   date: string
   weekday: string
   time: string
-  status: 'PAUSED' | 'RUNNING'
+  status: 'PAUSED' | 'RUNNING' | 'ENDED'
+  ended_reason: '' | 'INSOLVENT' | 'LICENCE_REVOKED' | 'REMOVED_BY_BOARD'
   speed: number
   next_event: { tick: number; at: string }
   pending_events: number
@@ -883,5 +884,70 @@ export function useIt(id: number) {
   return useQuery({
     queryKey: [id, 'it'],
     queryFn: () => apiGet<ItData>(`${game(id)}/it/`),
+  })
+}
+
+// --- Bureau Health and the paths to failure (P2.10) -------------------------------------
+
+export type HealthPart = { score: number | null; rating: 'good' | 'watch' | 'poor' | 'unknown' }
+
+export type FailurePath = {
+  key: 'INSOLVENT' | 'LICENCE_REVOKED' | 'REMOVED_BY_BOARD'
+  name: string
+  steps: { code: string; label: string; reached: boolean }[]
+  current: string | null
+  next: string | null
+  detail: string
+  path_back: string
+}
+
+export type HealthData = {
+  as_of: string
+  overall: number
+  parts: {
+    financial: HealthPart & {
+      bank: string
+      monthly_costs: string
+      runway_months: number
+      result_3_months: string
+      overdraft_limit: string
+      overdraft_used: string
+      stage: string
+    }
+    data_quality: HealthPart & {
+      as_of: string | null
+      accuracy: number | null
+      coverage: number | null
+      freshness_days?: number | null
+    }
+    reputation: HealthPart & { subscribers: number; providers: number; regulator: number }
+    compliance: HealthPart & { level: number; standing: string; findings_6_months: number }
+    team: HealthPart & {
+      staff: number
+      average_morale: number | null
+      open_items: number
+      resignations_3_months: number
+    }
+  }
+  ended: { reason: string; title: string } | null
+  failures: FailurePath[]
+  board_reviews: { period: string; confidence: number; verdict: string; detail: string }[]
+  funding: {
+    max: string
+    needs_confidence: number
+    requests: {
+      number: number
+      requested_at: string
+      amount: string
+      granted: boolean
+      reason: string
+    }[]
+  }
+}
+
+export function useHealth(id: number) {
+  return useQuery({
+    queryKey: [id, 'health'],
+    queryFn: () => apiGet<HealthData>(`${game(id)}/health/`),
   })
 }

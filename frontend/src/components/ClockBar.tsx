@@ -12,6 +12,12 @@ const SEVERITIES: [Severity, string][] = [
   ['INFO', 'Everything'],
 ]
 
+const ENDINGS: Record<string, string> = {
+  INSOLVENT: 'the bureau is insolvent',
+  LICENCE_REVOKED: 'the regulator revoked the licence',
+  REMOVED_BY_BOARD: 'the board removed you',
+}
+
 export function ClockBar({ gameId, clock }: { gameId: number; clock: Clock }) {
   const pause = useGameCommand(gameId, '/clock/pause/')
   const resume = useGameCommand(gameId, '/clock/resume/')
@@ -20,6 +26,22 @@ export function ClockBar({ gameId, clock }: { gameId: number; clock: Clock }) {
   const busy = pause.isPending || resume.isPending || speed.isPending || advance.isPending
   const running = clock.status === 'RUNNING'
   const error = [pause, resume, speed, advance].find((m) => m.error)?.error
+
+  if (clock.status === 'ENDED') {
+    return (
+      <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+        <span className="font-semibold tabular-nums" data-testid="game-clock">
+          {formatClock(clock)}
+        </span>
+        <span className="ml-2 font-semibold text-red-800">
+          The game is over: {ENDINGS[clock.ended_reason] ?? 'a hard failure'}.
+        </span>{' '}
+        <Link to={`/games/${gameId}/health`} className="text-brand hover:underline">
+          See what happened
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-2">

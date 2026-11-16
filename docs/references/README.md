@@ -38,6 +38,7 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 | R16 | **Scorecard practice**: score ranges, risk bands, typical variables | Analytics, scoring product | Needed |
 | R18 | **Ghana taxes affecting the bureau**: VAT and levies on services (rates and how levies are treated), PAYE monthly bands, SSNIT rates and remittance dates | Finance: invoices, payroll, remittances | Needed (public) |
 | R17 | **Ghana public holidays**: the current statutory list (Public Holidays and Commemorative Days Act, as amended), the weekend observance rule, and how Eid dates are announced | Working-day calendar, SLA days | Needed (public) |
+| R19 | **Corporate Insolvency and Restructuring Act, 2020 (Act 1015)**: the statutory demand (days to pay), when a company is presumed insolvent, and the overdraft and creditor practice of Ghanaian banks | The insolvency path (A-065) | Needed (public) |
 
 ## Index
 

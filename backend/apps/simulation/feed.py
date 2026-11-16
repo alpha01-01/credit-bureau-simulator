@@ -8,8 +8,9 @@ them matches the player's auto-pause rules, the clock stops there.
 
 Severities (ASSUMPTION A-043):
 
-* CRITICAL: the bureau's survival is at stake: cash below a month's payroll, a
-  subscriber reconsidering its contract.
+* CRITICAL: the bureau's survival is at stake: cash below a month's costs and
+  the steps to insolvency (``solvency``), a subscriber reconsidering its
+  contract, an outage, the regulator's ladder, a board without confidence.
 * WARNING: needs attention: a file rejected, many records unloadable, a report
   on the wrong person, data or an invoice overdue, work due or past its deadline.
 * INFO: the ordinary course of business.
@@ -25,14 +26,10 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from django.db.models import Sum
-
 from apps.bureau.submissions.intake import due_date_for
 from apps.bureau.submissions.models import FileStatus, ProcessingRun, Submission
-from apps.finance.events import balance, outstanding
-from apps.finance.ledger import BANK
+from apps.finance.events import outstanding
 from apps.finance.models import Invoice
-from apps.org.models import Employee
 from apps.standards.calendar import is_working_day
 from apps.workitems.models import ItemStatus, WorkItem
 
@@ -47,8 +44,6 @@ UNLOADABLE_WARNING = 0.10
 # ASSUMPTION A-045: a subscriber complains and reconsiders below this view of the bureau,
 # and is satisfied again above the second (the gap stops it flickering).
 AT_RISK, RECOVERED = 0.40, 0.50
-
-CASH_LOW, CASH_RECOVERED = "CASH_LOW", "CASH_RECOVERED"
 
 
 def due_tick(created_tick: int) -> int:
@@ -220,7 +215,6 @@ class Feed:
         yesterday = _previous_working_day(today)
         self._overdue_data(today, yesterday)
         self._overdue_invoices(today, yesterday)
-        self._cash(today)
         self._deadlines()
         compliance.morning_review(self.game, today, self.at, self.add)
 
@@ -257,37 +251,6 @@ class Feed:
                     f"due {invoice.due_date:%d %B}.",
                     {"screen": "invoices", "params": {"unpaid": "1"}},
                 )
-
-    def _cash(self, today: date) -> None:
-        org = self.game.organization
-        payroll = Employee.objects.filter(organization=org, is_active=True).aggregate(
-            total=Sum("monthly_salary")
-        )["total"] or Decimal("0")
-        bank = balance(org, BANK, today)
-        low = bank < payroll
-        last = (
-            Notice.objects.filter(game=self.game, kind__in=[CASH_LOW, CASH_RECOVERED])
-            .order_by("-tick", "-pk")
-            .values_list("kind", flat=True)
-            .first()
-        )
-        was_low = last == CASH_LOW
-        if low and not was_low:
-            self.add(
-                CASH_LOW,
-                Severity.CRITICAL,
-                "Cash is below one month's payroll",
-                f"The bank holds {money(bank)}; salaries are {money(payroll)} a month.",
-                {"screen": "ledger", "params": {"account": BANK}},
-            )
-        elif was_low and not low:
-            self.add(
-                CASH_RECOVERED,
-                Severity.INFO,
-                "Cash is back above one month's payroll",
-                f"The bank holds {money(bank)}.",
-                {"screen": "ledger", "params": {"account": BANK}},
-            )
 
     def _deadlines(self) -> None:
         items = WorkItem.objects.filter(organization=self.game.organization)

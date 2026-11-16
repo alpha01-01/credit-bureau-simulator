@@ -32,6 +32,7 @@ from apps.world.generation.rng import stream
 
 from .clock import TICKS_PER_DAY
 from .consequences import MIXED
+from .failure import LICENCE_REVOKED, end_game
 from .models import (
     Consequence,
     EventType,
@@ -48,12 +49,21 @@ FILING_DELAY_DAYS = (2, 8)
 STATUTORY_WORKING_DAYS = 10
 FINDINGS_WINDOW_DAYS = 183
 LADDER = (
+    (9, 5, "Licence revoked: the bureau may no longer operate"),
     (7, 4, "Licence suspended: subscribers may not enquire until the regulator is satisfied"),
     (5, 3, "Financial penalty imposed for repeated breaches"),
     (3, 2, "Formal directive: settle disputes within the statutory period"),
     (1, 1, "Concern letter from the regulator"),
 )
-LEVEL_NAMES = ("good standing", "concern letter", "directive", "penalty", "suspended")
+LEVEL_NAMES = ("good standing", "concern letter", "directive", "penalty", "suspended", "revoked")
+REVOKED = 5
+# What the next step up would be, said with each warning (P2.10).
+NEXT_STEP = {
+    1: "Three findings in six months bring a formal directive.",
+    2: "Five bring a financial penalty.",
+    3: "Seven suspend the licence.",
+    4: "Nine revoke it, and the bureau closes.",
+}
 PENALTY = Decimal("12000.00")  # 1,000 penalty units at GHS 12 (ASSUMPTION A-058)
 
 
@@ -212,7 +222,7 @@ def _climb(game: Game, today: date, at: datetime, add: Any) -> None:
     count = RegulatorFinding.objects.filter(game=game, raised_at__gte=since).count()
     level = next((lvl for threshold, lvl, _ in LADDER if count >= threshold), 0)
     record = standing(game)
-    if level == record.level:
+    if level == record.level or record.level == REVOKED:  # revocation is final
         return
     rising = level > record.level
     why = next((text for _, lvl, text in LADDER if lvl == level), "Back in good standing")
@@ -232,6 +242,17 @@ def _climb(game: Game, today: date, at: datetime, add: Any) -> None:
         if rising
         else Severity.INFO,
         why if rising else f"The regulator has stepped back: {LEVEL_NAMES[level]}",
-        f"{count} finding(s) in the last six months.",
+        f"{count} finding(s) in the last six months. "
+        + (
+            f"{NEXT_STEP[level]} Settle disputes on time: findings fall away after six months."
+            if rising and level in NEXT_STEP
+            else ""
+        ),
         {"screen": "disputes", "params": {}},
     )
+    if level == REVOKED:
+        end_game(
+            game, LICENCE_REVOKED, game.current_tick + 1,
+            f"{count} findings in six months for disputes left past the statutory deadline.",
+            add,
+        )  # fmt: skip
