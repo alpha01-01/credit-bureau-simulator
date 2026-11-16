@@ -49,6 +49,12 @@ class Organization(models.Model):
     match_auto_link = models.FloatField(
         default=0.92, help_text="Link without review at or above this similarity"
     )
+    it_capacity = models.CharField(
+        max_length=10,
+        choices=[("STANDARD", "Standard"), ("HIGH", "High")],
+        default="STANDARD",
+        help_text="Overnight processing capacity (P2.9)",
+    )
     rule_overrides = models.JSONField(
         default=dict,
         help_text="Validation rules the bureau has relaxed: code -> WARNING or OFF (P2.5)",
@@ -113,6 +119,9 @@ class Employee(models.Model):
     is_active = models.BooleanField(default=True)
     hired_on = models.DateField()
     # Work state, advanced by the simulation each tick.
+    away_until_tick = models.BigIntegerField(
+        default=0, help_text="On training until the end of this tick (P2.9)"
+    )
     work_day = models.IntegerField(default=-1, help_text="Working-day index of done_today")
     done_today = models.IntegerField(default=0)
 

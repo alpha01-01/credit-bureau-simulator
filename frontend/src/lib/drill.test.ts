@@ -18,4 +18,10 @@ describe('drillPath', () => {
       drillPath(3, { screen: 'submission', params: { reference: 'SUB-202612-ATB-000001' } }),
     ).toBe('/games/3/submissions/SUB-202612-ATB-000001')
   })
+
+  it('takes department notices to their screens', () => {
+    expect(drillPath(3, { screen: 'it', params: {} })).toBe('/games/3/it')
+    expect(drillPath(3, { screen: 'sales', params: {} })).toBe('/games/3/sales')
+    expect(drillPath(3, { screen: 'staff', params: {} })).toBe('/games/3/staff')
+  })
 })

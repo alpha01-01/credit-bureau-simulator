@@ -42,7 +42,7 @@ from apps.world.generation.rng import stream
 from apps.world.models import Lender, ProviderSubmission
 from apps.world.provider_files import month_end as period_end
 
-from . import bookkeeping, compliance, lending, providers
+from . import bookkeeping, compliance, hr, it, lending, providers, sales
 from .bridge import deliver
 from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
@@ -54,6 +54,7 @@ from .models import (
     EventStatus,
     EventType,
     Game,
+    Incident,
     Notice,
     ScheduledEvent,
     Severity,
@@ -135,6 +136,14 @@ def next_busy_tick(game: Game) -> int:
         candidates.append(end_of_day_tick(current))
     if has_work(game.organization):
         candidates.append(current + 1)  # staff are working through the queue
+    ending = (
+        Incident.objects.filter(game=game, ends_tick__gte=current)
+        .order_by("ends_tick")
+        .values_list("ends_tick", flat=True)
+        .first()
+    )
+    if ending is not None:
+        candidates.append(ending + 1)  # systems back
     candidates.append(end_of_month_tick(cal, current))  # payroll
     return min(candidates)
 
@@ -171,8 +180,10 @@ def run_tick(game_id: int, tick: int) -> bool:
 
         if cal.is_first_tick_of_month(tick):
             _schedule_month(game, cal, tick, feed)
+        it.restored(game, tick, feed.add)
         if (tick - 1) % TICKS_PER_DAY == 0:
             feed.morning(cal.tick_start(tick).date())
+            it.morning(game, tick, cal.tick_start(tick).date(), feed.add)
 
         due = ScheduledEvent.objects.filter(
             game=game, status=EventStatus.PENDING, due_tick__lte=tick
@@ -197,7 +208,7 @@ def run_tick(game_id: int, tick: int) -> bool:
             )
 
         if cal.is_last_tick_of_day(tick):
-            processed += _overnight_batch(game, cal.tick_end(tick), feed)
+            processed += _overnight_batch(game, tick, cal.tick_end(tick), feed)
 
         if cal.is_last_tick_of_month(tick):
             payday = cal.tick_start(tick).date()
@@ -260,6 +271,8 @@ def _schedule_month(game: Game, cal: Calendar, tick: int, feed: Feed) -> None:
     # Contracts whose year has ended are renewed or lost first: a lender that has left
     # gets no applications checked this month (P2.8).
     lending.renewals(game, today, cal.tick_start(tick), feed.add)
+    hr.month_update(game, today, feed.add)
+    hr.candidates_for(game, today.replace(day=1))
     sequence = _next_sequence(game)
     world = game.world
     if this_month > date.fromisoformat(world.config["history_end"]):
@@ -318,6 +331,9 @@ def _handle(
     if event.event_type in bookkeeping.FINANCE_EVENTS:
         bookkeeping.handle(game, event, at, feed)
         return
+    if event.event_type == EventType.PROPOSAL_ANSWERED:
+        sales.answer(game, event.payload, at, feed.add)
+        return
     if event.event_type == EventType.DISPUTE_FILED:
         dispute = compliance.file_dispute(game, event.payload, at)
         if dispute is not None:
@@ -341,15 +357,32 @@ def _handle(
     # WORLD_ADVANCED is a record only: the work was done when it was scheduled.
 
 
-def _overnight_batch(game: Game, at: datetime, feed: Feed) -> int:
-    """Process every submission received and not yet processed."""
+def _overnight_batch(game: Game, tick: int, at: datetime, feed: Feed) -> int:
+    """Process the submissions received and not yet processed, as many as capacity allows."""
     waiting = Submission.objects.filter(
         organization=game.organization, submission_status=SubmissionStatus.RECEIVED
     ).order_by("received_at", "submission_reference")
+    if not waiting.exists():
+        return 0
+    if it.systems_down(game, tick):
+        feed.add(
+            "BATCH_SKIPPED", Severity.WARNING, "The overnight batch could not run",
+            f"Systems are down. {waiting.count()} files wait.", {"screen": "it", "params": {}},
+        )  # fmt: skip
+        return 0
+    capacity = it.CAPACITY[game.organization.it_capacity]
     count = 0
-    for submission in waiting.select_related("institution"):
+    for submission in waiting.select_related("institution")[:capacity]:
         feed.run_finished(process_submission(submission, at=at))
         count += 1
+    left = waiting.count()
+    if left:
+        feed.add(
+            "BATCH_BACKLOG", Severity.WARNING,
+            f"{left} files wait for tomorrow night's batch",
+            f"Tonight's capacity was {capacity} files. More capacity costs money; files that "
+            "wait reach reports later.", {"screen": "it", "params": {}},
+        )  # fmt: skip
     return count
 
 

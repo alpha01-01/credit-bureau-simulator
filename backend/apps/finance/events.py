@@ -62,6 +62,8 @@ MATCHING_TOOLING_COST = {
     "STANDARD": Decimal("8000.00"),
     "ADVANCED": Decimal("20000.00"),
 }
+# ASSUMPTION A-064: extra hosting for overnight processing capacity per month (P2.9).
+IT_CAPACITY_COST = {"STANDARD": Decimal("0.00"), "HIGH": Decimal("12000.00")}
 OPENING_BANK = Decimal("1800000.00")
 SHARE_CAPITAL_AMOUNT = Decimal("2000000.00")
 PAYMENT_TERMS_DAYS = 30
@@ -111,6 +113,13 @@ def month_start_costs(organization: Organization, month_first: date, at: datetim
             organization, month_first, f"IT hosting for {month_first:%B %Y}",
             [dr(IT, MONTHLY_IT), cr(BANK, MONTHLY_IT)], "IT_HOSTING", at,
         )  # fmt: skip
+        capacity = IT_CAPACITY_COST[organization.it_capacity]
+        if capacity:
+            post(
+                organization, month_first,
+                f"Extra processing capacity for {month_first:%B %Y}",
+                [dr(IT, capacity), cr(BANK, capacity)], "IT_CAPACITY", at,
+            )  # fmt: skip
         tooling = MATCHING_TOOLING_COST[organization.matching_tooling]
         if tooling:
             post(
@@ -308,4 +317,30 @@ def regulatory_penalty(organization: Organization, amount: Decimal, on: date, at
     post(
         organization, on, "Regulatory penalty: repeated breaches of dispute deadlines",
         [dr(code, amount), cr(BANK, amount)], "REGULATORY_PENALTY", at,
+    )  # fmt: skip
+
+
+STAFF_TRAINING = ("5500", "Staff training")
+
+
+def staff_training(
+    organization: Organization, employee: str, amount: Decimal, on: date, at: datetime
+) -> None:
+    """A training course for one of the bureau's own staff (P2.9)."""
+    code, name = STAFF_TRAINING
+    Account.objects.get_or_create(
+        organization=organization, code=code,
+        defaults={"name": name, "account_type": AccountType.EXPENSE},
+    )  # fmt: skip
+    post(
+        organization, on, f"Training course for {employee}",
+        [dr(code, amount), cr(BANK, amount)], "STAFF_TRAINING", at,
+    )  # fmt: skip
+
+
+def incident_vendor(organization: Organization, amount: Decimal, on: date, at: datetime) -> None:
+    """Emergency support from the IT vendor during an outage (P2.9)."""
+    post(
+        organization, on, "Emergency IT vendor support for an outage",
+        [dr(IT, amount), cr(BANK, amount)], "IT_INCIDENT", at,
     )  # fmt: skip

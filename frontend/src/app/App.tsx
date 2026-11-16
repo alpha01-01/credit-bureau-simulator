@@ -17,6 +17,9 @@ import { ReviewPage, ReviewsPage } from '../pages/ReviewPage'
 import { RulesPage } from '../pages/RulesPage'
 import { SubmissionPage, SubmissionsPage } from '../pages/SubmissionsPage'
 import { SubscribersPage } from '../pages/SubscribersPage'
+import { StaffPage } from '../pages/StaffPage'
+import { SalesPage } from '../pages/SalesPage'
+import { ItPage } from '../pages/ItPage'
 import { GameLayout } from './GameLayout'
 
 function Shell() {
@@ -78,6 +81,9 @@ const routes = [
               { path: 'providers', element: <ProvidersPage /> },
               { path: 'disputes', element: <DisputesPage /> },
               { path: 'subscribers', element: <SubscribersPage /> },
+              { path: 'staff', element: <StaffPage /> },
+              { path: 'sales', element: <SalesPage /> },
+              { path: 'it', element: <ItPage /> },
               { path: 'reviews/:period', element: <ReviewPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },

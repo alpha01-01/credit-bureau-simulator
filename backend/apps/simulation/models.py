@@ -242,6 +242,64 @@ class LendingDecision(models.Model):
         return f"{self.game_id} {self.subscriber_code} {'lent' if self.lent else 'declined'}"
 
 
+class Candidate(models.Model):
+    """Someone looking for a job at the bureau this month (P2.9, HR)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="candidates")
+    period = models.DateField(help_text="Month-end of the month they are available")
+    number = models.IntegerField(help_text="Order within the month")
+    first_name = models.CharField(max_length=60)
+    last_name = models.CharField(max_length=60)
+    job_title = models.CharField(max_length=60)
+    skills = models.JSONField(default=dict)
+    asking_salary = models.DecimalField(max_digits=12, decimal_places=2)
+    hired = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "period", "number"], name="candidate_unique")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.first_name} {self.last_name} ({self.job_title})"
+
+
+class Proposal(models.Model):
+    """A sales proposal to a lender that does not subscribe (P2.9, Sales)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="proposals")
+    number = models.IntegerField()
+    lender_code = models.CharField(max_length=30)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    sent_at = models.DateTimeField()
+    status = models.CharField(max_length=10, default="PENDING")
+    answered_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["game", "number"], name="proposal_unique")]
+
+    def __str__(self) -> str:
+        return f"Proposal {self.number} to {self.lender_code}: {self.status}"
+
+
+class Incident(models.Model):
+    """An IT incident (P2.9): while it lasts, nothing is processed and enquiries fail."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="incidents")
+    number = models.IntegerField()
+    kind = models.CharField(max_length=20, default="OUTAGE")
+    started_tick = models.BigIntegerField()
+    ends_tick = models.BigIntegerField(help_text="Systems are back after this tick")
+    response = models.CharField(max_length=20, blank=True, help_text="VENDOR or BACKUP")
+    detail = models.CharField(max_length=300)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["game", "number"], name="incident_unique")]
+
+    def __str__(self) -> str:
+        return f"Incident {self.number} ({self.kind})"
+
+
 class RegulatorFinding(models.Model):
     """A breach the regulator has recorded against the bureau (P2.7; Section 10.2)."""
 
@@ -333,6 +391,7 @@ class EventType(models.TextChoices):
     PAYROLL_TAX_REMITTANCE = "PAYROLL_TAX_REMITTANCE", "PAYE and SSNIT are paid over"
     VAT_RETURN = "VAT_RETURN", "VAT and levies are paid to the GRA"
     DISPUTE_FILED = "DISPUTE_FILED", "A subject disputes their credit report"
+    PROPOSAL_ANSWERED = "PROPOSAL_ANSWERED", "A prospect answers a sales proposal"
 
 
 class EventStatus(models.TextChoices):

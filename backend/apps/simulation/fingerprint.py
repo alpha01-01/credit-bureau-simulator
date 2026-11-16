@@ -45,19 +45,22 @@ from apps.bureau.submissions.models import (
     SubmissionFile,
     TemplateMapping,
 )
-from apps.commercial.models import UsageRecord
+from apps.commercial.models import Contract, UsageRecord
 from apps.finance.models import Invoice, JournalLine, Payment
 from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 
 from .models import (
+    Candidate,
     Consequence,
     DataQualityReview,
     EnquiryJudgement,
     Game,
+    Incident,
     LendingDecision,
     Notice,
     PlayerAction,
+    Proposal,
     ProviderRelationship,
     RegulatorFinding,
     RegulatorStanding,
@@ -391,8 +394,30 @@ def fingerprint(game: Game) -> str:
         .order_by("employee_number")
         .values_list(
             "employee_number", "first_name", "last_name", "job_title", "skills", "experience",
-            "morale", "work_day", "done_today",
+            "morale", "work_day", "done_today", "monthly_salary", "is_active", "away_until_tick",
         ),
+    )  # fmt: skip
+    _section(
+        h,
+        "departments",
+        [
+            *Candidate.objects.filter(game=game)
+            .order_by("period", "number")
+            .values_list("period", "number", "first_name", "last_name", "job_title", "skills",
+                         "asking_salary", "hired"),
+            *Proposal.objects.filter(game=game)
+            .order_by("number")
+            .values_list("number", "lender_code", "unit_price", "sent_at", "status",
+                         "answered_at"),
+            *Incident.objects.filter(game=game)
+            .order_by("number")
+            .values_list("number", "kind", "started_tick", "ends_tick", "response", "detail"),
+            (game.organization.it_capacity,),
+            *Contract.objects.filter(subscriber__organization_id=org)
+            .order_by("subscriber__subscriber_code", "start_date")
+            .values_list("subscriber__subscriber_code", "subscriber__is_active", "unit_price",
+                         "start_date", "end_date"),
+        ],
     )  # fmt: skip
     _section(
         h,
