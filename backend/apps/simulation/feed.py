@@ -46,9 +46,9 @@ UNLOADABLE_WARNING = 0.10
 AT_RISK, RECOVERED = 0.40, 0.50
 
 
-def due_tick(created_tick: int) -> int:
-    """The last tick of the fifth working day after the item was opened."""
-    return ((created_tick - 1) // TICKS_PER_DAY + 1 + WORK_ITEM_DAYS) * TICKS_PER_DAY
+def due_tick(created_tick: int, days: int = WORK_ITEM_DAYS) -> int:
+    """The last tick of the fifth (or ``days``-th) working day after the item was opened."""
+    return ((created_tick - 1) // TICKS_PER_DAY + 1 + days) * TICKS_PER_DAY
 
 
 def money(amount: Decimal) -> str:

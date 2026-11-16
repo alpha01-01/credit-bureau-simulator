@@ -42,7 +42,18 @@ from apps.world.generation.rng import stream
 from apps.world.models import Lender, ProviderSubmission
 from apps.world.provider_files import month_end as period_end
 
-from . import board, bookkeeping, compliance, hr, it, lending, providers, sales, solvency
+from . import (
+    board,
+    bookkeeping,
+    compliance,
+    hr,
+    it,
+    lending,
+    missions,
+    providers,
+    sales,
+    solvency,
+)
 from .bridge import deliver
 from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
@@ -246,6 +257,9 @@ def run_tick(game_id: int, tick: int) -> bool:
                 "true state of the data.",
                 {"screen": "review", "params": {"period": f"{period:%Y-%m}"}},
             )
+
+        if game.campaign and game.status != GameStatus.ENDED:
+            missions.update(game, tick, feed.add)
 
         feed.save()
         TickLog.objects.create(

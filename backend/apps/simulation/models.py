@@ -69,6 +69,17 @@ class Game(models.Model):
     last_step_at = models.DateTimeField(
         null=True, blank=True, help_text="Wall-clock time of the last real-time tick"
     )
+    # The learning campaign and assistance toggles (P2.11; Document 07, Sections 11.1, 12.2).
+    campaign = models.BooleanField(default=True, help_text="Guided missions M1-M6 are on")
+    assist_accuracy = models.BooleanField(
+        default=False, help_text="Show estimated accuracy on work items"
+    )
+    assist_recommend = models.BooleanField(
+        default=False, help_text="Show the bureau's recommended decision on work items"
+    )
+    assist_extended_deadlines = models.BooleanField(
+        default=False, help_text="Work items are due in ten working days instead of five"
+    )
     ended_tick = models.BigIntegerField(null=True, blank=True, help_text="Tick of a hard failure")
     ended_reason = models.CharField(
         max_length=20, blank=True, help_text="INSOLVENT, LICENCE_REVOKED or REMOVED_BY_BOARD"
@@ -393,6 +404,22 @@ class FundingRequest(models.Model):
 
     def __str__(self) -> str:
         return f"{self.game_id} funding request {self.number}"
+
+
+class MissionState(models.Model):
+    """A player's progress through one campaign mission, and its debrief (P2.11)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="missions")
+    code = models.CharField(max_length=4, help_text="M1 to M6")
+    answers = models.JSONField(default=list, help_text="Each answer given: tick, value, right")
+    completed_tick = models.BigIntegerField(null=True, blank=True)
+    debrief = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["game", "code"], name="mission_unique_code")]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} mission {self.code}"
 
 
 class CheckpointKind(models.TextChoices):

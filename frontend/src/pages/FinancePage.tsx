@@ -110,7 +110,8 @@ export function StatementsPage() {
           </p>
         </Card>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Income title="Last month" s={f.income_last_month} />
         <Income title="Month to date" s={f.income_month_to_date} />
         <Income title="Year to date" s={f.income_year_to_date} />
       </div>

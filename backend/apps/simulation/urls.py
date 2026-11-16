@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api, departments_api, health_api, ui_api
+from . import api, departments_api, health_api, learning_api, ui_api
 
 urlpatterns = [
     path("worlds/", ui_api.worlds, name="worlds"),
@@ -48,6 +48,9 @@ urlpatterns = [
     path("games/<int:game_id>/sales/", departments_api.sales_view, name="sales"),
     path("games/<int:game_id>/it/", departments_api.it_view, name="it"),
     path("games/<int:game_id>/health/", health_api.health_view, name="health"),
+    path("games/<int:game_id>/missions/", learning_api.missions_view, name="missions"),
+    path("games/<int:game_id>/assistance/", learning_api.assistance_view, name="assistance"),
+    path("games/<int:game_id>/handbook/", learning_api.handbook_view, name="handbook"),
     path(
         "games/<int:game_id>/submissions/<str:reference>/feedback/",
         api.feedback,
