@@ -42,7 +42,7 @@ from apps.world.generation.rng import stream
 from apps.world.models import Lender, ProviderSubmission
 from apps.world.provider_files import month_end as period_end
 
-from . import bookkeeping, compliance, providers
+from . import bookkeeping, compliance, lending, providers
 from .bridge import deliver
 from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
@@ -257,6 +257,9 @@ def _schedule_month(game: Game, cal: Calendar, tick: int, feed: Feed) -> None:
     today = cal.tick_start(tick).date()
     period = previous_month_end(today)
     this_month = period_end(today.year, today.month)
+    # Contracts whose year has ended are renewed or lost first: a lender that has left
+    # gets no applications checked this month (P2.8).
+    lending.renewals(game, today, cal.tick_start(tick), feed.add)
     sequence = _next_sequence(game)
     world = game.world
     if this_month > date.fromisoformat(world.config["history_end"]):

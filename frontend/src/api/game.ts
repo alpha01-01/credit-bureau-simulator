@@ -118,6 +118,18 @@ export type Review = {
         }
       }
     }
+    lending?: {
+      subscriber: string
+      lent: number
+      fell_behind: number
+      behind_rate: number | null
+      defaulted: number
+      default_rate: number | null
+      declined: number
+      declined_fell_behind: number
+      usual_rate: number | null
+    }[]
+    reputation?: Reputation
     rules?: {
       cleansing: RuleEffect[]
       relaxed: RuleEffect[]
@@ -254,6 +266,42 @@ export type OwnRules = {
   validation: { code: string; description: string; setting: 'ERROR' | 'WARNING' }[]
   actions: { code: string; description: string }[]
   providers: string[]
+}
+
+export type Reputation = {
+  as_of: string
+  subscribers: {
+    score: number
+    hit_rate: number
+    accuracy: number
+    disputes_on_time: number
+    enquiries: number
+  }
+  providers: { score: number; providers: number }
+  regulator: { score: number; findings: number; level: number }
+}
+
+export type MarketData = {
+  reputation: Reputation
+  subscribers: {
+    code: string
+    name: string
+    active: boolean
+    since: string
+    price: string | null
+    renews_on: string | null
+    left_on: string | null
+    renewals: number
+    enquiries_3m: number
+    hits_3m: number
+  }[]
+}
+
+export function useMarket(id: number) {
+  return useQuery({
+    queryKey: [id, 'market'],
+    queryFn: () => apiGet<MarketData>(`${game(id)}/market/`),
+  })
 }
 
 export type DisputesData = {

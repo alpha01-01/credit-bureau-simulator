@@ -16,6 +16,7 @@ import { QueuePage, WorkItemPage } from '../pages/QueuePage'
 import { ReviewPage, ReviewsPage } from '../pages/ReviewPage'
 import { RulesPage } from '../pages/RulesPage'
 import { SubmissionPage, SubmissionsPage } from '../pages/SubmissionsPage'
+import { SubscribersPage } from '../pages/SubscribersPage'
 import { GameLayout } from './GameLayout'
 
 function Shell() {
@@ -76,6 +77,7 @@ const routes = [
               { path: 'rules', element: <RulesPage /> },
               { path: 'providers', element: <ProvidersPage /> },
               { path: 'disputes', element: <DisputesPage /> },
+              { path: 'subscribers', element: <SubscribersPage /> },
               { path: 'reviews/:period', element: <ReviewPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },

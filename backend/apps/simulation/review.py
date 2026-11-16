@@ -44,11 +44,12 @@ from apps.bureau.submissions.models import (
 from apps.workitems.models import ItemStatus, WorkItem
 from apps.world.models import FileDefect
 
-from . import assets
+from . import assets, lending
 from .clock import Calendar
 from .models import Consequence, DataQualityReview, Delivery, Game
+from .reputation import reputation
 
-REVIEW_FORMAT = "3"  # 2: matching (P2.4); 3: own rules (P2.5)
+REVIEW_FORMAT = "4"  # 2: matching (P2.4); 3: own rules (P2.5); 4: lending (P2.8)
 DESCRIPTIONS = {"DUPLICATE": "Discarded as a repeat of another row in the same submission"}
 
 
@@ -85,6 +86,21 @@ def build_review(game: Game, cal: Calendar, period: date, tick: int) -> DataQual
         ),
     }
     figures["rules"] = _own_rules(game, period, refs)
+    figures["lending"] = [
+        {
+            "subscriber": b.subscriber,
+            "lent": b.lent,
+            "fell_behind": b.fell_behind,
+            "behind_rate": b.behind_rate,
+            "defaulted": b.defaulted,
+            "default_rate": b.default_rate,
+            "declined": b.declined,
+            "declined_fell_behind": b.declined_fell_behind,
+            "usual_rate": b.usual_rate,
+        }
+        for b in lending.books(game, period)
+    ]
+    figures["reputation"] = reputation(game, cal.tick_end(tick))
     figures["consequences"] = _consequences(game, first, tick, refs)
     review, _ = DataQualityReview.objects.update_or_create(
         game=game, period=period, defaults={"tick": tick, "figures": figures, "refs": refs}

@@ -229,9 +229,15 @@ class Referencer:
         pool: set[int] = set()
         if self.consumer:
             years = {d.year for d in dates}
-            rows = IndividualProfile.objects.filter(
-                customer__organization_id=self.organization_id, date_of_birth__year__in=years
-            ).values_list("customer_id", "first_name", "last_name", "date_of_birth")
+            # Ordered: with equal scores the first candidate wins, so the order must not
+            # depend on how the database happens to return rows (replays must agree).
+            rows = (
+                IndividualProfile.objects.filter(
+                    customer__organization_id=self.organization_id, date_of_birth__year__in=years
+                )
+                .order_by("customer_id")
+                .values_list("customer_id", "first_name", "last_name", "date_of_birth")
+            )
             wanted = {(normalise(r.get("Surname", "")), d.year) for r in records
                       if (d := parse_date(r.get("DOB", ""))) is not None}  # fmt: skip
             for c, first, last, born in rows:
@@ -244,17 +250,25 @@ class Referencer:
                     self.family[family].append(c)
                 pool.add(c)
         else:
-            for c, name, registered in BusinessProfile.objects.filter(
-                customer__organization_id=self.organization_id, registration_date__in=dates
-            ).values_list("customer_id", "registered_name", "registration_date"):
+            for c, name, registered in (
+                BusinessProfile.objects.filter(
+                    customer__organization_id=self.organization_id, registration_date__in=dates
+                )
+                .order_by("customer_id")
+                .values_list("customer_id", "registered_name", "registration_date")
+            ):
                 self.identity[c] = (name, registered)
                 self.born_on[registered].append(c)
                 pool.add(c)
         if self.tooling == "ADVANCED":
             phones = {r[f] for r in records for f in _PHONE_FIELDS[self.subject] if r.get(f)}
-            for c, number in CustomerContact.objects.filter(
-                customer__organization_id=self.organization_id, contact_value__in=phones
-            ).values_list("customer_id", "contact_value"):
+            for c, number in (
+                CustomerContact.objects.filter(
+                    customer__organization_id=self.organization_id, contact_value__in=phones
+                )
+                .order_by("customer_id", "contact_value")
+                .values_list("customer_id", "contact_value")
+            ):
                 self.on_phone[number].append(c)
                 pool.add(c)
         for c, number in CustomerContact.objects.filter(customer_id__in=pool).values_list(

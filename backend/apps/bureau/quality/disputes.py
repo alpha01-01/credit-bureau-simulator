@@ -143,7 +143,9 @@ def _correct(dispute: Dispute, decided_by: str, at: datetime) -> None:
                 institution_id=key[0], provider_customer_number=key[1], customer=subject
             ).update(customer=moved[key])
         # Every account of that provider customer on the subject goes with it.
-        for other in CreditAccount.objects.filter(customer=subject, institution_id=key[0]):
+        for other in CreditAccount.objects.filter(customer=subject, institution_id=key[0]).order_by(
+            "facility_account_number"
+        ):
             latest = latest_record(other)
             if latest is None or latest.cleansed.get("CustomerID", "") != key[1]:
                 continue

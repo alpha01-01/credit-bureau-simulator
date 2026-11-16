@@ -213,6 +213,35 @@ class ProviderRelationship(models.Model):
         return f"{self.game_id} {self.provider_code}: q{self.quality} g{self.goodwill:.2f}"
 
 
+class LendingDecision(models.Model):
+    """What a subscribing lender did with one application in this game (P2.8).
+
+    The world decides who applies and whether the lender would lend; in this game a
+    lender that checked the bureau also declines an applicant whose report shows
+    serious arrears. ``lent`` is the outcome in this game; the loan's later fate is
+    the world's, so the game can measure each lender's book.
+    """
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="lending")
+    application = models.ForeignKey(
+        "world.LoanApplication", on_delete=models.CASCADE, related_name="+"
+    )
+    subscriber_code = models.CharField(max_length=30)
+    checked = models.BooleanField(help_text="The lender checked the bureau")
+    flagged = models.BooleanField(default=False, help_text="The report showed serious arrears")
+    lent = models.BooleanField()
+    tick = models.BigIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "application"], name="lending_unique")
+        ]
+        indexes = [models.Index(fields=["game", "subscriber_code"])]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} {self.subscriber_code} {'lent' if self.lent else 'declined'}"
+
+
 class RegulatorFinding(models.Model):
     """A breach the regulator has recorded against the bureau (P2.7; Section 10.2)."""
 

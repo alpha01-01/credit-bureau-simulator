@@ -55,6 +55,7 @@ from .models import (
     DataQualityReview,
     EnquiryJudgement,
     Game,
+    LendingDecision,
     Notice,
     PlayerAction,
     ProviderRelationship,
@@ -132,6 +133,14 @@ def fingerprint(game: Game) -> str:
         .order_by("tick", "pk")
         .values_list("tick", "sim_time", "kind", "severity", "title", "detail", "drill",
                      "is_deadline", "paused"),
+    )  # fmt: skip
+    _section(
+        h,
+        "lending",
+        LendingDecision.objects.filter(game=game)
+        .order_by("tick", "application__lender__code", "application__seq")
+        .values_list("application__lender__code", "application__period", "application__seq",
+                     "subscriber_code", "checked", "flagged", "lent", "tick"),
     )  # fmt: skip
     _section(
         h,

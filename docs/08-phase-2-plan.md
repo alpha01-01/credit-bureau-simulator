@@ -250,7 +250,7 @@ Rules already live in configuration, so placeholders never block building. They 
 1. **Approve this plan**, or reorder it after the playtest (Section 3).
 2. **Playtest first?** The proposal is a short team playtest before P2.1.
 3. **GitHub CI:** clear the account-level Actions issue (or make the repository public) so checks run on every pull request.
-4. **Lenders act on reports (P2.8):** confirm that subscribers should decline applicants on bad reports. It makes data quality matter in the world, and it changes world outcomes per game (worlds stay deterministic per game, not shared across games from that point).
+4. **Lenders act on reports (P2.8):** confirm that subscribers should decline applicants on bad reports. It makes data quality matter in the world, and it changes world outcomes per game (worlds stay deterministic per game, not shared across games from that point). **Decided (15 November 2026): outcomes only.** Lenders' decisions and their books are kept per game; the shared world and provider files are unchanged.
 5. **Reference material:** which of R1–R18 can arrive during milestones A–B, so P2.4–P2.7 can use real rules.
 
 ---

@@ -22,7 +22,7 @@ from apps.standards.calendar import next_working_day
 from apps.world.generation.rng import stream
 from apps.world.models import Lender, Loan, LoanApplication
 
-from . import compliance
+from . import compliance, lending
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar
 from .consequences import trace
 from .demand import REFERENCE_PRICE, p_enquire, update_perception
@@ -120,12 +120,15 @@ def handle_application(
     price = contract.unit_price
 
     view.opportunities += 1
+    tick = feed.tick if feed else game.current_tick
     if compliance.suspended(game):  # a suspended bureau may not serve enquiries (P2.7)
         view.save()
+        lending.decide(game, application, code, None, tick)
         return None
     rng = stream(game.world.seed, f"enquire:{code}:{period:%Y%m}:{seq}")
     if rng.random() >= p_enquire(view.perceived_value, price):
         view.save()
+        lending.decide(game, application, code, None, tick)  # lent without checking
         return None
 
     if application.person is not None:
@@ -170,8 +173,8 @@ def handle_application(
     view.hits += int(hit)
     view.wrong_person += int(outcome == "WRONG_PERSON")
     view.perceived_value = round(update_perception(view.perceived_value, outcome), 6)
+    lending.decide(game, application, code, enquiry.report, tick)  # acts on the report (P2.8)
     if hit:
-        tick = feed.tick if feed else game.current_tick
         chains = trace(game, enquiry, borrower, code, tick, at)
         compliance.maybe_dispute(game, enquiry, name, chains, tick)
     if feed is not None:
