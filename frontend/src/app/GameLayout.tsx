@@ -11,6 +11,7 @@ const NAV = [
   ['', 'Briefing'],
   ['events', 'Events'],
   ['dashboard', 'Dashboard'],
+  ['health', 'Health'],
   ['submissions', 'Submissions'],
   ['providers', 'Providers'],
   ['queue', 'Work queue'],

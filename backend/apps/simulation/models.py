@@ -18,6 +18,7 @@ from apps.world.models import ProviderFile, ProviderSubmission, World
 class GameStatus(models.TextChoices):
     PAUSED = "PAUSED", "Paused"
     RUNNING = "RUNNING", "Running"
+    ENDED = "ENDED", "Ended (a hard failure)"
 
 
 SPEEDS = (1, 2, 4, 8)
@@ -67,6 +68,10 @@ class Game(models.Model):
     )
     last_step_at = models.DateTimeField(
         null=True, blank=True, help_text="Wall-clock time of the last real-time tick"
+    )
+    ended_tick = models.BigIntegerField(null=True, blank=True, help_text="Tick of a hard failure")
+    ended_reason = models.CharField(
+        max_length=20, blank=True, help_text="INSOLVENT, LICENCE_REVOKED or REMOVED_BY_BOARD"
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -324,7 +329,7 @@ class RegulatorStanding(models.Model):
     """Where the bureau stands on the regulator's escalation ladder (Section 10.2).
 
     0 good standing, 1 concern letter, 2 formal directive, 3 financial penalty,
-    4 licence suspended (subscribers cannot enquire).
+    4 licence suspended (subscribers cannot enquire), 5 licence revoked (the game ends).
     """
 
     game = models.OneToOneField(Game, on_delete=models.CASCADE, related_name="regulator")
@@ -333,6 +338,61 @@ class RegulatorStanding(models.Model):
 
     def __str__(self) -> str:
         return f"{self.game_id} regulator level {self.level}"
+
+
+class SolvencyState(models.Model):
+    """Where the bureau stands on the path to insolvency (P2.10; Section 10.2).
+
+    OK; LOW (cash below one month's costs); OVERDRAFT (the overdraft is in use);
+    CREDITORS (the overdraft limit is exceeded and creditors have served notice).
+    """
+
+    game = models.OneToOneField(Game, on_delete=models.CASCADE, related_name="solvency")
+    stage = models.CharField(max_length=10, default="OK")
+    creditors_deadline = models.DateField(null=True, blank=True)
+    history = models.JSONField(default=list, help_text="Each change of stage: when, stage, why")
+
+    def __str__(self) -> str:
+        return f"{self.game_id} solvency {self.stage}"
+
+
+class BoardReview(models.Model):
+    """A quarterly board review and the board's confidence in the management (P2.10)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="board_reviews")
+    period = models.DateField(help_text="Last day of the quarter reviewed")
+    tick = models.BigIntegerField()
+    confidence = models.FloatField(help_text="0-100")
+    parts = models.JSONField(default=dict, help_text="The health scores behind it")
+    verdict = models.CharField(max_length=20, help_text="CONFIDENT, CONCERNED, NO_CONFIDENCE")
+    detail = models.CharField(max_length=500)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "period"], name="board_review_unique_period")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} board review {self.period}: {self.verdict}"
+
+
+class FundingRequest(models.Model):
+    """The management asks the shareholders for more capital (P2.10)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="funding_requests")
+    number = models.PositiveIntegerField()
+    requested_at = models.DateTimeField(help_text="Game time")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    granted = models.BooleanField()
+    reason = models.CharField(max_length=300)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "number"], name="funding_unique_number")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} funding request {self.number}"
 
 
 class CheckpointKind(models.TextChoices):

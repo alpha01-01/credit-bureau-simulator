@@ -29,6 +29,7 @@ const clock: Clock = {
   weekday: 'Monday',
   time: '08:15',
   status: 'PAUSED',
+  ended_reason: '',
   speed: 1,
   next_event: { tick: 2, at: '2027-01-04T08:15:00Z' },
   pending_events: 3,
@@ -65,6 +66,18 @@ describe('ClockBar', () => {
     expect(screen.getByRole('link', { name: /Why\? Cash is below/ })).toHaveAttribute(
       'href',
       '/games/3/finance/ledger?account=1010',
+    )
+  })
+
+  it('ends the game with no controls, and points to what happened', () => {
+    wrap(<ClockBar gameId={3} clock={{ ...clock, status: 'ENDED', ended_reason: 'INSOLVENT' }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The game is over: the bureau is insolvent.',
+    )
+    expect(screen.queryByRole('button', { name: 'Run' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'See what happened' })).toHaveAttribute(
+      'href',
+      '/games/3/health',
     )
   })
 

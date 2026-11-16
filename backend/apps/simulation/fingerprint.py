@@ -51,10 +51,12 @@ from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 
 from .models import (
+    BoardReview,
     Candidate,
     Consequence,
     DataQualityReview,
     EnquiryJudgement,
+    FundingRequest,
     Game,
     Incident,
     LendingDecision,
@@ -65,6 +67,7 @@ from .models import (
     RegulatorFinding,
     RegulatorStanding,
     ScheduledEvent,
+    SolvencyState,
     SubscriberView,
     TickLog,
 )
@@ -413,6 +416,16 @@ def fingerprint(game: Game) -> str:
             .order_by("number")
             .values_list("number", "kind", "started_tick", "ends_tick", "response", "detail"),
             (game.organization.it_capacity,),
+            *SolvencyState.objects.filter(game=game).values_list(
+                "stage", "creditors_deadline", "history"
+            ),
+            *BoardReview.objects.filter(game=game)
+            .order_by("period")
+            .values_list("period", "tick", "confidence", "parts", "verdict", "detail"),
+            *FundingRequest.objects.filter(game=game)
+            .order_by("number")
+            .values_list("number", "requested_at", "amount", "granted", "reason"),
+            (game.status == "ENDED", game.ended_tick, game.ended_reason),
             *Contract.objects.filter(subscriber__organization_id=org)
             .order_by("subscriber__subscriber_code", "start_date")
             .values_list("subscriber__subscriber_code", "subscriber__is_active", "unit_price",

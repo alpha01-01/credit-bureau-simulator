@@ -23,5 +23,6 @@ describe('drillPath', () => {
     expect(drillPath(3, { screen: 'it', params: {} })).toBe('/games/3/it')
     expect(drillPath(3, { screen: 'sales', params: {} })).toBe('/games/3/sales')
     expect(drillPath(3, { screen: 'staff', params: {} })).toBe('/games/3/staff')
+    expect(drillPath(3, { screen: 'health', params: {} })).toBe('/games/3/health')
   })
 })

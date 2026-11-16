@@ -344,3 +344,27 @@ def incident_vendor(organization: Organization, amount: Decimal, on: date, at: d
         organization, on, "Emergency IT vendor support for an outage",
         [dr(IT, amount), cr(BANK, amount)], "IT_INCIDENT", at,
     )  # fmt: skip
+
+
+FINANCE_COSTS = ("5600", "Overdraft interest")
+
+
+def overdraft_interest(organization: Organization, amount: Decimal, on: date, at: datetime) -> None:
+    """A month's interest on the overdrawn bank balance (P2.10)."""
+    code, name = FINANCE_COSTS
+    Account.objects.get_or_create(
+        organization=organization, code=code,
+        defaults={"name": name, "account_type": AccountType.EXPENSE},
+    )  # fmt: skip
+    post(
+        organization, on, f"Overdraft interest for {on:%B %Y}",
+        [dr(code, amount), cr(BANK, amount)], "OVERDRAFT_INTEREST", at,
+    )  # fmt: skip
+
+
+def capital_injection(organization: Organization, amount: Decimal, on: date, at: datetime) -> None:
+    """New shares issued to the shareholders for cash (P2.10)."""
+    post(
+        organization, on, "Shareholders subscribe new capital",
+        [dr(BANK, amount), cr(SHARE_CAPITAL, amount)], "CAPITAL_INJECTION", at,
+    )  # fmt: skip

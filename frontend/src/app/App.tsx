@@ -20,6 +20,7 @@ import { SubscribersPage } from '../pages/SubscribersPage'
 import { StaffPage } from '../pages/StaffPage'
 import { SalesPage } from '../pages/SalesPage'
 import { ItPage } from '../pages/ItPage'
+import { HealthPage } from '../pages/HealthPage'
 import { GameLayout } from './GameLayout'
 
 function Shell() {
@@ -84,6 +85,7 @@ const routes = [
               { path: 'staff', element: <StaffPage /> },
               { path: 'sales', element: <SalesPage /> },
               { path: 'it', element: <ItPage /> },
+              { path: 'health', element: <HealthPage /> },
               { path: 'reviews/:period', element: <ReviewPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },

@@ -42,7 +42,7 @@ from apps.world.generation.rng import stream
 from apps.world.models import Lender, ProviderSubmission
 from apps.world.provider_files import month_end as period_end
 
-from . import bookkeeping, compliance, hr, it, lending, providers, sales
+from . import board, bookkeeping, compliance, hr, it, lending, providers, sales, solvency
 from .bridge import deliver
 from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
@@ -54,6 +54,7 @@ from .models import (
     EventStatus,
     EventType,
     Game,
+    GameStatus,
     Incident,
     Notice,
     ScheduledEvent,
@@ -108,6 +109,8 @@ def advance(game: Game, ticks: int, *, stop_on_pause: bool = False) -> Game:
         tick = game.current_tick + 1
         run_tick(game.pk, tick)
         game.refresh_from_db()
+        if game.status == GameStatus.ENDED:
+            break  # a hard failure: the clock stops for good
         if stop_on_pause and Notice.objects.filter(game=game, tick=tick, paused=True).exists():
             break
     return game
@@ -174,6 +177,8 @@ def run_tick(game_id: int, tick: int) -> bool:
             return False
         if tick != game.current_tick + 1:
             raise ClockError(f"Tick {tick} cannot run after tick {game.current_tick}")
+        if game.status == GameStatus.ENDED:
+            raise ClockError("The game has ended")
         cal = calendar(game)
         processed = 0
         feed = Feed(game, tick, cal.tick_start(tick))
@@ -184,6 +189,9 @@ def run_tick(game_id: int, tick: int) -> bool:
         if (tick - 1) % TICKS_PER_DAY == 0:
             feed.morning(cal.tick_start(tick).date())
             it.morning(game, tick, cal.tick_start(tick).date(), feed.add)
+            solvency.morning(
+                game, cal.tick_start(tick).date(), cal.tick_start(tick), tick, feed.add
+            )
 
         due = ScheduledEvent.objects.filter(
             game=game, status=EventStatus.PENDING, due_tick__lte=tick
@@ -271,6 +279,8 @@ def _schedule_month(game: Game, cal: Calendar, tick: int, feed: Feed) -> None:
     # Contracts whose year has ended are renewed or lost first: a lender that has left
     # gets no applications checked this month (P2.8).
     lending.renewals(game, today, cal.tick_start(tick), feed.add)
+    solvency.month_start(game, today, cal.tick_start(tick), feed.add)
+    board.quarterly_review(game, today, cal.tick_start(tick), tick, feed.add)
     hr.month_update(game, today, feed.add)
     hr.candidates_for(game, today.replace(day=1))
     sequence = _next_sequence(game)

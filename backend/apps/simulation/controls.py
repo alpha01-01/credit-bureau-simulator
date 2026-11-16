@@ -27,7 +27,7 @@ from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
-from . import hr, it, providers, sales
+from . import hr, it, providers, sales, solvency
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
@@ -36,6 +36,7 @@ from .models import (
     SPEEDS,
     Checkpoint,
     EventStatus,
+    FundingRequest,
     Game,
     GameStatus,
     Incident,
@@ -52,6 +53,9 @@ ADVANCE_UNITS = ("hour", "day", "next_event")
 
 
 def record(game: Game, action_type: str, payload: dict[str, Any] | None = None) -> PlayerAction:
+    """Log a player command. A game that has ended takes no more commands (P2.10)."""
+    if Game.objects.filter(pk=game.pk, status=GameStatus.ENDED).exists():
+        raise ClockError("The game has ended")
     with transaction.atomic():
         sequence = (game.actions.aggregate(n=Max("sequence"))["n"] or 0) + 1
         return PlayerAction.objects.create(
@@ -408,12 +412,25 @@ def respond_to_outage(game: Game, response: str) -> Incident:
 
 def set_it_capacity(game: Game, level: str) -> Game:
     """Buy (or drop) overnight processing capacity; billed from the next month."""
-    try:
-        it.set_capacity(game, level)
-    except it.ITError as exc:
-        raise ClockError(str(exc)) from exc
-    record(game, "SET_IT_CAPACITY", {"level": level})
+    with transaction.atomic():
+        try:
+            it.set_capacity(game, level)
+        except it.ITError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "SET_IT_CAPACITY", {"level": level})
     return game
+
+
+def request_funding(game: Game, amount: Decimal) -> FundingRequest:
+    """Ask the shareholders for new capital (P2.10). Their answer is immediate."""
+    _, at = _now(game)
+    with transaction.atomic():
+        try:
+            request = solvency.request_funding(game, amount, at)
+        except solvency.FundingError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "REQUEST_FUNDING", {"amount": str(request.amount)})
+    return request
 
 
 def step(game: Game) -> Game:
@@ -542,6 +559,8 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             respond_to_outage(target, str(action.payload["response"]))
         case "SET_IT_CAPACITY":
             target = set_it_capacity(target, str(action.payload["level"]))
+        case "REQUEST_FUNDING":
+            request_funding(target, Decimal(action.payload["amount"]))
         case other:
             raise ClockError(f"Unknown action {other}")
     return target
@@ -562,6 +581,7 @@ class ClockState:
     pause_on_deadlines: bool
     stopped_by: dict[str, Any] | None
     latest_notice: int | None
+    ended_reason: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -572,6 +592,7 @@ class ClockState:
             "weekday": self.now.strftime("%A"),
             "time": self.now.strftime("%H:%M"),
             "status": self.status,
+            "ended_reason": self.ended_reason,
             "speed": self.speed,
             "next_event": {"tick": self.next_event_tick, "at": self.next_event_at.isoformat()},
             "pending_events": self.pending_events,
@@ -603,6 +624,7 @@ def state(game: Game) -> ClockState:
         pause_on_deadlines=game.pause_on_deadlines,
         stopped_by=notice_dict(stop) if (stop := _paused_now(game)) else None,
         latest_notice=game.notices.order_by("-pk").values_list("pk", flat=True).first(),
+        ended_reason=game.ended_reason,
     )
 
 
