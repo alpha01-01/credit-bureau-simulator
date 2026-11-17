@@ -25,7 +25,7 @@ from apps.simulation import controls
 from apps.simulation.bridge import start_game
 from apps.simulation.clock import TICKS_PER_DAY, Calendar
 from apps.simulation.engine import ClockError, advance, next_event_tick, run_tick
-from apps.simulation.fingerprint import fingerprint
+from apps.simulation.fingerprint import differences, fingerprint
 from apps.simulation.lifecycle import delete_game, delete_world_with_games
 from apps.simulation.models import (
     EventStatus,
@@ -202,7 +202,7 @@ def test_replaying_the_action_log_reproduces_the_game_exactly(world: World) -> N
     copy = controls.replay(original, start_game(world))
 
     assert copy.current_tick == original.current_tick
-    assert fingerprint(copy) == fingerprint(original)
+    assert fingerprint(copy) == fingerprint(original), differences(copy, original)
 
 
 def test_fingerprint_notices_a_difference(world: World) -> None:

@@ -9,7 +9,7 @@ import {
 } from '../api/game'
 import { useGameId } from '../app/useGameId'
 import { MatchingPolicyCard } from '../components/MatchingPolicy'
-import { Badge, Card, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
+import { Badge, Card, Empty, Failed, Loading, Page, Table, Td, Shown } from '../components/ui'
 import { count, dateTime, percent, day as dateOnly } from '../lib/format'
 
 const TYPE_LABEL: Record<string, string> = {
@@ -77,6 +77,7 @@ export function QueuePage() {
       {items.isPending && <Loading what="work items" />}
       {items.isError && <Failed error={items.error} />}
       {items.data?.length === 0 && <Empty>Nothing here.</Empty>}
+      {items.data && <Shown rows={items.data} />}
       {items.data && items.data.length > 0 && (
         <Table head={['Item', 'Type', 'Difficulty', 'Assigned to', 'Decision', 'By']}>
           {items.data.map((i) => (

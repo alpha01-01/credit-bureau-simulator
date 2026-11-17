@@ -53,7 +53,7 @@ from apps.workitems.models import ItemStatus, WorkItem
 from apps.world.models import World
 
 from . import controls
-from .api import _game
+from .api import _game, listed
 from .bridge import install_history, new_game, start_game
 from .clock import previous_month_end
 from .history import DEFAULT_HISTORY_MONTHS
@@ -126,8 +126,12 @@ def _prepare(game_id: int, months: int) -> None:
 
         install_history(game, months, progress)
         Game.objects.filter(pk=game_id).update(setup_status="READY", setup_message="")
-    except Exception as exc:  # the player must see why setup failed
-        Game.objects.filter(pk=game_id).update(setup_status="FAILED", setup_message=str(exc)[:200])
+    except Exception:  # the player sees that it failed and what to do; the log has why
+        Game.objects.filter(pk=game_id).update(
+            setup_status="FAILED",
+            setup_message="The bureau's history could not be prepared. Start another game; "
+            "the details are in the server log.",
+        )
         raise
     finally:
         if background:
@@ -169,9 +173,7 @@ def dashboard(request: Request, game_id: int) -> Response:
     enquiries = Enquiry.objects.filter(organization=org, enquired_at__date__gte=month_start)
     total = enquiries.count()
     hits = enquiries.filter(outcome=EnquiryOutcome.HIT).count()
-    backlog = WorkItem.objects.filter(
-        organization=org, status__in=[ItemStatus.OPEN, ItemStatus.IN_PROGRESS]
-    ).count()
+    backlog = WorkItem.objects.filter(organization=org, status=ItemStatus.OPEN).count()
     submissions = Submission.objects.filter(organization=org, received_at__date__gte=month_start)
     billable = UsageRecord.objects.filter(
         organization=org, usage_at__date__gte=month_start, usage_at__date__lte=today
@@ -206,7 +208,14 @@ def dashboard(request: Request, game_id: int) -> Response:
                     "invoices",
                     unpaid="1",
                 ),
-                _metric("backlog", "Work items waiting", backlog, "items", "queue", status="OPEN"),
+                _metric(
+                    "backlog",
+                    "Work items no one has taken",
+                    backlog,
+                    "items",
+                    "queue",
+                    status="OPEN",
+                ),
                 _metric(
                     "enquiries",
                     "Enquiries this month",
@@ -238,7 +247,8 @@ def dashboard(request: Request, game_id: int) -> Response:
                         organization=org, account_status__in=OPEN_STATUS_CODES
                     ).count(),
                     "accounts",
-                    "customers",
+                    "accounts",
+                    status="open",
                 ),
                 _metric(
                     "submissions",
@@ -374,6 +384,7 @@ def submissions(request: Request, game_id: int) -> Response:
     if start := request.query_params.get("start"):
         rows = rows.filter(received_at__date__gte=start)
     out = []
+    total = rows.count()
     for s in rows.order_by("-received_at", "-submission_reference")[:300]:
         run = s.runs.order_by("-run_number").first()
         out.append(
@@ -393,7 +404,7 @@ def submissions(request: Request, game_id: int) -> Response:
                 "pending": run.records_pending if run else None,
             }
         )
-    return Response(out)
+    return listed(out, total)
 
 
 @api_view(["GET"])
@@ -504,7 +515,35 @@ def customers(request: Request, game_id: int) -> Response:
             | Q(individual__first_name__icontains=q)
             | Q(business__registered_name__icontains=q)
         )
-    return Response([_customer_summary(c) for c in rows.order_by("customer_reference")[:100]])
+    return listed(
+        [_customer_summary(c) for c in rows.order_by("customer_reference")[:100]], rows.count()
+    )
+
+
+@api_view(["GET"])
+def accounts(request: Request, game_id: int) -> Response:
+    """Credit accounts on file; ?status=open for the open ones (the dashboard figure)."""
+    game = _game(request, game_id)
+    rows = CreditAccount.objects.filter(organization=game.organization)
+    if request.query_params.get("status") == "open":
+        rows = rows.filter(account_status__in=OPEN_STATUS_CODES)
+    return listed(
+        [
+            {
+                "provider": a.institution.institution_code,
+                "account": a.facility_account_number,
+                "customer": a.customer.customer_reference,
+                "facility_type": a.facility_type,
+                "opened": a.disbursement_date,
+                "amount": a.original_amount,
+                "status": a.account_status,
+            }
+            for a in rows.select_related("institution", "customer").order_by(
+                "institution__institution_code", "facility_account_number"
+            )[:200]
+        ],
+        rows.count(),
+    )
 
 
 def _customer_summary(c: Customer) -> dict[str, Any]:
@@ -602,10 +641,11 @@ def ledger(request: Request, game_id: int) -> Response:
         entries = entries.filter(lines__account__code=account).distinct()
     if start := request.query_params.get("start"):
         entries = entries.filter(transaction_date__gte=start)
+    total = entries.count()
     rows = entries.order_by("-transaction_date", "-journal_reference").prefetch_related(
         "lines__account"
     )[:200]
-    return Response(
+    return listed(
         [
             {
                 "reference": e.journal_reference,
@@ -622,7 +662,8 @@ def ledger(request: Request, game_id: int) -> Response:
                 ],
             }
             for e in rows
-        ]
+        ],
+        total,
     )
 
 
@@ -651,4 +692,4 @@ def invoices(request: Request, game_id: int) -> Response:
                 "tax_rules": i.journal.rules_version,
             }
         )
-    return Response(rows)
+    return listed(rows, len(rows))

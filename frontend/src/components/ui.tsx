@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect } from 'react'
 import { Link } from 'react-router'
 
 import type { Drill } from '../api/game'
@@ -15,6 +15,9 @@ export function Page({
   actions?: ReactNode
   children: ReactNode
 }) {
+  useEffect(() => {
+    document.title = `${title} · SimB`
+  }, [title])
   return (
     <section aria-labelledby="page-title" className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -67,6 +70,17 @@ const TONES = {
   bad: 'bg-red-50 text-red-800',
   info: 'bg-sky-50 text-sky-800',
 } as const
+
+/** "Showing 100 of 1,640" when a list is the first page of a longer one. */
+export function Shown({ rows }: { rows: unknown[] & { total?: number } }) {
+  if (rows.total === undefined || rows.total <= rows.length) return null
+  return (
+    <p className="text-xs text-slate-500">
+      Showing the first {rows.length.toLocaleString('en-GB')} of{' '}
+      {rows.total.toLocaleString('en-GB')}.
+    </p>
+  )
+}
 
 export function Badge({
   tone = 'neutral',

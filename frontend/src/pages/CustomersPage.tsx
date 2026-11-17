@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router'
 
 import { useCustomer, useCustomers } from '../api/game'
 import { useGameId } from '../app/useGameId'
-import { Badge, Card, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
+import { Badge, Card, Empty, Failed, Loading, Page, Table, Td, Shown } from '../components/ui'
 import { count, dateTime, day, money } from '../lib/format'
 
 export function CustomersPage() {
@@ -38,6 +38,7 @@ export function CustomersPage() {
       {rows.isPending && <Loading what="customers" />}
       {rows.isError && <Failed error={rows.error} />}
       {rows.data?.length === 0 && <Empty>No customers found.</Empty>}
+      {rows.data && <Shown rows={rows.data} />}
       {rows.data && rows.data.length > 0 && (
         <Table head={['Reference', 'Name', 'Type']}>
           {rows.data.map((c) => (

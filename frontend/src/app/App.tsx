@@ -21,6 +21,7 @@ import { StaffPage } from '../pages/StaffPage'
 import { SalesPage } from '../pages/SalesPage'
 import { ItPage } from '../pages/ItPage'
 import { HealthPage } from '../pages/HealthPage'
+import { AccountsPage } from '../pages/AccountsPage'
 import { MissionsPage } from '../pages/MissionsPage'
 import { HandbookPage } from '../pages/HandbookPage'
 import { GameLayout } from './GameLayout'
@@ -30,6 +31,12 @@ function Shell() {
   const logout = useLogout()
   return (
     <div className="min-h-screen">
+      <a
+        href="#content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-white focus:px-3 focus:py-2 focus:shadow"
+      >
+        Skip to content
+      </a>
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <Link to="/" className="text-lg font-semibold tracking-tight">
@@ -49,7 +56,7 @@ function Shell() {
           )}
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main id="content" tabIndex={-1} className="mx-auto max-w-7xl px-4 py-6 outline-none">
         <Outlet />
       </main>
     </div>
@@ -97,6 +104,7 @@ const routes = [
               { path: 'queue', element: <QueuePage /> },
               { path: 'queue/:number', element: <WorkItemPage /> },
               { path: 'customers', element: <CustomersPage /> },
+              { path: 'accounts', element: <AccountsPage /> },
               { path: 'customers/:reference', element: <CustomerPage /> },
               { path: 'enquiries', element: <EnquiriesPage /> },
               {

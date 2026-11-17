@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router'
 
 import { useEnquiries } from '../api/game'
 import { useGameId } from '../app/useGameId'
-import { Badge, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
+import { Badge, Empty, Failed, Loading, Page, Table, Td, Shown } from '../components/ui'
 import { count, dateTime, day } from '../lib/format'
 
 export function EnquiriesPage() {
@@ -24,6 +24,7 @@ export function EnquiriesPage() {
       {rows.isPending && <Loading what="enquiries" />}
       {rows.isError && <Failed error={rows.error} />}
       {rows.data?.length === 0 && <Empty>No enquiries.</Empty>}
+      {rows.data && <Shown rows={rows.data} />}
       {rows.data && rows.data.length > 0 && (
         <Table
           head={['Reference', 'When', 'Subscriber', 'Purpose', 'Outcome', 'Customer', 'Accounts']}

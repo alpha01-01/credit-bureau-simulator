@@ -49,6 +49,11 @@ def _game(request: Request, game_id: int) -> Game:
     )
 
 
+def listed(rows: list[Any], total: int) -> Response:
+    """A list (perhaps the first page of it), with how many there are in all."""
+    return Response(rows, headers={"X-Total-Count": str(total)})
+
+
 def _ok(game: Game) -> Response:
     return Response(controls.state(game).as_dict())
 
@@ -483,7 +488,7 @@ def work_items(request: Request, game_id: int) -> Response:
         items = items.filter(status=status_filter)
     # Waiting work oldest first (as it is worked); finished work newest first.
     order = "-item_number" if status_filter == "DONE" else "item_number"
-    return Response([_item_summary(i) for i in items.order_by(order)[:500]])
+    return listed([_item_summary(i) for i in items.order_by(order)[:500]], items.count())
 
 
 @api_view(["GET"])
@@ -650,10 +655,11 @@ def enquiries(request: Request, game_id: int) -> Response:
         query = query.filter(enquired_at__date__gte=start)
     if outcome := request.query_params.get("outcome"):
         query = query.filter(outcome=outcome)
+    total = query.count()
     rows = query.select_related("subscriber", "customer").order_by(
         "-enquired_at", "-enquiry_reference"
     )[:500]
-    return Response(
+    return listed(
         [
             {
                 "reference": e.enquiry_reference,
@@ -665,7 +671,8 @@ def enquiries(request: Request, game_id: int) -> Response:
                 "accounts_reported": e.accounts_reported,
             }
             for e in rows
-        ]
+        ],
+        total,
     )
 
 

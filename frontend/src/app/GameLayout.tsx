@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router'
 
 import { useGame } from '../api/game'
@@ -34,6 +35,11 @@ export function GameLayout() {
   const game = useGame(gameId)
   useLiveClock(gameId, game.data?.clock ?? null)
 
+  const preparing = game.data && (game.data.setup_status !== 'READY' || !game.data.clock)
+  useEffect(() => {
+    if (preparing) document.title = `${game.data?.bureau ?? 'Game'}: preparing · SimB`
+  }, [preparing, game.data?.bureau])
+
   if (game.isPending) return <Loading what="the game" />
   if (game.isError) return <Failed error={game.error} />
 
@@ -55,7 +61,7 @@ export function GameLayout() {
 
   return (
     <div className="space-y-5">
-      <div className="sticky top-0 z-10 -mx-4 border-b border-slate-200 bg-paper/95 px-4 py-3 backdrop-blur">
+      <div className="z-10 -mx-4 border-b border-slate-200 bg-paper/95 px-4 py-3 backdrop-blur lg:sticky lg:top-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="font-semibold">{data.bureau}</span>
           <ClockBar gameId={gameId} clock={data.clock} />
