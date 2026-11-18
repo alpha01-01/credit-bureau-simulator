@@ -10,6 +10,7 @@ export function drillPath(gameId: number, drill: Drill): string {
     queue: `${base}/queue`,
     enquiries: `${base}/enquiries`,
     customers: `${base}/customers`,
+    accounts: `${base}/accounts`,
     submissions: `${base}/submissions`,
     disputes: `${base}/disputes`,
     subscribers: `${base}/subscribers`,

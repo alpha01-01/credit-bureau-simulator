@@ -99,7 +99,7 @@ def _m1(game: Game) -> Check:
     first = _runs(game).first()
     question = Question(
         f"How many records in {first.submission.submission_reference} "
-        f"({first.submission.institution.institution_name}) could not be loaded?"
+        f"({first.submission.institution.institution_name}) could not be loaded? (Submissions)"
         if first
         else "How many records in the first file could not be loaded? (Asked once it is "
         "processed.)",

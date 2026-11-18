@@ -15,6 +15,7 @@ urlpatterns = [
         name="submission",
     ),
     path("games/<int:game_id>/customers/", ui_api.customers, name="customers"),
+    path("games/<int:game_id>/accounts/", ui_api.accounts, name="accounts"),
     path("games/<int:game_id>/customers/<str:reference>/", ui_api.customer_detail, name="customer"),
     path("games/<int:game_id>/ledger/", ui_api.ledger, name="ledger"),
     path("games/<int:game_id>/invoices/", ui_api.invoices, name="invoices"),

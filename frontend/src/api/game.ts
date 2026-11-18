@@ -1026,3 +1026,20 @@ export function useHandbook(id: number) {
     staleTime: Infinity,
   })
 }
+
+export type AccountRow = {
+  provider: string
+  account: string
+  customer: string
+  facility_type: string
+  opened: string | null
+  amount: string
+  status: string
+}
+
+export function useAccounts(id: number, status: string | undefined) {
+  return useQuery({
+    queryKey: [id, 'accounts', status],
+    queryFn: () => apiGet<AccountRow[]>(`${game(id)}/accounts/${query({ status })}`),
+  })
+}

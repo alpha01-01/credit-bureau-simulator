@@ -9,7 +9,7 @@ import {
 } from '../api/game'
 import { useGameId } from '../app/useGameId'
 import { FeedbackCard, MappingForm } from '../components/SubmissionTools'
-import { Badge, Card, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
+import { Badge, Card, Empty, Failed, Loading, Page, Table, Td, Shown } from '../components/ui'
 import { count, dateTime, day } from '../lib/format'
 
 /** The bureau's rejection policy: how strictly incoming records are rejected (D18). */
@@ -63,6 +63,7 @@ export function SubmissionsPage() {
       {rows.isPending && <Loading what="submissions" />}
       {rows.isError && <Failed error={rows.error} />}
       {rows.data?.length === 0 && <Empty>No submissions.</Empty>}
+      {rows.data && <Shown rows={rows.data} />}
       {rows.data && rows.data.length > 0 && (
         <Table
           head={[

@@ -41,7 +41,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     }
     throw new ApiError(response.status, detail)
   }
-  return (await response.json()) as T
+  const data: unknown = await response.json()
+  const total = response.headers.get('X-Total-Count')
+  if (Array.isArray(data) && total !== null) {
+    // How many there are in all, when the list is only the first page of them.
+    Object.defineProperty(data, 'total', { value: Number(total), enumerable: false })
+  }
+  return data as T
 }
 
 export function apiGet<T>(path: string): Promise<T> {

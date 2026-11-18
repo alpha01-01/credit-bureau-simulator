@@ -8,7 +8,7 @@ import {
   useLedger,
 } from '../api/game'
 import { useGameId } from '../app/useGameId'
-import { Badge, Card, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
+import { Badge, Card, Empty, Failed, Loading, Page, Table, Td, Shown } from '../components/ui'
 import { count, day, money } from '../lib/format'
 
 export function FinanceLayout() {
@@ -161,6 +161,7 @@ export function LedgerPage() {
       {entries.isPending && <Loading what="the ledger" />}
       {entries.isError && <Failed error={entries.error} />}
       {entries.data?.length === 0 && <Empty>No entries.</Empty>}
+      {entries.data && <Shown rows={entries.data} />}
       {entries.data && entries.data.length > 0 && (
         <Table head={['Reference', 'Date', 'Description', 'Account', 'Debit', 'Credit']}>
           {entries.data.flatMap((e) =>
@@ -197,6 +198,7 @@ export function InvoicesPage() {
       {invoices.isPending && <Loading what="invoices" />}
       {invoices.isError && <Failed error={invoices.error} />}
       {invoices.data?.length === 0 && <Empty>No invoices.</Empty>}
+      {invoices.data && <Shown rows={invoices.data} />}
       {invoices.data && invoices.data.length > 0 && (
         <Table
           head={[

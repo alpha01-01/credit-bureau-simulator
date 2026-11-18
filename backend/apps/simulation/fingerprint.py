@@ -74,19 +74,47 @@ from .models import (
 )
 
 
-def _section(h: Any, name: str, rows: Iterable[Iterable[Any]]) -> int:
+class _Hasher:
+    """The whole-game digest, and one per section to say where two games part ways."""
+
+    def __init__(self) -> None:
+        self.whole = hashlib.sha256()
+        self.parts: dict[str, str] = {}
+
+
+def _section(h: _Hasher, name: str, rows: Iterable[Iterable[Any]]) -> int:
     count = 0
-    h.update(f"[{name}]".encode())
+    part = hashlib.sha256()
+    h.whole.update(f"[{name}]".encode())
     for row in rows:
-        h.update(json.dumps(list(row), default=str, sort_keys=True).encode())
+        data = json.dumps(list(row), default=str, sort_keys=True).encode()
+        h.whole.update(data)
+        part.update(data)
         count += 1
-    h.update(f"[{name}:{count}]".encode())
+    h.whole.update(f"[{name}:{count}]".encode())
+    h.parts[name] = f"{count}:{part.hexdigest()[:16]}"
     return count
 
 
 def fingerprint(game: Game) -> str:
+    """One digest of everything the game owns: equal digests, identical games."""
+    return _fingerprint(game).whole.hexdigest()
+
+
+def fingerprint_parts(game: Game) -> dict[str, str]:
+    """Row count and digest per section, to find where two games differ."""
+    return _fingerprint(game).parts
+
+
+def differences(a: Game, b: Game) -> list[str]:
+    """The sections in which two games differ, with each one's rows and digest."""
+    pa, pb = fingerprint_parts(a), fingerprint_parts(b)
+    return [f"{k}: {pa.get(k)} != {pb.get(k)}" for k in pa if pa.get(k) != pb.get(k)]
+
+
+def _fingerprint(game: Game) -> _Hasher:
     org = game.organization_id
-    h = hashlib.sha256()
+    h = _Hasher()
     sub = "submission__submission_reference"
     _section(
         h,
@@ -506,4 +534,4 @@ def fingerprint(game: Game) -> str:
         .order_by("reference")
         .values_list("reference", "invoice__invoice_number", "amount", "received_on"),
     )
-    return h.hexdigest()
+    return h
