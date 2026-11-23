@@ -110,7 +110,8 @@ def test_second_month_adds_observations_to_existing_accounts(game: Game) -> None
         CreditAccount.objects.values_list("facility_account_number", flat=True)
     )
     assert run1.records_accepted == run1.records_received > 0
-    credit = {"file__file_kind__in": ("CONC", "BUSC")}  # cheques and judgments are not accounts
+    # Cheques and judgments are not accounts; mobile loans are (P3.3).
+    credit = {"file__file_kind__in": ("CONC", "BUSC", "CONCMOBILE")}
     loaded = StagingRecord.objects.filter(run=run1, record_status=RecordStatus.ACCEPTED, **credit)
     assert run1.accounts_created == len(accounts_after_first) == loaded.count()
 

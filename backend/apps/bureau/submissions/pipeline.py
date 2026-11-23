@@ -279,6 +279,7 @@ DUPLICATE_KEYS = {
     FileKind.JUDGMENT: ("CaseNumber", "CustomerID", "FilingDate"),
     FileKind.BUSINESS_CHEQUE: ("FacilityAccNum", "CustomerID", "ChequeNumber"),
     FileKind.BUSINESS_JUDGMENT: ("CaseNumber", "CustomerID", "FilingDate"),
+    FileKind.MOBILE: ("FacilityAccNum", "CustomerID", "DisbursementDate"),
 }
 
 

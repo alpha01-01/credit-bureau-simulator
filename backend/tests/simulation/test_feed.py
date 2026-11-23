@@ -230,7 +230,9 @@ def test_work_items_are_due_five_working_days_after_they_open() -> None:
 
 
 def test_untaken_work_due_today_stops_the_clock(world: World) -> None:
-    game = _queue(world)
+    # Only deadlines stop the clock here: the test is about work falling due, not about
+    # whatever else the month brings (a subscriber reconsidering, say).
+    game = controls.set_pause_rules(_queue(world), [], deadlines=True)
     items = WorkItem.objects.filter(organization=game.organization, status=ItemStatus.OPEN)
     assert items.exists()
     assert {i.due_tick for i in items} == {due_tick(1)}
@@ -239,7 +241,11 @@ def test_untaken_work_due_today_stops_the_clock(world: World) -> None:
     stop = controls.stopped_by(game)
     assert stop is not None and stop.kind == "WORK_DUE" and stop.is_deadline
     assert game.current_tick == due_tick(1) - TICKS_PER_DAY + 1  # the morning of the due day
-    assert str(items.count()) in stop.title
+    # Everything open and due today, including items opened since the first count.
+    due_now = WorkItem.objects.filter(
+        organization=game.organization, status=ItemStatus.OPEN, due_tick=due_tick(1)
+    )
+    assert str(due_now.count()) in stop.title
 
     game = controls.set_pause_rules(game, ["CRITICAL"], deadlines=False)
     game = controls.advance_by(game, "day", 2)

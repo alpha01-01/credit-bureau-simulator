@@ -114,9 +114,12 @@ def build_review(game: Game, cal: Calendar, period: date, tick: int) -> DataQual
 def _decisions(
     game: Game, first: int, last: int, refs: dict[str, list[Any]]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    # Data Operations' decisions only: disputes are Compliance's, and were once miscounted
+    # here as triage (found in P3.3).
     items = WorkItem.objects.filter(
         organization=game.organization,
         status=ItemStatus.DONE,
+        item_type__in=(CaseType.MATCH_REVIEW, CaseType.UNLOADABLE_TRIAGE),
         resolved_tick__gte=first,
         resolved_tick__lte=last,
     ).order_by("item_number")

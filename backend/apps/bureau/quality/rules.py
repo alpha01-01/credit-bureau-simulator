@@ -46,6 +46,7 @@ RECORD_DATE = {
     FileKind.JUDGMENT: "FilingDate",
     FileKind.BUSINESS_CHEQUE: "DateIssued",
     FileKind.BUSINESS_JUDGMENT: "FilingDate",
+    FileKind.MOBILE: "DisbursementDate",
 }
 
 STANDARD, CORE = "STANDARD", "CORE"
@@ -53,6 +54,8 @@ POLICIES = {
     STANDARD: "Reject when any mandatory or required conditional field is missing or invalid",
     CORE: "Reject only when the core fields fail; clean or blank the rest",
 }
+
+MOBILE_MAX_DAYS = 92  # three months, at most (owner: "a week to three months")
 
 RULES: dict[str, str] = {
     # File level
@@ -76,6 +79,7 @@ RULES: dict[str, str] = {
     "F013": "No valid identifier for a facility disbursed from 2020",
     "F014": "Required conditional field is blank",
     "F015": "Cheque is reported bounced before it was issued",
+    "F016": "Facility in a mobile loan file runs longer than three months",
     # Duplicates
     "D001": "Duplicate of another row in the file (the lower balance is kept)",
     "D002": "Account number repeated in the file for a different customer",
@@ -321,6 +325,17 @@ def validate(
         require("EmpName", values.get("CreditFacilityType") == "115")
     elif not (present("BusRegNum") or present("TINum")):
         problem("F013", "BusRegNum", always=True)
+
+    # A mobile file holds mobile loans: a week to three months (P3.3). A longer facility is
+    # flagged for the provider, not rejected: the loan is real, only misfiled.
+    maturity = parse_date(values.get("MaturityDate", ""))
+    if (
+        kind is FileKind.MOBILE
+        and disbursed is not None
+        and maturity is not None
+        and (maturity - disbursed).days > MOBILE_MAX_DAYS
+    ):
+        result.issues.append(Issue("F016", "MaturityDate", values["MaturityDate"], "WARNING"))
 
     # Conditional fields.
     status = values.get("FacilityStatusCode", "")

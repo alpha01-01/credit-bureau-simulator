@@ -191,6 +191,11 @@ class Loan(models.Model):
     first_default_period = models.DateField(
         null=True, blank=True, help_text="First month-end at 90+ days past due (truth label)"
     )
+    repaid_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Day a mobile loan was repaid (P3.3); others leave it blank",
+    )
 
     class Meta:
         constraints = [
@@ -377,7 +382,9 @@ class ProviderFile(models.Model):
     submission = models.ForeignKey(
         ProviderSubmission, on_delete=models.CASCADE, related_name="files"
     )
-    kind = models.CharField(max_length=4, help_text="CONC or BUSC (standard file identifier)")
+    kind = models.CharField(
+        max_length=10, help_text="CONC, BUSC, CONCMOBILE... (standard file identifier)"
+    )
     file_name = models.CharField(max_length=100)
     file_format = models.CharField(max_length=10)
     storage_path = models.CharField(max_length=300, help_text="Relative to STORAGE_ROOT")

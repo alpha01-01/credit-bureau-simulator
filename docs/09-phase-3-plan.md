@@ -131,7 +131,7 @@ Banks, savings and loans companies, microfinance lenders and fintechs grant smal
 * **Time:** a one-week loan begins and ends inside a month, so the world records each loan's daily schedule and its month-end state. A month-end file shows the loan as closed, current or overdue.
 * **Reporting** (owner, 23 November 2026): mobile loans use the same template as individual loans (CONC). What sets them apart is the file name, which has "mobile" appended, so a provider sends its mobile loans in a separate file. The file identifier becomes `CONCMOBILE`, e.g. `10118-20261130-20261201-1.1-CONCMOBILE-12.csv`. The records mostly carry facility type `122` (personal loan). The bureau registers and tracks mobile files separately, and checks that a mobile file holds only short-term loans.
 * **Scale:** mobile loans can outnumber all other loans many times over. The world size and the pipeline are measured before and after; the P3.0 targets still hold.
-* **Reports:** mobile loans appear on credit reports, and a short **mobile loan report** is sold for small, fast decisions (R8 placeholder).
+* **Reports:** mobile loans appear on credit reports. The short **mobile loan report**, sold for small, fast decisions (R8 placeholder), moves to P3.6 with the score product: checking every mobile loan through the full enquiry made a month take 384 s, so mobile enquiries need a path of their own (decided in P3.3).
 
 **Done when:**
 * the world produces mobile loans whose amounts, terms, repeat borrowing and default rates are recorded in `docs/assumptions.md` and checked by tests;
@@ -213,6 +213,7 @@ The workbench builds each scorecard on the bureau's own data, in steps:
 ## P3.6 — The credit score product
 
 * Deployed scores appear on reports: the composite score with its band and reason codes, and the three term scores beneath it.
+* The **mobile loan report** (from P3.3): mobile lenders check the bureau for their loans, through a fast path built for that volume (thousands a month), priced as the mobile loan report and score.
 * The score is priced separately (R8); lenders' demand responds to how well the score predicts.
 * Lenders use the score when deciding. The P2.8 decline rule becomes "the report and the score".
 
@@ -402,6 +403,7 @@ Decided 23 November 2026:
 7. **A short 3D trial:** yes, as P3.2.
 
 8. **Mobile loans (P3.3):** decided (23 November 2026): the same template as individual loans, in separate files with the identifier `CONCMOBILE` (`...-1.1-CONCMOBILE-12.csv`); lenders mostly use facility type `122` (personal loan).
+8a. **Month speed with mobile loans (P3.3):** decided (23 November 2026): a default month may take up to 3 minutes in a world with mobile loans (166 s measured), for now. The 2-minute target stays for worlds without them; the time is to be won back later.
 9. **Other permissible purposes (R12):** decided (23 November 2026): a subscriber may also enquire to review an existing borrower's account, to screen someone being hired or a prospective tenant, and to collect a debt. The consent on the original form covers these purposes.
 
 Still open:

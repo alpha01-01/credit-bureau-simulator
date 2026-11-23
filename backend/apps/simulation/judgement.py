@@ -17,7 +17,8 @@ from functools import lru_cache
 import numpy as np
 
 from apps.bureau.core.models import ProviderCustomerLink
-from apps.bureau.quality.models import CaseType, Decision, ReviewCase
+from apps.bureau.quality.disputes import latest_record
+from apps.bureau.quality.models import CaseType, CorrectionRecord, Decision, ReviewCase
 from apps.org.models import Employee
 from apps.standards.submission_template import FileKind
 from apps.workitems.models import WorkItem
@@ -157,15 +158,39 @@ def customer_borrower(game: Game, customer_id: int) -> Borrower:
     return _customer_borrower(game.world_id, customer_id)
 
 
-# A customer's first provider link never changes, so neither does its answer (P2.1).
-@lru_cache(maxsize=1 << 17)
-def _customer_borrower(world_id: int, customer_id: int) -> Borrower:
-    link = (
-        ProviderCustomerLink.objects.filter(customer_id=customer_id)
+def first_link(customer_id: int) -> ProviderCustomerLink | None:
+    """The first provider link a bureau customer ever had: the one that created it.
+
+    An upheld dispute moves a provider customer's link to a new customer (P2.7), so
+    the links on a customer now are not always the ones it had. The links it lost are
+    named by its corrections; the first of all of them, by id, never changes (P3.3).
+    """
+    ids = set(
+        ProviderCustomerLink.objects.filter(customer_id=customer_id).values_list("pk", flat=True)
+    )
+    for correction in CorrectionRecord.objects.filter(from_customer_id=customer_id).select_related(
+        "credit_account"
+    ):
+        record = latest_record(correction.credit_account)
+        if record is None:
+            continue
+        moved = ProviderCustomerLink.objects.filter(
+            institution_id=correction.credit_account.institution_id,
+            provider_customer_number=record.cleansed.get("CustomerID", ""),
+        ).values_list("pk", flat=True)
+        ids.update(moved)
+    return (
+        ProviderCustomerLink.objects.filter(pk__in=ids)
         .select_related("institution")
         .order_by("pk")
         .first()
     )
+
+
+# A customer's first provider link never changes, so neither does its answer (P2.1).
+@lru_cache(maxsize=1 << 17)
+def _customer_borrower(world_id: int, customer_id: int) -> Borrower:
+    link = first_link(customer_id)
     if link is None:
         raise LookupError(f"Bureau customer {customer_id} has no provider link")
     lender_customer = LenderCustomer.objects.get(

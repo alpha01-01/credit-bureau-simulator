@@ -8,6 +8,7 @@ import pytest
 from django.db import connection
 
 from apps.world.generation import GeneratedWorld, build_world
+from apps.world.generation.mobile import month_end_state
 from apps.world.generation.persist import delete_world, loan_month_partition, write_world
 from apps.world.models import Business, Lender, LenderCustomer, Loan, LoanMonth, Person, World
 
@@ -30,7 +31,14 @@ def test_world_is_stored_completely() -> None:
     assert Person.objects.filter(world=world).count() == generated.people.n
     assert Business.objects.filter(world=world).count() == generated.businesses.n
     assert Lender.objects.filter(world=world).count() == len(generated.config.lenders)
-    assert LoanMonth.objects.filter(world=world).count() == len(generated.result.snapshots)
+    # Month-end rows: the engine's loans and, beside them, the mobile loans (P3.3).
+    result = generated.result
+    mobile_rows = sum(
+        len(month_end_state(result.mobile, result.months, t).loan)
+        for t in range(result.history_start, len(result.months))
+    )
+    assert mobile_rows > 0
+    assert LoanMonth.objects.filter(world=world).count() == len(result.snapshots) + mobile_rows
     assert world.history_end == generated.config.history_end
 
 
