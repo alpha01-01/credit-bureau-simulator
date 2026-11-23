@@ -76,6 +76,7 @@ def _api(game: Game) -> APIClient:
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.slow
 def test_insolvency_is_reached_through_its_warnings_and_can_be_turned_back(world: World) -> None:
     owner = User.objects.create_user("player")
     game = _quiet(start_game(world, owner=owner))
@@ -165,6 +166,7 @@ def test_the_regulator_climbs_to_revocation_one_warning_at_a_time(world: World) 
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.slow
 def test_a_board_without_confidence_twice_removes_the_management(world: World) -> None:
     careful = _quiet(start_game(world))
     careless = _quiet(start_game(world))

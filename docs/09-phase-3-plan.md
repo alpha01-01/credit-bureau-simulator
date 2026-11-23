@@ -129,7 +129,7 @@ Banks, savings and loans companies, microfinance lenders and fintechs grant smal
 
 * **The world:** a mobile-loan product at some lenders (and one or two digital lenders), with terms in days. Borrowers take repeated small loans, sometimes from several lenders at once ("stacking"); repayment follows the same hidden risk as their other borrowing, plus a mobile-specific behaviour (ASSUMPTION).
 * **Time:** a one-week loan begins and ends inside a month, so the world records each loan's daily schedule and its month-end state. A month-end file shows the loan as closed, current or overdue.
-* **Reporting:** providers report mobile loans in the consumer template (CONC). The 2012 code list has no mobile-loan facility type, so the code is an ASSUMPTION for the owner to confirm (Section 7).
+* **Reporting** (owner, 23 November 2026): mobile loans use the same template as individual loans (CONC). What sets them apart is the file name, which has "mobile" appended, so a provider sends its mobile loans in a separate file. The file identifier becomes `CONCMOBILE`, e.g. `10118-20261130-20261201-1.1-CONCMOBILE-12.csv`. The records mostly carry facility type `122` (personal loan). The bureau registers and tracks mobile files separately, and checks that a mobile file holds only short-term loans.
 * **Scale:** mobile loans can outnumber all other loans many times over. The world size and the pipeline are measured before and after; the P3.0 targets still hold.
 * **Reports:** mobile loans appear on credit reports, and a short **mobile loan report** is sold for small, fast decisions (R8 placeholder).
 
@@ -223,7 +223,7 @@ The workbench builds each scorecard on the bureau's own data, in steps:
 
 ## P3.7 — Compliance (Playable)
 
-* **Consent and permissible purpose** (R12): the borrower gives consent on the lender's application form, and the lender keeps it. Each enquiry carries a reference to that evidence. The compliance officer samples enquiries, asks lenders for the forms, finds the ones without proper grounds, and acts on the subscriber.
+* **Consent and permissible purpose** (R12): the borrower gives consent on the lender's application form, and the lender keeps it. Each enquiry carries a reference to that evidence. Besides new credit, the permitted purposes are account review, employment and tenancy screening, and debt collection, all covered by the consent on the original form. The compliance officer samples enquiries, asks lenders for the forms, finds the ones without proper grounds, and acts on the subscriber.
 * **Fairness findings:** a deployed scorecard that uses a restricted attribute becomes a finding (P3.5).
 * **Access reviews:** who in the bureau can see what, reviewed periodically. Excess access becomes a finding.
 * **Retention** (R7, R11): records past their retention period must be dropped from reports. Missing this is a finding.
@@ -374,10 +374,10 @@ As in Phase 2, rules live in configuration, so placeholders never stop building;
 
 | Increment | Needs | Blocking for release? |
 | --- | --- | --- |
-| P3.3 | The facility-type code lenders use for mobile loans; typical mobile-loan amounts, terms, fees and default rates (BoG reports, R15) | Yes for the code |
+| P3.3 | Mobile loans: same template as individual loans, file name appended with "mobile" (owner, 23 November 2026). File identifier `CONCMOBILE`; facility type mostly `122` (owner, 23 November 2026). Typical amounts, terms, fees and default rates from BoG reports (R15) | No (tuning) |
 | P3.5, P3.6 | R16 scorecard practice. **Owner's direction (23 November 2026):** short-, mid- and long-term scorecards and a composite; Claude's recommended variables, scale and bands (P3.5), adjusted as play shows | No (owner's direction stands) |
 | P3.3, P3.6, P3.9, P3.11 | R8 pricing. **No published prices found;** placeholders in `references/pricing-placeholders.md`, adjusted as needed (owner, 23 November 2026) | No (placeholders accepted) |
-| P3.7 | R12 consent: taken on the lender's application form (owner, 23 November 2026); permissible purposes other than lending still to confirm; R7 L.I. 2394 (retention, access); R11 Bank of Ghana directives (returns, retention) | Yes |
+| P3.7 | R12 consent: taken on the lender's application form (owner, 23 November 2026); account review, employment and tenancy screening and debt collection are also permitted under the same consent (owner, 23 November 2026); R7 L.I. 2394 (retention, access); R11 Bank of Ghana directives (returns, retention) | Yes |
 | P3.8 | R14 operating costs; R18 taxes (already partly in) | Yes for costs |
 | P3.11 | R9 report layouts (business report) | Yes |
 | P3.12 | R15 Bank of Ghana statistics; Ghana inflation and policy-rate history (public) | No (tuning) |
@@ -401,11 +401,12 @@ Decided 23 November 2026:
    * R16: three term scorecards and a composite, with Claude's recommended variables, scale and bands (P3.5).
 7. **A short 3D trial:** yes, as P3.2.
 
+8. **Mobile loans (P3.3):** decided (23 November 2026): the same template as individual loans, in separate files with the identifier `CONCMOBILE` (`...-1.1-CONCMOBILE-12.csv`); lenders mostly use facility type `122` (personal loan).
+9. **Other permissible purposes (R12):** decided (23 November 2026): a subscriber may also enquire to review an existing borrower's account, to screen someone being hired or a prospective tenant, and to collect a debt. The consent on the original form covers these purposes.
+
 Still open:
 
-8. **GitHub CI:** clear the account-level Actions issue so checks run on every pull request.
-9. **Mobile loans (P3.3):** which facility-type code lenders use for mobile loans, since the 2012 code list has none. Until then, `119` (non-secured loan), with the term in days, is the ASSUMPTION.
-10. **Other permissible purposes (R12):** besides a loan application, may a subscriber enquire to review an existing borrower, to screen an employee or tenant, or to collect a debt? With what consent?
+10. **GitHub CI:** clear the account-level Actions issue so checks run on every pull request.
 
 ---
 

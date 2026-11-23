@@ -20,6 +20,7 @@ These notes cover reference items **R1** (templates), **R2** (code lists), **R3*
 | Rule | Standard |
 | --- | --- |
 | File name | `SRN-ReportingDate-DateCreated-Version-FileIdentifier-SequenceNumber.csv`, e.g. `10118-20120130-20120205-1.1-CONC-12.csv` |
+| Mobile loans | Same template as individual loans (CONC), sent in separate files with the file identifier `CONCMOBILE`, e.g. `10118-20261130-20261201-1.1-CONCMOBILE-12.csv`; records mostly carry facility type `122` (personal loan) (owner, 23 November 2026) |
 | SRN | **Supplier Reference Number**: the reporting institution's number, assigned by the Bank of Ghana (5 characters) |
 | Reporting date | The "as at" date of the data, `YYYYMMDD` |
 | Date created | When the file was extracted from the provider's system, `YYYYMMDD` |

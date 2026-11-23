@@ -29,11 +29,14 @@ class WorkError(Exception):
     pass
 
 
-def has_work(organization: Organization) -> bool:
+def has_work(organization: Organization, held: frozenset[str] = frozenset()) -> bool:
+    """Whether the team has anything to do; ``held`` item types are left for the player."""
     return (
         WorkItem.objects.filter(
             organization=organization, status__in=[ItemStatus.OPEN, ItemStatus.IN_PROGRESS]
-        ).exists()
+        )
+        .exclude(status=ItemStatus.OPEN, item_type__in=held)
+        .exists()
         and Employee.objects.filter(organization=organization, is_active=True).exists()
     )
 
@@ -45,8 +48,13 @@ def work_tick(
     at: datetime,
     rng_for: RngFor,
     minutes: float = 15.0,
+    held: frozenset[str] = frozenset(),
 ) -> int:
-    """Let every active employee work for one tick. Returns the number of items finished."""
+    """Let every active employee work for one tick. Returns the number of items finished.
+
+    Open items of the ``held`` types are left in the queue for the player (a mission
+    that asks the player to decide them, P3.0).
+    """
     finished = 0
     for employee in Employee.objects.filter(organization=organization, is_active=True).order_by(
         "employee_number"
@@ -57,7 +65,7 @@ def work_tick(
             employee.work_day, employee.done_today = day_index, 0
         budget = minutes
         while budget > 1e-9:
-            item = _current_or_next(organization, employee, tick)
+            item = _current_or_next(organization, employee, tick, held)
             if item is None:
                 break
             used = min(budget, item.minutes_remaining or 0.0)
@@ -72,13 +80,16 @@ def work_tick(
     return finished
 
 
-def _current_or_next(organization: Organization, employee: Employee, tick: int) -> WorkItem | None:
+def _current_or_next(
+    organization: Organization, employee: Employee, tick: int, held: frozenset[str]
+) -> WorkItem | None:
     item = WorkItem.objects.filter(assignee=employee, status=ItemStatus.IN_PROGRESS).first()
     if item is not None:
         return item
     item = (
         WorkItem.objects.select_for_update(skip_locked=True)
         .filter(organization=organization, status=ItemStatus.OPEN)
+        .exclude(item_type__in=held)
         .order_by("item_number")
         .first()
     )

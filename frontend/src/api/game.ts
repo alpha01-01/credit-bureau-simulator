@@ -500,15 +500,18 @@ export type CustomerDetail = CustomerRow & {
     lender: string
     account_number: string
     facility_type: string
+    facility_type_name: string
     opened: string | null
     original_amount: string
     status: string
+    status_name: string
     observations: {
       date: string
       balance: string
       arrears: string
       days_past_due: number
       status: string
+      status_name: string
       source: string
     }[]
   }[]
@@ -1032,9 +1035,11 @@ export type AccountRow = {
   account: string
   customer: string
   facility_type: string
+  facility_type_name: string
   opened: string | null
   amount: string
   status: string
+  status_name: string
 }
 
 export function useAccounts(id: number, status: string | undefined) {

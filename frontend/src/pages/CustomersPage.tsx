@@ -3,7 +3,18 @@ import { Link, useParams, useSearchParams } from 'react-router'
 
 import { useCustomer, useCustomers } from '../api/game'
 import { useGameId } from '../app/useGameId'
-import { Badge, Card, Empty, Failed, Loading, Page, Table, Td, Shown } from '../components/ui'
+import {
+  Badge,
+  Card,
+  Coded,
+  Empty,
+  Failed,
+  Loading,
+  Page,
+  Table,
+  Td,
+  Shown,
+} from '../components/ui'
 import { count, dateTime, day, money } from '../lib/format'
 
 export function CustomersPage() {
@@ -109,13 +120,14 @@ export function CustomerPage() {
       {c.accounts.map((a) => (
         <Card key={a.account_number} title={`${a.lender}: ${a.account_number}`}>
           <p className="mb-2 text-sm text-slate-600">
-            {a.facility_type}, opened {day(a.opened)}, original {money(a.original_amount)}, status{' '}
+            <Coded name={a.facility_type_name} code={a.facility_type} />, opened {day(a.opened)},
+            original {money(a.original_amount)}, status{' '}
             <Badge
               tone={
                 a.status === 'W' || a.status === 'G' ? 'bad' : a.status === 'A' ? 'info' : 'neutral'
               }
             >
-              {a.status}
+              {a.status_name}
             </Badge>
           </p>
           <Table head={['Month', 'Balance', 'Arrears', 'Days past due', 'Status', 'Source']}>
@@ -127,7 +139,9 @@ export function CustomerPage() {
                 <Td right>
                   {o.days_past_due > 0 ? <Badge tone="warn">{count(o.days_past_due)}</Badge> : '0'}
                 </Td>
-                <Td>{o.status}</Td>
+                <Td>
+                  <Coded name={o.status_name} code={o.status} />
+                </Td>
                 <Td>
                   <span className="text-xs text-slate-500">{o.source}</span>
                 </Td>

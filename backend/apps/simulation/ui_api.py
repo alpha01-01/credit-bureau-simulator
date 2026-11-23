@@ -48,7 +48,7 @@ from apps.finance.events import outstanding
 from apps.finance.ledger import BANK, REVENUE
 from apps.finance.models import Invoice, JournalEntry
 from apps.standards.calendar import is_working_day
-from apps.standards.submission_template import OPEN_STATUS_CODES
+from apps.standards.submission_template import CODE_LISTS, OPEN_STATUS_CODES
 from apps.workitems.models import ItemStatus, WorkItem
 from apps.world.models import World
 
@@ -77,6 +77,12 @@ def worlds(request: Request) -> Response:
     )
 
 
+SETUP_FAILED = (
+    "The bureau's history could not be prepared. Start another game; "
+    "the details are in the server log."
+)
+
+
 def _game_summary(game: Game) -> dict[str, Any]:
     clock = controls.state(game).as_dict() if game.setup_status == "READY" else None
     return {
@@ -84,7 +90,9 @@ def _game_summary(game: Game) -> dict[str, Any]:
         "bureau": game.organization.name,
         "world": game.world_id,
         "setup_status": game.setup_status,
-        "setup_message": game.setup_message,
+        # A failure is always described the same way: games that failed before P2.13
+        # stored the raw error, file paths included (P3.0).
+        "setup_message": SETUP_FAILED if game.setup_status == "FAILED" else game.setup_message,
         "clock": clock,
     }
 
@@ -127,11 +135,7 @@ def _prepare(game_id: int, months: int) -> None:
         install_history(game, months, progress)
         Game.objects.filter(pk=game_id).update(setup_status="READY", setup_message="")
     except Exception:  # the player sees that it failed and what to do; the log has why
-        Game.objects.filter(pk=game_id).update(
-            setup_status="FAILED",
-            setup_message="The bureau's history could not be prepared. Start another game; "
-            "the details are in the server log.",
-        )
+        Game.objects.filter(pk=game_id).update(setup_status="FAILED", setup_message=SETUP_FAILED)
         raise
     finally:
         if background:
@@ -534,9 +538,11 @@ def accounts(request: Request, game_id: int) -> Response:
                 "account": a.facility_account_number,
                 "customer": a.customer.customer_reference,
                 "facility_type": a.facility_type,
+                "facility_type_name": _code_name("CreditFacilityType", a.facility_type),
                 "opened": a.disbursement_date,
                 "amount": a.original_amount,
                 "status": a.account_status,
+                "status_name": _code_name("FacilityStatusCode", a.account_status),
             }
             for a in rows.select_related("institution", "customer").order_by(
                 "institution__institution_code", "facility_account_number"
@@ -544,6 +550,11 @@ def accounts(request: Request, game_id: int) -> Response:
         ],
         rows.count(),
     )
+
+
+def _code_name(code_list: str, code: str) -> str:
+    """What a template code means ("122" -> "Personal loan"); the code itself if unknown."""
+    return CODE_LISTS[code_list].get(code, code)
 
 
 def _customer_summary(c: Customer) -> dict[str, Any]:
@@ -578,9 +589,11 @@ def customer_detail(request: Request, game_id: int, reference: str) -> Response:
                 "lender": a.institution.institution_name,
                 "account_number": a.facility_account_number,
                 "facility_type": a.facility_type,
+                "facility_type_name": _code_name("CreditFacilityType", a.facility_type),
                 "opened": a.disbursement_date,
                 "original_amount": a.original_amount,
                 "status": a.account_status,
+                "status_name": _code_name("FacilityStatusCode", a.account_status),
                 "observations": [
                     {
                         "date": o.reporting_date,
@@ -588,6 +601,7 @@ def customer_detail(request: Request, game_id: int, reference: str) -> Response:
                         "arrears": o.arrears_amount,
                         "days_past_due": o.days_past_due,
                         "status": o.facility_status,
+                        "status_name": _code_name("FacilityStatusCode", o.facility_status),
                         "source": f"{o.source_file.file_name} row {o.source_row_number}",
                     }
                     for o in observations.select_related("source_file")

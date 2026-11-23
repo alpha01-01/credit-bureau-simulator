@@ -1,6 +1,7 @@
 """Run every project check. Usage (from the repository root):
 
-    backend/.venv/Scripts/python scripts/check.py           # all checks
+    backend/.venv/Scripts/python scripts/check.py           # all checks, without the slow tests
+    backend/.venv/Scripts/python scripts/check.py --full    # all checks and the slow tests (before merging)
     backend/.venv/Scripts/python scripts/check.py --fast    # pre-commit subset
 
 Exits non-zero if any check fails. See Document 06, Section 11.
@@ -40,7 +41,7 @@ CHECKS: list[tuple[str, list[str], Path, bool]] = [
     ("backend: module boundaries", [venv("lint-imports"), "--no-cache"], BACKEND, True),
     ("backend: types", [venv("mypy"), "."], BACKEND, False),
     ("backend: migrations up to date", [venv("python"), "manage.py", "makemigrations", "--check", "--dry-run"], BACKEND, False),
-    ("backend: tests", [venv("pytest"), "-q"], BACKEND, False),
+    ("backend: tests", [venv("pytest"), "-q", "-m", "not slow"], BACKEND, False),
     ("frontend: format", [NPM, "run", "--silent", "format:check"], FRONTEND, True),
     ("frontend: lint", [NPM, "run", "--silent", "lint"], FRONTEND, True),
     ("frontend: types", [NPM, "run", "--silent", "typecheck"], FRONTEND, False),
@@ -51,12 +52,15 @@ CHECKS: list[tuple[str, list[str], Path, bool]] = [
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fast", action="store_true", help="run only the quick checks")
+    parser.add_argument("--full", action="store_true", help="include the slow (month-long) tests")
     args = parser.parse_args()
 
     failures: list[str] = []
     for name, command, cwd, fast in CHECKS:
         if args.fast and not fast:
             continue
+        if args.full and name == "backend: tests":
+            name, command = "backend: tests (full)", [venv("pytest"), "-q"]
         started = time.monotonic()
         result = subprocess.run(  # noqa: S603
             command, cwd=cwd, capture_output=True, text=True, check=False, env=ENV

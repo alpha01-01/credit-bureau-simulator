@@ -97,6 +97,7 @@ def _days_late(game: Game) -> list[int]:
     ]
 
 
+@pytest.mark.slow
 def test_feedback_and_training_make_cleaner_files_and_penalties_slower_ones(world: World) -> None:
     nurtured = _play(world, "nurture")
     left = _play(world, "none")
@@ -142,6 +143,7 @@ def test_training_costs_money_once_a_month(world: World) -> None:
     assert PROVIDER in cost.description
 
 
+@pytest.mark.slow
 def test_providers_screen_and_replay(world: World) -> None:
     owner = User.objects.create_user("player")
     game = controls.set_pause_rules(start_game(world, owner=owner), [], deadlines=False)

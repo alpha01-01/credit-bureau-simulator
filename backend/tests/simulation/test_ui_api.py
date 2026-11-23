@@ -9,6 +9,8 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
+from apps.simulation.models import Game
+from apps.standards.submission_template import CODE_LISTS
 from apps.world.generation import build_world
 from apps.world.generation.persist import write_world
 from apps.world.models import World
@@ -90,6 +92,20 @@ def test_a_new_established_game_is_prepared_and_listed(world: World, player: Use
     assert worlds[0]["id"] == world.pk
 
 
+def test_a_failed_setup_never_shows_the_raw_error(world: World, player: User) -> None:
+    """P3.0: games that failed before P2.13 stored the error itself, file paths included."""
+    client = _signed_in(player)
+    game_id = _new_game(client, world, months=0)["id"]
+    Game.objects.filter(pk=game_id).update(
+        setup_status="FAILED", setup_message=r"[Errno 2] No such file: 'C:\storage\x.csv'"
+    )
+    for shown in (
+        client.get("/api/v1/games/").json()[0],
+        client.get(f"/api/v1/games/{game_id}/").json(),
+    ):
+        assert shown["setup_message"].startswith("The bureau's history could not be prepared")
+
+
 def test_screens_show_the_bureau_after_a_few_days(world: World, player: User) -> None:
     client = _signed_in(player)
     game_id = _new_game(client, world)["id"]
@@ -115,6 +131,13 @@ def test_screens_show_the_bureau_after_a_few_days(world: World, player: User) ->
     assert customers
     customer = client.get(f"{base}/customers/{customers[0]['reference']}/").json()
     assert customer["accounts"] and customer["accounts"][0]["observations"][0]["source"]
+    # Template codes come with their meaning (P3.0): "122" is a personal loan.
+    first = customer["accounts"][0]
+    assert first["facility_type_name"] == CODE_LISTS["CreditFacilityType"][first["facility_type"]]
+    assert first["status_name"] == CODE_LISTS["FacilityStatusCode"][first["status"]]
+    assert first["observations"][0]["status_name"] != first["observations"][0]["status"]
+    listed = client.get(f"{base}/accounts/?status=open").json()
+    assert listed and all(a["status_name"] != a["status"] for a in listed)
     by_name = client.get(f"{base}/customers/?q={customer['name'].split()[-1]}").json()
     assert customer["reference"] in [c["reference"] for c in by_name]
 

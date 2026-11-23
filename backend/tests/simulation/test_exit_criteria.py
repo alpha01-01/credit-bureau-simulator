@@ -110,6 +110,7 @@ def _total(response: Any) -> int:
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.slow
 def test_three_months_run_cleanly_and_every_figure_drills_to_its_records(world: World) -> None:
     owner = User.objects.create_user("player")
     game = _three_months(world, owner)

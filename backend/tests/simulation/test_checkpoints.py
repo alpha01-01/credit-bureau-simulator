@@ -13,6 +13,7 @@ import pytest
 from django.core.management import call_command
 
 from apps.bureau.core.models import AccountObservation
+from apps.bureau.submissions.models import StagingRecord
 from apps.simulation import controls
 from apps.simulation.bridge import start_game
 from apps.simulation.checkpoints import digest, summarise
@@ -65,6 +66,9 @@ def test_a_checkpoint_is_taken_at_each_month_end(world: World) -> None:
     assert first["counts"]["bureau_submissions_submission"] > 0
     assert first["counts"]["bureau_core_accountobservation"] > 0
     assert first["totals"]["balances_on_file"] != "0"
+    # Staging records are counted from their runs; the runs' counts are the rows (P3.0).
+    staged = StagingRecord.objects.filter(run__submission__organization=game.organization)
+    assert summarise(game)["totals"]["staging_records"] == str(staged.count()) != "0"
     # Later months hold more.
     later = month_ends[1].summary["counts"]["bureau_core_accountobservation"]
     assert later > first["counts"]["bureau_core_accountobservation"]
