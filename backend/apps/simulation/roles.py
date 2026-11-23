@@ -74,6 +74,7 @@ ROLES: dict[str, Role] = {
                 "reviews",
                 "analytics",
                 "console",
+                "scorecards",
             ),
             frozenset(
                 {
@@ -128,8 +129,8 @@ ROLES: dict[str, Role] = {
             "Head of Data Analytics",
             "Studies the bureau's data: portfolio analytics by lender, product, region and "
             "vintage, and a read-only SQL console over the bureau's own tables (P3.4).",
-            ("analytics", "console", "customers", "accounts", "enquiries", "reviews"),
-            frozenset(),
+            ("analytics", "console", "scorecards", "customers", "accounts", "enquiries", "reviews"),
+            frozenset({"BUILD_SCORECARD", "BUILD_COMPOSITE", "DEPLOY_SCORECARD"}),
         ),
         Role(
             FINANCE,

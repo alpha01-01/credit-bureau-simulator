@@ -53,6 +53,7 @@ from apps.workitems.models import WorkItem
 from .models import (
     BoardReview,
     Candidate,
+    ComplianceFinding,
     Consequence,
     DataQualityReview,
     EnquiryJudgement,
@@ -68,6 +69,7 @@ from .models import (
     RegulatorFinding,
     RegulatorStanding,
     ScheduledEvent,
+    ScoreModel,
     SolvencyState,
     SubscriberView,
     TickLog,
@@ -465,6 +467,14 @@ def _fingerprint(game: Game) -> _Hasher:
             *MissionState.objects.filter(game=game)
             .order_by("code")
             .values_list("code", "answers", "completed_tick", "debrief"),
+            *ScoreModel.objects.filter(game=game)
+            .order_by("number")
+            .values_list("number", "term", "observation_date", "window_months", "features",
+                         "seed", "spec", "results", "status", "built_tick", "deployed_tick"),
+            *ComplianceFinding.objects.filter(game=game)
+            .order_by("number")
+            .values_list("number", "kind", "reference", "detail", "raised_tick", "raised_at",
+                         "resolved_tick"),
             *Contract.objects.filter(subscriber__organization_id=org)
             .order_by("subscriber__subscriber_code", "start_date")
             .values_list("subscriber__subscriber_code", "subscriber__is_active", "unit_price",
