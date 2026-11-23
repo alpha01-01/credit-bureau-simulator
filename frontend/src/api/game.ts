@@ -5,6 +5,7 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import type { OfficeData } from '../lib/office'
 import { apiGet, apiPost } from './client'
 
 export type Clock = {
@@ -1071,5 +1072,16 @@ export function useAccounts(id: number, status: string | undefined) {
   return useQuery({
     queryKey: [id, 'accounts', status],
     queryFn: () => apiGet<AccountRow[]>(`${game(id)}/accounts/${query({ status })}`),
+  })
+}
+
+// --- The office (P3.2, the 3D trial) --------------------------------------------------
+
+/** What the office floor shows; refreshed every two seconds while the page is open. */
+export function useOffice(id: number) {
+  return useQuery({
+    queryKey: [id, 'office'],
+    queryFn: () => apiGet<OfficeData>(`${game(id)}/office/`),
+    refetchInterval: 2000,
   })
 }

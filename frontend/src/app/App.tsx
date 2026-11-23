@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { Link, Navigate, Outlet, RouterProvider, createBrowserRouter } from 'react-router'
 
 import { useLogout, useSession } from '../api/session'
@@ -25,6 +26,11 @@ import { AccountsPage } from '../pages/AccountsPage'
 import { MissionsPage } from '../pages/MissionsPage'
 import { HandbookPage } from '../pages/HandbookPage'
 import { GameLayout } from './GameLayout'
+
+// The 3D office is loaded only when it is opened (three.js is large; P3.2).
+const OfficePage = lazy(() =>
+  import('../pages/OfficePage').then((m) => ({ default: m.OfficePage })),
+)
 
 function Shell() {
   const session = useSession()
@@ -97,6 +103,14 @@ const routes = [
               { path: 'health', element: <HealthPage /> },
               { path: 'missions', element: <MissionsPage /> },
               { path: 'handbook', element: <HandbookPage /> },
+              {
+                path: 'office',
+                element: (
+                  <Suspense fallback={<Loading what="the office" />}>
+                    <OfficePage />
+                  </Suspense>
+                ),
+              },
               { path: 'reviews/:period', element: <ReviewPage /> },
               { path: 'dashboard', element: <DashboardPage /> },
               { path: 'submissions', element: <SubmissionsPage /> },
