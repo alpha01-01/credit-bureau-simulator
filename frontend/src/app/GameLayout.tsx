@@ -11,6 +11,7 @@ import { useLiveClock } from './useLiveClock'
 
 const NAV = [
   ['', 'Briefing'],
+  ['office', 'Office'],
   ['missions', 'Missions'],
   ['events', 'Events'],
   ['dashboard', 'Dashboard'],
