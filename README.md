@@ -159,6 +159,20 @@ backend/.venv/Scripts/python scripts/check.py --full
 
 `--fast` runs only the quick subset used by the pre-commit hook.
 
+## The SQL console
+
+The Head of Data Analytics (and the Chief Executive) can run read-only SQL over their own game's data. Queries run as a PostgreSQL role, `simb_console`, that may read only the views of the `console` schema, and those views show only the player's own game. That role is created **once per database server, by a superuser** (the app's own database user may not create roles):
+
+```bash
+psql -U postgres -d postgres -c "CREATE ROLE simb_console NOLOGIN; GRANT simb_console TO simb;"
+```
+
+If the role is created after the migrations have run, give it its permissions with:
+
+```bash
+backend/.venv/Scripts/python backend/manage.py console_grants
+```
+
 ## Ground rules
 
 * **The truth boundary.** `apps.world` holds the hidden ground truth. Bureau-side modules must never import it; `import-linter` fails the build if they do.

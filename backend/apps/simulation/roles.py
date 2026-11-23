@@ -30,8 +30,8 @@ from .models import Game
 
 CHANGEOVER_TICKS = 2  # 30 minutes of game time (A-072)
 
-CEO, DATA_OPERATIONS, COMPLIANCE, SALES, FINANCE = (
-    "CEO", "DATA_OPERATIONS", "COMPLIANCE", "SALES", "FINANCE",
+CEO, DATA_OPERATIONS, COMPLIANCE, SALES, FINANCE, DATA_ANALYTICS = (
+    "CEO", "DATA_OPERATIONS", "COMPLIANCE", "SALES", "FINANCE", "DATA_ANALYTICS",
 )  # fmt: skip
 
 # Screens every role sees (the game layout's navigation keys).
@@ -72,6 +72,8 @@ ROLES: dict[str, Role] = {
                 "it",
                 "finance",
                 "reviews",
+                "analytics",
+                "console",
             ),
             frozenset(
                 {
@@ -120,6 +122,14 @@ ROLES: dict[str, Role] = {
             "Looks after subscribers and wins new ones: proposals to lenders at a price.",
             ("subscribers", "sales", "enquiries"),
             frozenset({"SEND_PROPOSAL"}),
+        ),
+        Role(
+            DATA_ANALYTICS,
+            "Head of Data Analytics",
+            "Studies the bureau's data: portfolio analytics by lender, product, region and "
+            "vintage, and a read-only SQL console over the bureau's own tables (P3.4).",
+            ("analytics", "console", "customers", "accounts", "enquiries", "reviews"),
+            frozenset(),
         ),
         Role(
             FINANCE,

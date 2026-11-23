@@ -29,6 +29,8 @@ const NAV = [
   ['it', 'IT'],
   ['finance', 'Finance'],
   ['reviews', 'Reviews'],
+  ['analytics', 'Analytics'],
+  ['console', 'SQL console'],
   ['handbook', 'Handbook'],
 ] as const
 
