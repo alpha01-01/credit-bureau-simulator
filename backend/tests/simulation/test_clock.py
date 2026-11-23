@@ -39,6 +39,7 @@ from apps.standards.calendar import easter_sunday, is_working_day, public_holida
 from apps.world.generation import build_world
 from apps.world.generation.persist import write_world
 from apps.world.models import World
+from tests.roles import working_as
 
 
 @pytest.fixture(autouse=True)
@@ -244,7 +245,7 @@ def test_clock_api(world: World) -> None:
 
 def test_rejection_policy_api(world: World) -> None:
     owner = User.objects.create_user("player")
-    game = start_game(world, owner=owner)
+    game = working_as(start_game(world, owner=owner), "DATA_OPERATIONS")
     client = APIClient()
     client.force_authenticate(owner)
     url = f"/api/v1/games/{game.pk}/rejection-policy/"

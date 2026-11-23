@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
-import { NavLink, Outlet } from 'react-router'
+import { NavLink, Outlet, useLocation } from 'react-router'
 
 import { useGame } from '../api/game'
 import { ClockBar } from '../components/ClockBar'
+import { RoleSwitcher, ScreenOwner } from '../components/RoleBar'
 import { Failed, Loading } from '../components/ui'
 import { hasUnseen } from '../lib/seen'
 import { useGameId } from './useGameId'
@@ -30,9 +31,18 @@ const NAV = [
   ['handbook', 'Handbook'],
 ] as const
 
+/** The screen a path shows, as the navigation names it; null below a list (an item's page). */
+function screenOf(pathname: string, gameId: number): string | null {
+  const rest = pathname.replace(`/games/${gameId}`, '').split('/').filter(Boolean)
+  if (rest.length === 0) return ''
+  if (rest.length === 1 || rest[0] === 'finance') return rest[0]
+  return null
+}
+
 export function GameLayout() {
   const gameId = useGameId()
   const game = useGame(gameId)
+  const location = useLocation()
   useLiveClock(gameId, game.data?.clock ?? null)
 
   const preparing = game.data && (game.data.setup_status !== 'READY' || !game.data.clock)
@@ -44,6 +54,7 @@ export function GameLayout() {
   if (game.isError) return <Failed error={game.error} />
 
   const data = game.data
+  const screen = screenOf(location.pathname, gameId)
   if (data.setup_status !== 'READY' || !data.clock) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-6" role="status">
@@ -66,8 +77,11 @@ export function GameLayout() {
           <span className="font-semibold">{data.bureau}</span>
           <ClockBar gameId={gameId} clock={data.clock} />
         </div>
+        <div className="mt-2">
+          <RoleSwitcher gameId={gameId} role={data.clock.role} />
+        </div>
         <nav aria-label="Game" className="mt-3 flex flex-wrap gap-1">
-          {NAV.map(([path, label]) => (
+          {NAV.filter(([path]) => data.clock?.role.screens.includes(path)).map(([path, label]) => (
             <NavLink
               key={path}
               to={path ? `/games/${gameId}/${path}` : `/games/${gameId}`}
@@ -88,6 +102,7 @@ export function GameLayout() {
           ))}
         </nav>
       </div>
+      {screen !== null && <ScreenOwner gameId={gameId} screen={screen} role={data.clock.role} />}
       <Outlet />
     </div>
   )

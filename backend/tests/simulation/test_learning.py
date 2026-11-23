@@ -108,6 +108,14 @@ def _solve(player: Player, mission: dict[str, Any]) -> None:
     """Do what the current mission asks, as far as the game allows now."""
     code = mission["code"]
     question = mission.get("question")
+    if code in ("M2", "M3"):  # Data Operations' work: take over that department first (P3.1)
+        role = player.get("/role/")["current"]
+        if role["code"] != "DATA_OPERATIONS":
+            switched = player.post("/role/", {"role": "DATA_OPERATIONS"})
+            assert switched.status_code == 200, switched.content
+            return
+        if not role["ready"]:
+            return
     if code == "M2":
         player.decide(CaseType.UNLOADABLE_TRIAGE, 3)
         subs = player.get("/submissions/")

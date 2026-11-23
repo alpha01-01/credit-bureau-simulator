@@ -38,6 +38,7 @@ from apps.world.generation.persist import write_world
 from apps.world.models import FileDefect, Lender, ProviderFile, World
 from apps.world.provider_files import generate_submission, layout_for, month_end
 from apps.world.provider_files.profiles import AVERAGE
+from tests.roles import working_as
 
 # A provider that changed its extract (every file drifts) but is otherwise tidy.
 DRIFTED = replace(AVERAGE, name="DRIFTED", template_drift=1.0, late_rate=0.0)
@@ -84,6 +85,7 @@ def test_a_drifted_file_is_mapped_by_the_player_and_loaded(world: World) -> None
         world, lender, earlier, DRIFTED, replace=True, drift_from=drift_from
     )
     run = process_submission(deliver(game, first.submission), at=WHEN)
+    game = working_as(game, "DATA_OPERATIONS")
     credit = run.submission.files.get(file_kind=FileKind.INDIVIDUAL.value)
     assert (credit.file_status, credit.rejection_reason) == (FileStatus.REJECTED, "T001")
 
@@ -259,6 +261,7 @@ def test_providers_get_a_feedback_report_of_what_was_rejected_and_why(world: Wor
     sub = generate_submission(world, lender, world.history_end, WORDY, replace=True).submission
     run = process_submission(deliver(game, sub), at=WHEN)
     reference = run.submission.submission_reference
+    working_as(game, "DATA_OPERATIONS")
     client = APIClient()
     client.force_authenticate(owner)
     url = f"/api/v1/games/{game.pk}/submissions/{reference}/feedback/"

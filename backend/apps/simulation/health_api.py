@@ -14,7 +14,7 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from . import controls, solvency
+from . import controls, roles, solvency
 from .api import _error, _game
 from .engine import ClockError
 from .failure import ENDINGS, INSOLVENT, LICENCE_REVOKED, PATHS, REMOVED_BY_BOARD
@@ -71,6 +71,7 @@ def health_view(request: Request, game_id: int) -> Response:
     if request.method == "POST":
         if str(request.data.get("action", "")) != "funding":
             return _error(ValueError("action must be funding"))
+        roles.require(game, "REQUEST_FUNDING")
         try:
             controls.request_funding(game, Decimal(str(request.data.get("amount"))))
         except (ClockError, InvalidOperation) as exc:

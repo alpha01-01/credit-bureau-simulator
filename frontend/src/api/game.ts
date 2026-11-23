@@ -23,6 +23,31 @@ export type Clock = {
   pause_rules: PauseRules
   stopped_by: Notice | null
   latest_notice: number | null
+  role: RoleState
+}
+
+/** The player's role (P3.1): the screens it sees, and whether the changeover is over. */
+export type RoleState = {
+  code: string
+  title: string
+  screens: string[]
+  ready: boolean
+  ready_at: string | null
+}
+
+export type RoleInfo = {
+  code: string
+  title: string
+  description: string
+  screens: string[]
+  actions: string[]
+}
+
+export function useRoles(id: number) {
+  return useQuery({
+    queryKey: [id, 'role'],
+    queryFn: () => apiGet<{ current: RoleState; roles: RoleInfo[] }>(`${game(id)}/role/`),
+  })
 }
 
 export type Severity = 'INFO' | 'WARNING' | 'CRITICAL'

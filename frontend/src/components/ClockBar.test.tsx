@@ -37,6 +37,7 @@ const clock: Clock = {
   pause_rules: { severities: ['CRITICAL'], deadlines: true },
   stopped_by: cashLow,
   latest_notice: 7,
+  role: { code: 'CEO', title: 'Chief Executive', screens: [''], ready: true, ready_at: null },
 }
 
 function wrap(children: ReactNode, path = '/games/3') {

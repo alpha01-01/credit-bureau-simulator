@@ -27,7 +27,7 @@ from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
-from . import hr, it, missions, providers, sales, solvency
+from . import hr, it, missions, providers, roles, sales, solvency
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
@@ -440,6 +440,21 @@ def answer_mission(game: Game, code: str, value: str) -> bool:
     return right
 
 
+def switch_role(game: Game, role: str) -> Game:
+    """Work as the chief executive or a department head (P3.1). The new role's actions wait
+    for the changeover (``roles.CHANGEOVER_TICKS``)."""
+    if role not in roles.ROLES:
+        raise ClockError(f"There is no role {role!r}")
+    if role == game.role:
+        raise ClockError(f"You are already working as the {roles.ROLES[role].title}")
+    with transaction.atomic():
+        record(game, "SWITCH_ROLE", {"role": role})
+        game.role = role
+        game.role_ready_tick = game.current_tick + roles.CHANGEOVER_TICKS
+        game.save(update_fields=["role", "role_ready_tick"])
+    return game
+
+
 def set_campaign(game: Game, on: bool) -> Game:
     with transaction.atomic():
         record(game, "SET_CAMPAIGN", {"on": on})
@@ -604,6 +619,8 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             answer_mission(target, str(action.payload["code"]), str(action.payload["value"]))
         case "SET_CAMPAIGN":
             target = set_campaign(target, bool(action.payload["on"]))
+        case "SWITCH_ROLE":
+            target = switch_role(target, str(action.payload["role"]))
         case "SET_ASSISTANCE":
             target = set_assistance(target, str(action.payload["name"]), bool(action.payload["on"]))
         case "REQUEST_FUNDING":
@@ -629,6 +646,7 @@ class ClockState:
     stopped_by: dict[str, Any] | None
     latest_notice: int | None
     ended_reason: str = ""
+    role: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -650,6 +668,7 @@ class ClockState:
             },
             "stopped_by": self.stopped_by,
             "latest_notice": self.latest_notice,
+            "role": self.role,
         }
 
 
@@ -672,6 +691,9 @@ def state(game: Game) -> ClockState:
         stopped_by=notice_dict(stop) if (stop := _paused_now(game)) else None,
         latest_notice=game.notices.order_by("-pk").values_list("pk", flat=True).first(),
         ended_reason=game.ended_reason,
+        role=roles.as_dict(
+            game, cal.tick_end(game.role_ready_tick) if game.role_ready_tick else None
+        ),
     )
 
 
