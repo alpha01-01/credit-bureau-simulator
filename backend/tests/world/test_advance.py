@@ -65,7 +65,9 @@ def test_stored_world_gains_exactly_the_next_month() -> None:
         (lenders[code], number): (balance, dpd, status)
         for code, number, balance, dpd, status in LoanMonth.objects.filter(
             world=world, period=period
-        ).values_list(
+        )
+        .exclude(loan__product="MOBILE_LOAN")  # the engine's loans; mobile ones: test_mobile
+        .values_list(
             "lender__code", "loan__account_number", "outstanding_balance", "days_past_due", "status"
         )
     }
@@ -93,9 +95,9 @@ def test_stored_world_gains_exactly_the_next_month() -> None:
         simulated[(lp.code, number)] = STATUS_NAMES[int(book["status"][i])]
     stored_status = dict(
         ((code, number), status)
-        for code, number, status in Loan.objects.filter(world=world).values_list(
-            "lender__code", "account_number", "status"
-        )
+        for code, number, status in Loan.objects.filter(world=world)
+        .exclude(product="MOBILE_LOAN")  # the mobile loans' statuses: test_mobile
+        .values_list("lender__code", "account_number", "status")
     )
     assert stored_status == simulated
     # One lender customer per customer number.

@@ -26,7 +26,7 @@ from apps.bureau.core.models import (
     CustomerIdentifier,
     ProviderCustomerLink,
 )
-from apps.bureau.quality.models import CaseType, Decision
+from apps.bureau.quality.models import CaseType, CorrectionRecord, Decision
 from apps.bureau.reports.enquiries import enquire
 from apps.bureau.submissions.models import RecordStatus, StagingRecord
 from apps.bureau.submissions.pipeline import process_submission
@@ -36,7 +36,7 @@ from apps.simulation.bridge import deliver, start_game
 from apps.simulation.consequences import trace
 from apps.simulation.engine import advance
 from apps.simulation.fingerprint import fingerprint
-from apps.simulation.judgement import sync_work_items
+from apps.simulation.judgement import first_link, sync_work_items
 from apps.simulation.models import (
     Consequence,
     DataQualityReview,
@@ -137,7 +137,8 @@ def _link_borrower(game: Game, link: ProviderCustomerLink) -> Borrower:
 
 
 def _customer_borrower(game: Game, customer_id: int) -> Borrower:
-    first = ProviderCustomerLink.objects.filter(customer_id=customer_id).order_by("pk").first()
+    # The link that created the customer, even if a correction has since moved it (P3.3).
+    first = first_link(customer_id)
     assert first is not None
     return _link_borrower(game, first)
 
@@ -355,7 +356,14 @@ def test_recorded_chains_agree_with_the_truth(world: World) -> None:
             provider_customer_number=chain.provider_customer,
         )
         if chain.effect == "MIXED_REPORT":
-            assert link.customer_id == chain.enquiry.customer_id
+            # The link is on the reported customer, unless an upheld dispute has since moved
+            # that provider customer's accounts off it (P2.7; seen with mobile loans, P3.3).
+            corrected = CorrectionRecord.objects.filter(
+                organization=game.organization,
+                from_customer_id=chain.enquiry.customer_id,
+                to_customer_id=link.customer_id,
+            ).exists()
+            assert link.customer_id == chain.enquiry.customer_id or corrected
             assert _link_borrower(game, link) != applicant
         else:
             assert link.customer_id != chain.enquiry.customer_id

@@ -20,6 +20,7 @@ The engine is a pure function of the configuration: same seed, same world.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -162,6 +163,9 @@ class SimulationResult:
     customers: list[tuple[int, int, int]]  # (lender, kind, borrower) in creation order
     customer_seq: list[int]  # per-lender sequence number, for customer numbers
     snapshots: Snapshots
+    # Mobile loans (P3.3), a stream of their own beside the engine's; None in worlds
+    # made without them.
+    mobile: Any = None
 
 
 class Engine:

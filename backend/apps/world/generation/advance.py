@@ -64,7 +64,13 @@ def extend_world(world_id: int) -> date:
             )
         anchor = date.fromisoformat(world.config["history_end"])
         extra = _months_between(anchor, world.history_end) + 1
-        generated = build_world(world.seed, world.scale, anchor, extra_months=extra)
+        generated = build_world(
+            world.seed,
+            world.scale,
+            anchor,
+            extra_months=extra,
+            mobile_loans=bool(world.config.get("mobile_loans", False)),
+        )
         result = generated.result
         t = len(result.months) - 1
         period = _month_end(result.months[t])
@@ -262,3 +268,9 @@ def _write_month(
             [STATUS_NAMES[int(s)] for s in snaps.column("status")[order].tolist()],
         ),
     )  # fmt: skip
+    if result.mobile is not None:
+        from .mobile_persist import write_month
+
+        write_month(
+            cursor, world.pk, config, result.mobile, result.months, generated.branches, t, period
+        )

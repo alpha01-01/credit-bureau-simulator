@@ -75,7 +75,7 @@ class TemplateMapping(models.Model):
     institution = models.ForeignKey(
         Institution, on_delete=models.CASCADE, related_name="template_mappings"
     )
-    file_kind = models.CharField(max_length=4)
+    file_kind = models.CharField(max_length=10)
     received = models.JSONField(help_text="The file's headers, as written, in order")
     columns = models.JSONField(help_text="The template column for each received header")
     created_at = models.DateTimeField(help_text="Game time")
@@ -91,7 +91,9 @@ class TemplateMapping(models.Model):
 class SubmissionFile(models.Model):
     submission = models.ForeignKey(Submission, on_delete=models.CASCADE, related_name="files")
     file_name = models.CharField(max_length=150)
-    file_kind = models.CharField(max_length=4, help_text="CONC or BUSC, from the file name")
+    file_kind = models.CharField(
+        max_length=10, help_text="CONC, BUSC, CONCMOBILE..., from the file name"
+    )
     file_format = models.CharField(max_length=10)
     file_size_bytes = models.BigIntegerField()
     file_hash = models.CharField(max_length=64, help_text="SHA-256 of the file as received")

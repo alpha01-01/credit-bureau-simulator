@@ -134,7 +134,7 @@ def test_clean_file_matches_the_truth_exactly(world: World, tmp_path: Path) -> N
     result = generate_submission(world, lender, period, CLEAN)
 
     files = {f.kind: f for f in result.submission.files.all()}
-    assert {"CONC", "BUSC"} <= set(files) <= {"CONC", "BUSC", "COND", "CONJ"}
+    assert {"CONC", "BUSC"} <= set(files) <= {"CONC", "BUSC", "COND", "CONJ", "CONCMOBILE"}
     for stored in files.values():
         # Named as the standard requires: SRN, reporting date, creation date, version, kind.
         match = FILE_NAME_PATTERN.fullmatch(stored.file_name)
@@ -214,10 +214,12 @@ def _assert_matches_world(
     assert values["AssetClassification"] == asset_classification(month.days_past_due)
     if values["FacilityStatusCode"] in ("C", "T"):
         assert values["CurBal"] == values["AmountInArrears"] == "0"
-        assert values["ClosedDate"] == format_date(period)
+        # A mobile loan closes on the day it was repaid; others at the month-end (P3.3).
+        assert values["ClosedDate"] == format_date(loan.repaid_date or period)
     else:
         assert values["AmountInArrears"] == whole(month.arrears_amount)
-    if kind is FileKind.INDIVIDUAL:
+    assert (kind is FileKind.MOBILE) == (loan.product == "MOBILE_LOAN")
+    if kind in (FileKind.INDIVIDUAL, FileKind.MOBILE):
         person = loan.customer.person
         assert person is not None
         assert values["NatIDNum"] == person.ghana_card

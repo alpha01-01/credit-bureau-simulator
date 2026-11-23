@@ -45,16 +45,21 @@ class FileKind(StrEnum):
     # ASSUMPTION A-041: the business identifiers, by analogy with BUSC and COND/CONJ.
     BUSINESS_CHEQUE = "BUSD"  # Business Dishonoured Cheque data file
     BUSINESS_JUDGMENT = "BUSJ"  # Business Judgment data file
+    # Mobile loans: the consumer credit template, in files of their own (owner, 23 November
+    # 2026: "the same template as individual loans; the file name is appended with mobile").
+    MOBILE = "CONCMOBILE"  # Consumer Credit data file for mobile loans
 
 
 # Credit files report facilities month by month; event files report one-off
 # events (a bounced cheque, a court judgment) about a person or a business.
-CREDIT_KINDS = (FileKind.INDIVIDUAL, FileKind.COMMERCIAL)
+CREDIT_KINDS = (FileKind.INDIVIDUAL, FileKind.COMMERCIAL, FileKind.MOBILE)
 CHEQUE_KINDS = (FileKind.CHEQUE, FileKind.BUSINESS_CHEQUE)
 JUDGMENT_KINDS = (FileKind.JUDGMENT, FileKind.BUSINESS_JUDGMENT)
 EVENT_KINDS = (*CHEQUE_KINDS, *JUDGMENT_KINDS)
 # File kinds by subject: an individual (the consumer identity block) or a business.
-CONSUMER_KINDS = (FileKind.INDIVIDUAL, FileKind.CHEQUE, FileKind.JUDGMENT)
+CONSUMER_KINDS = (FileKind.INDIVIDUAL, FileKind.CHEQUE, FileKind.JUDGMENT, FileKind.MOBILE)
+# Facilities of individuals: the consumer credit template, ordinary or mobile.
+INDIVIDUAL_CREDIT_KINDS = (FileKind.INDIVIDUAL, FileKind.MOBILE)
 BUSINESS_KINDS = (FileKind.COMMERCIAL, FileKind.BUSINESS_CHEQUE, FileKind.BUSINESS_JUDGMENT)
 
 
@@ -243,6 +248,7 @@ FIELDS: dict[FileKind, tuple[Field, ...]] = {
     FileKind.JUDGMENT: JUDGMENT_FIELDS,
     FileKind.BUSINESS_CHEQUE: BUSINESS_CHEQUE_FIELDS,
     FileKind.BUSINESS_JUDGMENT: BUSINESS_JUDGMENT_FIELDS,
+    FileKind.MOBILE: INDIVIDUAL_FIELDS,
 }
 FIELD_BY_NAME: dict[FileKind, dict[str, Field]] = {
     kind: {f.name: f for f in fields} for kind, fields in FIELDS.items()
@@ -276,6 +282,7 @@ CORE_FIELDS: dict[FileKind, frozenset[str]] = {
         "CustomerID", "BusinessName", "CourtName", "CaseNumber", "FilingDate", "Amount",
     }),
 }  # fmt: skip
+CORE_FIELDS[FileKind.MOBILE] = CORE_FIELDS[FileKind.INDIVIDUAL]
 
 # Identifiers that satisfy "at least one ID" for an individual, in matching priority.
 INDIVIDUAL_ID_FIELDS = ("NatIDNum", "VotersIDNum", "DriverLicNum", "PassportNum")
@@ -298,7 +305,7 @@ def file_name(
 
 FILE_NAME_PATTERN = re.compile(
     r"(?P<srn>\d{5})-(?P<period>\d{8})-(?P<created>\d{8})-(?P<version>\d+\.\d+)"
-    r"-(?P<kind>CONC|BUSC|COND|CONJ|BUSD|BUSJ)-(?P<sequence>\d+)\.csv"
+    r"-(?P<kind>CONCMOBILE|CONC|BUSC|COND|CONJ|BUSD|BUSJ)-(?P<sequence>\d+)\.csv"
 )
 
 

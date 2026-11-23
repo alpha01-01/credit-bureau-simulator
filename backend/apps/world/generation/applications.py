@@ -17,6 +17,7 @@ from django.db import transaction
 from apps.world.models import Business, Lender, LoanApplication, Person, World
 
 from .config import LENDERS, PRODUCTS
+from .mobile import PRODUCT as MOBILE_PRODUCT
 from .rng import stream
 
 # Declined applications per approved loan (ASSUMPTION A-024).
@@ -50,8 +51,12 @@ def ensure_applications(world: World, period: date) -> int:
     with transaction.atomic():
         for lender in Lender.objects.filter(world=world).order_by("seq_no"):
             profile = _PROFILES.get(lender.code)
+            # Mobile loans are decided on the lender's own data: they are not credit
+            # applications that a subscriber checks with the bureau (A-073; the mobile loan
+            # report comes with the score product).
             loans = list(
                 lender.loans.filter(disbursement_date__gte=first, disbursement_date__lte=period)
+                .exclude(product=MOBILE_PRODUCT)
                 .select_related("customer")
                 .order_by("account_number")
             )

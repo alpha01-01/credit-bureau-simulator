@@ -17,6 +17,7 @@ How world products map to the standard (ASSUMPTION A-037):
   DIGITAL_LOAN         119 non-secured loan      A crisis      none
   BUSINESS_TERM_LOAN   126 term loan             G working cap none
   MICRO_BUSINESS_LOAN  126 term loan             G working cap none
+  MOBILE_LOAN          122 personal loan         P personal    none  (in CONCMOBILE files, P3.3)
 
 Business loans name the owner as an individual guarantor; consumer loans have none.
 """
@@ -35,6 +36,7 @@ from apps.standards.submission_template import (
     CHEQUE_KINDS,
     CONSUMER_KINDS,
     EVENT_KINDS,
+    INDIVIDUAL_CREDIT_KINDS,
     FileKind,
     asset_classification,
     format_date,
@@ -73,7 +75,10 @@ PRODUCT_CODES: dict[str, tuple[str, str, str]] = {
     "DIGITAL_LOAN": ("119", "A", ""),
     "BUSINESS_TERM_LOAN": ("126", "G", ""),
     "MICRO_BUSINESS_LOAN": ("126", "G", ""),
+    "MOBILE_LOAN": ("122", "P", ""),
 }
+MOBILE_PRODUCT = "MOBILE_LOAN"
+BULLET = "18"  # repayment frequency: one payment at maturity
 SECURITY_COVER = {"D": Decimal("1.4"), "L": Decimal("1.2")}  # security value / loan amount
 SALARY_LOAN, PAYROLL_DEDUCTION = "115", "108"
 
@@ -131,7 +136,7 @@ def _position(
 _ACCOUNT_COLUMNS = """
     l.id, br.code, c.customer_number, l.account_number, l.product, l.currency,
     l.disbursement_date, l.first_due_date, l.maturity_date, l.principal, l.installment,
-    l.term_months,
+    l.term_months, l.repaid_date,
     m.outstanding_balance, m.arrears_amount, m.days_past_due, m.amount_paid, m.status,
     pm.outstanding_balance, pm.arrears_amount, pm.days_past_due, pm.amount_paid, pm.status
 """
@@ -145,6 +150,7 @@ _ACCOUNT_JOINS = """
     LEFT JOIN world_loanmonth pm
            ON pm.world_id = m.world_id AND pm.loan_id = m.loan_id AND pm.period = %(previous)s
     WHERE m.world_id = %(world)s AND m.lender_id = %(lender)s AND m.period = %(period)s
+      AND (l.product = 'MOBILE_LOAN') = %(mobile)s
     ORDER BY br.code, l.account_number
 """
 
@@ -214,13 +220,14 @@ def load_truth(
         "period": period,
         "previous": previous_month_end(period),
         "loans": loan_ids,
+        "mobile": kind is FileKind.MOBILE,
     }
     world = World.objects.get(pk=world_id)
     if kind in EVENT_KINDS:
         ensure_events(world, period)
         sql, build = _EVENT_SQL[kind], _event
     else:
-        sql = _INDIVIDUAL_SQL if kind is FileKind.INDIVIDUAL else _COMMERCIAL_SQL
+        sql = _INDIVIDUAL_SQL if kind in INDIVIDUAL_CREDIT_KINDS else _COMMERCIAL_SQL
         build = _record
     if loan_ids is not None and kind in EVENT_KINDS:
         sql = sql.replace(" ORDER BY", " AND e.loan_id = ANY(%(loans)s) ORDER BY", 1)
@@ -397,9 +404,10 @@ def _event(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> Tru
 
 def _record(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> TruthRecord:
     (loan_id, branch, customer, account, product, currency, disbursed, first_due, maturity,
-     principal, installment, term, bal, arr, dpd, paid, status,
-     p_bal, p_arr, p_dpd, p_paid, p_status) = row[:22]  # fmt: skip
-    rest = row[22:]
+     principal, installment, term, repaid, bal, arr, dpd, paid, status,
+     p_bal, p_arr, p_dpd, p_paid, p_status) = row[:23]  # fmt: skip
+    rest = row[23:]
+    mobile = product == MOBILE_PRODUCT
     due_day = first_due.day
     previous_period = previous_month_end(period)
     previous = None
@@ -417,7 +425,7 @@ def _record(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> Tr
         "CustomerID": customer,
         "BranchCode": branch,
     }
-    if kind is FileKind.INDIVIDUAL:
+    if kind in INDIVIDUAL_CREDIT_KINDS:
         employment = rest[10]
         if product == "PERSONAL_LOAN" and employment.startswith("SALARIED"):
             facility_type = "115"
@@ -449,9 +457,16 @@ def _record(row: tuple[Any, ...], kind: FileKind, seed: int, period: date) -> Tr
         "DisbursementAmt": whole(principal),
         "MaturityDate": format_date(maturity),
         "SchdInstalAmount": whole(installment),
-        "RepaymentFreq": "12",
+        "RepaymentFreq": BULLET if mobile else "12",
     }
     position = _position(period, disbursed, due_day, bal, arr, dpd, paid, status, earlier)
+    if mobile and repaid is not None and status == "PAID_OFF":
+        # Repaid in one payment, on the day it was paid (not on a monthly due day).
+        position |= {
+            "LastPaymentDate": format_date(repaid),
+            "FacilityStatusDate": format_date(repaid),
+            "ClosedDate": format_date(repaid),
+        }
     values |= {k: position[k] for k in ("LastPaymentAmount", "LastPaymentDate", "CurBal")}
     values["CurBalIndicator"] = "D"
     values |= {k: position[k] for k in ("AssetClassification", "AmountInArrears", "NDIA")}

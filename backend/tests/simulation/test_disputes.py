@@ -203,9 +203,13 @@ def test_a_missed_deadline_produces_a_regulator_finding(world: World) -> None:
     standing = RegulatorStanding.objects.get(game=game)
     assert standing.level == 1  # a concern letter
     assert Notice.objects.filter(game=game, kind="REGULATOR_LADDER").count() == 1
-    # One finding per dispute, however long it stays open.
+    # One finding per dispute, however long it stays open. (Other disputes the world
+    # raises meanwhile may bring findings of their own.)
     game = controls.advance_by(game, "day", 3)
-    assert RegulatorFinding.objects.filter(game=game).count() == 1
+    assert (
+        RegulatorFinding.objects.filter(game=game, reference=str(dispute.dispute_number)).count()
+        == 1
+    )
 
 
 def test_the_ladder_climbs_with_findings_and_fines_the_bureau(world: World) -> None:

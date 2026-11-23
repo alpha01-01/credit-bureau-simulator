@@ -33,6 +33,7 @@ PHONE_FIELDS = {
     FileKind.JUDGMENT: _PERSON_PHONES,
     FileKind.BUSINESS_CHEQUE: ("OfficeTel1",),
     FileKind.BUSINESS_JUDGMENT: ("OfficeTel1",),
+    FileKind.MOBILE: _PERSON_PHONES,
 }
 IDENTIFIER_FIELD = {
     FileKind.INDIVIDUAL: "NatIDNum",
@@ -41,6 +42,7 @@ IDENTIFIER_FIELD = {
     FileKind.JUDGMENT: "NatIDNum",
     FileKind.BUSINESS_CHEQUE: "TINum",
     FileKind.BUSINESS_JUDGMENT: "TINum",
+    FileKind.MOBILE: "NatIDNum",
 }
 NAME_FIELDS = {
     FileKind.INDIVIDUAL: _PERSON_NAMES,
@@ -49,6 +51,7 @@ NAME_FIELDS = {
     FileKind.JUDGMENT: _PERSON_NAMES,
     FileKind.BUSINESS_CHEQUE: ("BusinessName",),
     FileKind.BUSINESS_JUDGMENT: ("BusinessName",),
+    FileKind.MOBILE: _PERSON_NAMES,
 }
 # The record's own date: a mistyped one is a FUTURE_DATE defect.
 EVENT_DATE = {
@@ -58,6 +61,7 @@ EVENT_DATE = {
     FileKind.JUDGMENT: "FilingDate",
     FileKind.BUSINESS_CHEQUE: "DateBounced",
     FileKind.BUSINESS_JUDGMENT: "FilingDate",
+    FileKind.MOBILE: "DisbursementDate",
 }
 DATE_FIELDS = {
     FileKind.INDIVIDUAL: ("DOB", "DisbursementDate"),
@@ -66,6 +70,7 @@ DATE_FIELDS = {
     FileKind.JUDGMENT: ("DOB", "FilingDate"),
     FileKind.BUSINESS_CHEQUE: ("RegistrationDate", "DateBounced"),
     FileKind.BUSINESS_JUDGMENT: ("RegistrationDate", "FilingDate"),
+    FileKind.MOBILE: ("DOB", "DisbursementDate"),
 }
 _CREDIT_AMOUNTS = ("FacilityAmount", "SchdInstalAmount", "CurBal", "AmountInArrears")
 AMOUNT_FIELDS = {
@@ -75,6 +80,7 @@ AMOUNT_FIELDS = {
     FileKind.JUDGMENT: ("Amount",),
     FileKind.BUSINESS_CHEQUE: ("ChequeAmount",),
     FileKind.BUSINESS_JUDGMENT: ("Amount",),
+    FileKind.MOBILE: _CREDIT_AMOUNTS,
 }
 
 # Alternative column names seen when a provider changes its extract, including

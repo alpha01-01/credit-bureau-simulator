@@ -107,7 +107,7 @@ def write_world(
         generator_version=_generator_version(),
         history_start=period_ends[result.history_start],
         history_end=period_ends[-1],
-        config=_config_snapshot(config),
+        config={**_config_snapshot(config), "mobile_loans": result.mobile is not None},
         stats=asdict(stats),
     )
     world_id = world.pk
@@ -349,6 +349,14 @@ def write_world(
             f"ALTER TABLE world_loanmonth ATTACH PARTITION {partition} FOR VALUES IN ({world_id})"
         )
         cursor.execute(f"ANALYZE {partition}")
+
+        if result.mobile is not None:
+            from .mobile_persist import write_history
+
+            write_history(
+                cursor, world_id, config, result.mobile, months, result.history_start, branches,
+                lender_ids, branch_ids, person_ids, first_seq_no=len(loan_idx) + 1,
+            )  # fmt: skip
 
     # Fresh statistics, so the first queries on the new world get sensible plans. Without
     # them a new database thinks every table holds one row and joins them blindly (P2.1).
