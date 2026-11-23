@@ -88,6 +88,7 @@ def _revenue(game: Game) -> Decimal:
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.slow
 def test_hiring_signing_and_an_outage_show_in_queue_revenue_and_freshness(world: World) -> None:
     base = _days(_start(world), OUTAGE_DAYS)
     outage_end = controls.state(base).now.date()

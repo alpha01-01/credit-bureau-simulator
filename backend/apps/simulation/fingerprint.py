@@ -296,7 +296,10 @@ def _fingerprint(game: Game) -> _Hasher:
         h,
         "transformations",
         TransformationLog.objects.filter(record__run__submission__organization_id=org)
-        .order_by(rec, "record__file__storage_path", "record__source_row_number", "field")
+        # A field changed twice (cleansed, then corrected by a reviewer) has two rows:
+        # without "pk" (the order they were made) the two came back in either order,
+        # which failed one full test run in ten (P3.0).
+        .order_by(rec, "record__file__storage_path", "record__source_row_number", "field", "pk")
         .values_list(
             rec, "record__file__file_name", "record__source_row_number", "field", "rule_code",
             "value_before", "value_after",
@@ -367,7 +370,9 @@ def _fingerprint(game: Game) -> _Hasher:
         h,
         "observations",
         AccountObservation.objects.filter(credit_account__organization_id=org)
-        .order_by(f"{acc}{inst}", f"{acc}facility_account_number", "reporting_date", "is_current")
+        .order_by(
+            f"{acc}{inst}", f"{acc}facility_account_number", "reporting_date", "is_current", "pk"
+        )
         .values_list(
             f"{acc}{inst}", f"{acc}facility_account_number", "reporting_date",
             "outstanding_balance", "arrears_amount", "days_past_due", "instalment_amount",

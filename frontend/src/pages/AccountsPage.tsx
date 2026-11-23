@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router'
 
 import { useAccounts } from '../api/game'
 import { useGameId } from '../app/useGameId'
-import { Empty, Failed, Loading, Page, Shown, Table, Td } from '../components/ui'
+import { Coded, Empty, Failed, Loading, Page, Shown, Table, Td } from '../components/ui'
 import { day, money } from '../lib/format'
 
 /** Credit accounts on file; the dashboard's "Open accounts" figure drills here. */
@@ -34,10 +34,14 @@ export function AccountsPage() {
                   {a.customer}
                 </Link>
               </Td>
-              <Td>{a.facility_type}</Td>
+              <Td>
+                <Coded name={a.facility_type_name} code={a.facility_type} />
+              </Td>
               <Td>{day(a.opened)}</Td>
               <Td right>{money(a.amount)}</Td>
-              <Td>{a.status}</Td>
+              <Td>
+                <Coded name={a.status_name} code={a.status} />
+              </Td>
             </tr>
           ))}
         </Table>

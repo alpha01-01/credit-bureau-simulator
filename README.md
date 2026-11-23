@@ -145,10 +145,16 @@ The bureau keeps real double-entry books. Rent, IT costs, invoices (with VAT and
 
 ## Checks
 
-Run everything (formatting, lint, module boundaries, types, migrations, tests) before merging:
+Run everything (formatting, lint, module boundaries, types, migrations, tests):
 
 ```bash
 backend/.venv/Scripts/python scripts/check.py
+```
+
+The backend tests that play whole game months are marked `slow` and left out of that run (about 7 minutes). Before merging, include them with `--full` (about 25 minutes):
+
+```bash
+backend/.venv/Scripts/python scripts/check.py --full
 ```
 
 `--fast` runs only the quick subset used by the pre-commit hook.

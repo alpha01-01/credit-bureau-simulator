@@ -34,6 +34,9 @@ DJANGO_SETTINGS_MODULE = "config.settings.test"
 testpaths = ["tests", "apps"]
 python_files = ["test_*.py"]
 addopts = "--strict-markers -ra"
+markers = [
+    "slow: month-long tests, run only by scripts/check.py --full (before merging)",
+]
 
 # --- Module boundaries -------------------------------------------------------
 # Document 06, Section 10. The world layer is hidden ground truth.

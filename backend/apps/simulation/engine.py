@@ -148,7 +148,7 @@ def next_busy_tick(game: Game) -> int:
         organization_id=game.organization_id, submission_status=SubmissionStatus.RECEIVED
     ).exists():
         candidates.append(end_of_day_tick(current))
-    if has_work(game.organization):
+    if has_work(game.organization, missions.held_for_player(game)):
         candidates.append(current + 1)  # staff are working through the queue
     ending = (
         Incident.objects.filter(game=game, ends_tick__gte=current)
@@ -217,13 +217,15 @@ def run_tick(game_id: int, tick: int) -> bool:
         ScheduledEvent.objects.bulk_update(handled, ["status", "processed_tick"], batch_size=1000)
         processed += len(handled)
 
-        if has_work(game.organization):
+        held = missions.held_for_player(game)
+        if has_work(game.organization, held):
             processed += work_tick(
                 game.organization,
                 tick,
                 (tick - 1) // TICKS_PER_DAY,
                 cal.tick_end(tick),
                 rng_for(game),
+                held=held,
             )
 
         if cal.is_last_tick_of_day(tick):

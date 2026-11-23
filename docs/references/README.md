@@ -31,7 +31,7 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 | R9 | **Credit report layout(s)** — sections and fields of individual and business reports (synthetic sample) | Report product, report QA work items | Needed |
 | R10 | **Data Protection Act, 2012 (Act 843)** — relevant sections | Handbook, access control, compliance events | Needed (public) |
 | R11 | **Bank of Ghana directives and notices** on credit reporting (e.g. data retention, participation of non-bank institutions, credit scoring) | Regulator rules, events | Needed (public) |
-| R12 | **Consent and permissible-purpose practice**: how subscribers evidence consent; what purposes are allowed | Enquiry workflow | **Partly answered** (owner, 23 November 2026): consent is given on the lender's application form; other permissible purposes still to confirm |
+| R12 | **Consent and permissible-purpose practice**: how subscribers evidence consent; what purposes are allowed | Enquiry workflow | **Answered by the owner** (23 November 2026): consent is given on the application form; it covers new credit, account review, employment and tenancy screening, and debt collection |
 | R13 | **Typical bureau organisation**: roles, headcount, salary bands (GHS) | Starting organisation, payroll | Needed |
 | R14 | **Typical operating costs**: rent (Accra office), IT infrastructure, software licences | Finance, startup scenario | Needed |
 | R15 | **Bank of Ghana credit reporting annual reports** (market statistics: enquiries, records, participants) | Calibrating world scale and demand | Public |

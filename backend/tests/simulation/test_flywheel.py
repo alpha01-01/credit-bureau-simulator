@@ -63,6 +63,7 @@ def _rates(game: Game) -> tuple[float, float]:
     return (sum(b.fell_behind for b in books) / lent, sum(b.defaulted for b in books) / lent)
 
 
+@pytest.mark.slow
 def test_a_careful_bureaus_lenders_lend_better_and_stay(world: World) -> None:
     careful = _year(world, careful=True)
     careless = _year(world, careful=False)

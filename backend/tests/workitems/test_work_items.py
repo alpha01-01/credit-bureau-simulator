@@ -25,11 +25,11 @@ from apps.bureau.referencing.similarity import AUTO_LINK, compare_individuals, j
 from apps.bureau.submissions.models import RecordStatus, StagingRecord
 from apps.bureau.submissions.pipeline import process_submission
 from apps.org.models import Employee
-from apps.simulation import controls
+from apps.simulation import controls, missions
 from apps.simulation.bridge import deliver, start_game
 from apps.simulation.fingerprint import fingerprint
 from apps.simulation.judgement import customer_borrower, record_borrower, sync_work_items
-from apps.simulation.models import Game
+from apps.simulation.models import Game, MissionState
 from apps.workitems.models import ItemStatus, ResolvedBy, WorkItem
 from apps.workitems.resolution import judge, p_correct
 from apps.world.generation import build_world
@@ -201,6 +201,31 @@ def test_employees_work_the_queue_and_explain_every_decision(world: World) -> No
     worked = Employee.objects.filter(organization=game.organization, done_today__gt=0)
     assert worked.exists()
     assert all(sum(e.experience.values()) > 0 for e in worked)
+
+
+def test_during_m2_the_team_leaves_unloadable_records_for_the_player(world: World) -> None:
+    """P3.0: M2 asks the player to decide unloadable records; the team leaves them alone."""
+    game = _queue(world)
+    game.campaign = True
+    game.save(update_fields=["campaign"])
+    MissionState.objects.create(game=game, code="M1", completed_tick=0)
+    assert missions.current(game).code == "M2"  # type: ignore[union-attr]
+    assert missions.held_for_player(game) == {CaseType.UNLOADABLE_TRIAGE}
+
+    controls.advance_by(game, "day")
+    items = WorkItem.objects.filter(organization=game.organization)
+    triage = items.filter(item_type=CaseType.UNLOADABLE_TRIAGE)
+    assert triage.exists()
+    assert not triage.exclude(status=ItemStatus.OPEN).exists()  # all still the player's
+    assert (
+        items.exclude(item_type=CaseType.UNLOADABLE_TRIAGE)
+        .filter(resolved_by=ResolvedBy.EMPLOYEE)
+        .exists()
+    )  # the team carried on with the rest
+
+    for item in triage.order_by("item_number")[: missions.TRIAGE_TARGET]:
+        controls.resolve_item(game, item.item_number, Decision.RETURN_TO_PROVIDER)
+    assert missions.held_for_player(game) == frozenset()
 
 
 def test_replay_with_player_decisions_is_exact(world: World) -> None:

@@ -189,6 +189,7 @@ def _unloadable(game: Game) -> int:
     ).count()
 
 
+@pytest.mark.slow
 def test_a_cleansing_rule_changes_the_next_run_measured_against_the_truth(world: World) -> None:
     without = _wordy_january(world, [])
     with_rules = _wordy_january(world, [("Male", "M"), ("Female", "F")])
@@ -228,6 +229,7 @@ def test_a_careless_rule_is_measured_as_wrong(world: World) -> None:
     assert measured["changes"] > 10 and measured["right"] == 0
 
 
+@pytest.mark.slow
 def test_relaxing_a_check_loads_records_that_are_measured_against_the_truth(world: World) -> None:
     game = _wordy_january(world, [], relax=True)
     review = DataQualityReview.objects.get(game=game, period__month=1, period__year=2027)
@@ -285,6 +287,7 @@ def test_providers_get_a_feedback_report_of_what_was_rejected_and_why(world: Wor
 # --- Replay -------------------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_mapping_rules_and_feedback_replay_exactly(world: World) -> None:
     original = controls.set_pause_rules(start_game(world), [], deadlines=False)
     controls.add_cleansing_rule(original, "Gender", "REPLACE", "Male", "M", provider="ATB")

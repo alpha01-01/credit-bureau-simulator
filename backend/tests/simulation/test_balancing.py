@@ -45,6 +45,7 @@ def dominates(a: dict[str, float], b: dict[str, float]) -> bool:
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.slow
 def test_strict_quality_and_fast_coverage_differ_and_neither_dominates(world: World) -> None:
     strict = balancing.outcomes(balancing.play(world, "strict_quality", MONTHS))
     fast = balancing.outcomes(balancing.play(world, "fast_coverage", MONTHS))

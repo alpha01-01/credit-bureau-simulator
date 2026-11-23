@@ -97,6 +97,7 @@ def _identity(game: Game) -> dict[str, int]:
 # --- The trade-off ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_thresholds_trade_false_merges_against_false_splits(world: World) -> None:
     basic = _identity(_january(world, "BASIC", 0.92, 0.75))
     low = _identity(_january(world, "STANDARD", 0.60, 0.50))
@@ -112,6 +113,7 @@ def test_thresholds_trade_false_merges_against_false_splits(world: World) -> Non
     assert basic["false_merges"] == 0
 
 
+@pytest.mark.slow
 def test_the_review_shows_how_each_way_of_linking_did(world: World) -> None:
     game = _january(world, "STANDARD", 0.60, 0.50)
     review = DataQualityReview.objects.get(game=game, period__month=1, period__year=2027)
@@ -192,6 +194,7 @@ def test_providers_resend_some_rows_with_the_name_retyped(world: World) -> None:
 # --- Policy, cost and replay --------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_matching_policy_is_a_replayable_action_and_tooling_costs_money(world: World) -> None:
     owner = User.objects.create_user("player")
     game = start_game(world, owner=owner)

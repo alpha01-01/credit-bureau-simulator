@@ -82,6 +82,16 @@ export function Shown({ rows }: { rows: unknown[] & { total?: number } }) {
   )
 }
 
+/** A template code shown by its meaning, with the code itself beside it. */
+export function Coded({ name, code }: { name: string; code: string }) {
+  if (name === code) return <span className="font-mono text-xs">{code}</span>
+  return (
+    <span>
+      {name} <span className="font-mono text-xs text-slate-400">{code}</span>
+    </span>
+  )
+}
+
 export function Badge({
   tone = 'neutral',
   children,

@@ -159,7 +159,8 @@ def _m2(game: Game) -> Check:
     return Check(
         [
             Objective(
-                f"Decide {TRIAGE_TARGET} unloadable records yourself (Work queue)",
+                f"Decide {TRIAGE_TARGET} unloadable records yourself (Work queue; "
+                "your team leaves them for you until you have)",
                 triaged >= TRIAGE_TARGET,
                 _count(triaged, TRIAGE_TARGET),
             ),
@@ -459,6 +460,22 @@ def current(game: Game) -> Mission | None:
         )
     )
     return next((m for m in MISSIONS if m.code not in done), None)
+
+
+def held_for_player(game: Game) -> frozenset[str]:
+    """Work item types the team leaves for the player while a mission asks for them.
+
+    M2 asks the player to decide unloadable records; in a small world they are few,
+    and the team would otherwise take them first (P3.0).
+    """
+    if not game.campaign:
+        return frozenset()
+    mission = current(game)
+    if mission is None or mission.code != "M2":
+        return frozenset()
+    if _player_items(game, CaseType.UNLOADABLE_TRIAGE).count() >= TRIAGE_TARGET:
+        return frozenset()
+    return frozenset({CaseType.UNLOADABLE_TRIAGE})
 
 
 def answered(record: MissionState) -> bool:

@@ -145,6 +145,7 @@ def _solve(player: Player, mission: dict[str, Any]) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.slow
 def test_a_player_completes_the_campaign_from_what_the_screens_show(world: World) -> None:
     owner = User.objects.create_user("learner")
     game = controls.set_pause_rules(start_game(world, owner=owner), [], deadlines=False)

@@ -22,6 +22,7 @@ from django.db import connection, models, transaction
 
 from apps.bureau.core.models import AccountObservation, CreditAccount
 from apps.bureau.quality.models import TransformationLog
+from apps.bureau.submissions.models import ProcessingRun, StagingRecord
 from apps.bureau.submissions.pipeline import PROCESSING_VERSION
 from apps.commercial.models import UsageRecord
 from apps.finance.models import JournalEntry, JournalLine
@@ -36,7 +37,7 @@ from .models import (
     PlayerAction,
 )
 
-SUMMARY_FORMAT = "1"
+SUMMARY_FORMAT = "2"
 CODE_VERSION = f"{PROCESSING_VERSION}/c{SUMMARY_FORMAT}"
 
 # What is counted: everything the game owns, apart from the game and organisation rows,
@@ -44,12 +45,18 @@ CODE_VERSION = f"{PROCESSING_VERSION}/c{SUMMARY_FORMAT}"
 # Transformation logs have no game key and take seconds to count on an established
 # bureau (so does reading every staging record's changes); they are left to the full
 # fingerprint, which tests compare where games are small.
+# Staging records are counted from their runs (``records_received``): counting the rows
+# themselves read half a million freshly loaded rows and took most of a month-end
+# (P3.0). ``test_checkpoints`` checks that the two always agree.
 _SUMMARISED: tuple[tuple[type[models.Model], str], ...] = tuple(
     (model, condition)
     for model, condition in _ORDER
     if model
-    not in (Game, Organization, HistoryTemplate, Checkpoint, PlayerAction, TransformationLog)
-)
+    not in (
+        Game, Organization, HistoryTemplate, Checkpoint, PlayerAction, TransformationLog,
+        StagingRecord,
+    )
+)  # fmt: skip
 
 
 def _table(model: type[models.Model]) -> str:
@@ -66,6 +73,8 @@ _TOTALS = {
     f"(SELECT id FROM {_table(CreditAccount)} WHERE organization_id = %(org)s)",
     "usage_billed": f"SELECT COALESCE(SUM(quantity * unit_price), 0) FROM {_table(UsageRecord)} "
     "WHERE organization_id = %(org)s",
+    "staging_records": f"SELECT COALESCE(SUM(records_received), 0) FROM {_table(ProcessingRun)} "
+    "WHERE id IN (SELECT id FROM scope_runs)",
 }
 
 
