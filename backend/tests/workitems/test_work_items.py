@@ -37,6 +37,7 @@ from apps.world.generation.persist import write_world
 from apps.world.models import Lender, World
 from apps.world.provider_files import generate_submission
 from apps.world.provider_files.profiles import POOR
+from tests.roles import working_as
 
 # Lots of the defects that need judgement, nothing that rejects whole files.
 TRICKY = replace(
@@ -260,6 +261,7 @@ def test_work_item_api_never_reveals_the_answer(world: World) -> None:
 
     listing = client.get(f"/api/v1/games/{game.pk}/work-items/?status=OPEN").json()
     assert listing
+    game = working_as(game, "DATA_OPERATIONS")
     number = listing[0]["number"]
     detail = client.get(f"/api/v1/games/{game.pk}/work-items/{number}/").json()
     body = str(listing) + str(detail)

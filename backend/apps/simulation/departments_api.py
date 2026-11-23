@@ -24,7 +24,7 @@ from apps.commercial.models import Contract, Subscriber
 from apps.finance.events import IT_CAPACITY_COST
 from apps.org.models import Employee
 
-from . import controls, hr, it, sales
+from . import controls, hr, it, roles, sales
 from .api import _error, _game
 from .clock import TICKS_PER_HOUR
 from .demand import REFERENCE_PRICE
@@ -47,12 +47,15 @@ def staff(request: Request, game_id: int) -> Response:
         data, action = request.data, str(request.data.get("action", ""))
         try:
             if action == "hire":
+                roles.require(game, "HIRE")
                 controls.hire_candidate(game, int(data.get("candidate", 0)))
             elif action == "train":
+                roles.require(game, "TRAIN_EMPLOYEE")
                 controls.train_employee(
                     game, str(data.get("employee", "")), str(data.get("work_type", ""))
                 )
             elif action == "salary":
+                roles.require(game, "SET_SALARY")
                 controls.set_salary(game, str(data.get("employee", "")), _money(data.get("salary")))
             else:
                 return _error(ValueError("action must be hire, train or salary"))
@@ -111,6 +114,7 @@ def _proposal(p: Proposal) -> dict[str, Any]:
 def sales_view(request: Request, game_id: int) -> Response:
     game = _game(request, game_id)
     if request.method == "POST":
+        roles.require(game, "SEND_PROPOSAL")
         try:
             controls.send_proposal(
                 game, str(request.data.get("lender", "")), _money(request.data.get("price"))
@@ -175,8 +179,10 @@ def it_view(request: Request, game_id: int) -> Response:
         action = str(request.data.get("action", ""))
         try:
             if action == "respond":
+                roles.require(game, "RESPOND_TO_OUTAGE")
                 controls.respond_to_outage(game, str(request.data.get("response", "")))
             elif action == "capacity":
+                roles.require(game, "SET_IT_CAPACITY")
                 controls.set_it_capacity(game, str(request.data.get("level", "")))
             else:
                 return _error(ValueError("action must be respond or capacity"))

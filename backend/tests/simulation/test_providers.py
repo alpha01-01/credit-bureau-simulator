@@ -29,6 +29,7 @@ from apps.simulation.models import Delivery, Game, ProviderRelationship
 from apps.world.generation import build_world
 from apps.world.generation.persist import write_world
 from apps.world.models import FileDefect, World
+from tests.roles import working_as
 
 PROVIDER = "ATB"
 MONTHS = 4  # January's files are as usual; three months to respond
@@ -147,6 +148,7 @@ def test_training_costs_money_once_a_month(world: World) -> None:
 def test_providers_screen_and_replay(world: World) -> None:
     owner = User.objects.create_user("player")
     game = controls.set_pause_rules(start_game(world, owner=owner), [], deadlines=False)
+    game = working_as(game, "DATA_OPERATIONS")
     client = APIClient()
     client.force_authenticate(owner)
     url = f"/api/v1/games/{game.pk}/providers/"

@@ -36,6 +36,7 @@ from apps.workitems.models import ItemStatus, WorkItem
 from apps.world.generation import build_world
 from apps.world.generation.persist import write_world
 from apps.world.models import World
+from tests.roles import working_as
 
 DAYS = 15
 OUTAGE_DAYS = 5
@@ -239,9 +240,12 @@ def test_department_screens(world: World) -> None:
     sales = client.get(f"{base}/sales/").json()
     codes = {p["code"] for p in sales["prospects"]}
     assert PROSPECT in codes and "ATB" not in codes
+    assert client.post(f"{base}/sales/", {"lender": PROSPECT, "price": "20"}).status_code == 403
+    working_as(Game.objects.get(pk=game.pk), "SALES")  # proposals are the Head of Sales's (P3.1)
     sent = client.post(f"{base}/sales/", {"lender": PROSPECT, "price": "20.00"}, format="json")
     assert sent.status_code == 200 and sent.json()["proposals"][0]["status"] == "PENDING"
     assert client.post(f"{base}/sales/", {"lender": "ATB", "price": "20"}).status_code == 400
+    working_as(Game.objects.get(pk=game.pk), "CEO")  # IT is managed by the chief executive
 
     it_screen = client.get(f"{base}/it/").json()
     assert it_screen["capacity"] == "STANDARD" and not it_screen["down"]

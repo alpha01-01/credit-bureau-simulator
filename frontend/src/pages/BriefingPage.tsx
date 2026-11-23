@@ -1,6 +1,6 @@
 import { Link } from 'react-router'
 
-import { useBriefing, useMissions } from '../api/game'
+import { useBriefing, useGame, useMissions } from '../api/game'
 import { useGameId } from '../app/useGameId'
 import { Badge, Card, Empty, Failed, Loading, Page } from '../components/ui'
 import { drillPath } from '../lib/drill'
@@ -9,7 +9,11 @@ import { count, day, percent } from '../lib/format'
 /** Where to start: the current mission, while the campaign is on (P2.13 onboarding). */
 function NextMission({ gameId }: { gameId: number }) {
   const missions = useMissions(gameId)
+  const role = useGame(gameId).data?.clock?.role
   const current = missions.data?.missions.find((m) => m.status === 'CURRENT')
+  // M2 and M3 are Data Operations' work (P3.1).
+  const elsewhere =
+    current && ['M2', 'M3'].includes(current.code) && role && role.code !== 'DATA_OPERATIONS'
   if (!missions.data?.campaign || !current) return null
   const first = current.code === 'M1'
   return (
@@ -24,6 +28,8 @@ function NextMission({ gameId }: { gameId: number }) {
         {current.code} {current.title}: {current.concept}.
         {first &&
           ' Run the clock (top of the page) and the first provider file will arrive; the mission tells you what to look for.'}
+        {elsewhere &&
+          ` This is Data Operations' work: choose Head of Data Operations under "Working as" at the top of the page (you are the ${role.title}).`}
       </p>
       <Link
         to={`/games/${gameId}/missions`}

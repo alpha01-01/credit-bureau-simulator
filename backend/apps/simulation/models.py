@@ -80,6 +80,12 @@ class Game(models.Model):
     assist_extended_deadlines = models.BooleanField(
         default=False, help_text="Work items are due in ten working days instead of five"
     )
+    role = models.CharField(
+        max_length=20, default="CEO", help_text="The player's role: CEO or a department head (P3.1)"
+    )
+    role_ready_tick = models.BigIntegerField(
+        default=0, help_text="The tick from which the role's actions can be taken (changeover)"
+    )
     ended_tick = models.BigIntegerField(null=True, blank=True, help_text="Tick of a hard failure")
     ended_reason = models.CharField(
         max_length=20, blank=True, help_text="INSOLVENT, LICENCE_REVOKED or REMOVED_BY_BOARD"

@@ -122,7 +122,7 @@ def _fingerprint(game: Game) -> _Hasher:
         [(game.clock_start, game.current_tick, game.status, game.speed,
           game.organization.rejection_policy, game.pause_severities, game.pause_on_deadlines,
           game.organization.rule_overrides, game.organization.matching_tooling,
-          game.organization.match_auto_link, game.organization.match_review)],
+          game.organization.match_auto_link, game.organization.match_review, game.role)],
     )  # fmt: skip
     _section(
         h,

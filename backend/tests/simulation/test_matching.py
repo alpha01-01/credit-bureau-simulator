@@ -37,6 +37,7 @@ from apps.world.generation.persist import write_world
 from apps.world.models import FileDefect, Lender, LenderCustomer, ProviderSubmission, World
 from apps.world.provider_files import generate_submission
 from apps.world.provider_files.profiles import AVERAGE
+from tests.roles import working_as
 
 # Identifier trouble and misspelt names; nothing that rejects whole files.
 IDS = replace(
@@ -197,7 +198,7 @@ def test_providers_resend_some_rows_with_the_name_retyped(world: World) -> None:
 @pytest.mark.slow
 def test_matching_policy_is_a_replayable_action_and_tooling_costs_money(world: World) -> None:
     owner = User.objects.create_user("player")
-    game = start_game(world, owner=owner)
+    game = working_as(start_game(world, owner=owner), "DATA_OPERATIONS")
     client = APIClient()
     client.force_authenticate(owner)
     url = f"/api/v1/games/{game.pk}/matching-policy/"
@@ -207,11 +208,18 @@ def test_matching_policy_is_a_replayable_action_and_tooling_costs_money(world: W
     costs = {o["level"]: Decimal(o["monthly_cost"]) for o in policy["options"]}
     assert costs["BASIC"] == 0 < costs["STANDARD"] < costs["ADVANCED"]
 
-    changed = client.post(
+    # Thresholds are Data Operations' to set; tooling is an investment, the Chief Executive's
+    # (P3.1). Changing both at once needs both roles, so it is refused as a whole.
+    both = client.post(
         url, {"tooling": "ADVANCED", "auto_link": 0.95, "review": 0.8}, format="json"
-    ).json()
-    assert (changed["tooling"], changed["auto_link"], changed["review"]) == ("ADVANCED", 0.95, 0.8)
+    )
+    assert both.status_code == 403 and "Chief Executive" in both.json()["detail"]
+    changed = client.post(url, {"auto_link": 0.95, "review": 0.8}, format="json").json()
+    assert (changed["tooling"], changed["auto_link"], changed["review"]) == ("BASIC", 0.95, 0.8)
     assert client.post(url, {"auto_link": 0.7, "review": 0.8}, format="json").status_code == 400
+    game = working_as(Game.objects.get(pk=game.pk), "CEO")
+    changed = client.post(url, {"tooling": "ADVANCED"}, format="json").json()
+    assert (changed["tooling"], changed["auto_link"], changed["review"]) == ("ADVANCED", 0.95, 0.8)
     assert client.post(url, {"tooling": "PREMIUM"}, format="json").status_code == 400
 
     game.refresh_from_db()

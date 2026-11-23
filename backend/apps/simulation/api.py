@@ -37,7 +37,7 @@ from apps.org.models import Employee
 from apps.workitems.models import WorkItem
 from apps.workitems.work import WorkError
 
-from . import assets, assist, compliance, controls, lending, providers
+from . import assets, assist, compliance, controls, lending, providers, roles
 from .engine import ClockError
 from .models import DataQualityReview, Game
 from .reputation import reputation
@@ -148,6 +148,7 @@ def map_file(request: Request, game_id: int, reference: str, file_name: str) -> 
     columns = request.data.get("columns")
     if not isinstance(columns, list):
         return _error(ValueError("columns must be a list"))
+    roles.require(game, "MAP_TEMPLATE")
     try:
         controls.map_template(game, reference, file_name, [str(c) for c in columns])
     except ClockError as exc:
@@ -165,6 +166,7 @@ def feedback(request: Request, game_id: int, reference: str) -> HttpResponse:
         submission_reference=reference,
     )
     if request.method == "POST":
+        roles.require(game, "SEND_FEEDBACK")
         controls.send_feedback(game, reference)
     report = build_report(submission)
     if request.query_params.get("download") == "csv":
@@ -279,8 +281,10 @@ def provider_relations(request: Request, game_id: int) -> Response:
         action, code = str(request.data.get("action", "")), str(request.data.get("provider", ""))
         try:
             if action == "train":
+                roles.require(game, "TRAIN_PROVIDER")
                 controls.train_provider(game, code)
             elif action == "penalise":
+                roles.require(game, "PENALISE_PROVIDER")
                 controls.penalise_provider(game, code)
             else:
                 return _error(ValueError("action must be train or penalise"))
@@ -334,15 +338,18 @@ def rules(request: Request, game_id: int) -> Response:
         try:
             if isinstance(data.get("add"), dict):
                 new = data["add"]
+                roles.require(game, "ADD_CLEANSING_RULE")
                 controls.add_cleansing_rule(
                     game, str(new.get("field", "")), str(new.get("action", "")),
                     str(new.get("find", "")), str(new.get("replace", "")),
                     str(new.get("provider", "")),
                 )  # fmt: skip
             elif "code" in data and "active" in data:
+                roles.require(game, "SET_CLEANSING_RULE_ACTIVE")
                 controls.set_cleansing_rule_active(game, str(data["code"]), bool(data["active"]))
             elif isinstance(data.get("override"), dict):
                 o = data["override"]
+                roles.require(game, "SET_RULE_OVERRIDE")
                 controls.set_rule_override(game, str(o.get("code", "")), str(o.get("setting", "")))
             else:
                 return _error(ValueError("Nothing to change"))
@@ -389,6 +396,10 @@ def matching_policy(request: Request, game_id: int) -> Response:
     """Customer matching (P2.4): the tooling bought and the thresholds set."""
     game = _game(request, game_id)
     if request.method == "POST":
+        if "tooling" in request.data:
+            roles.require(game, "SET_MATCHING_TOOLING")
+        if "auto_link" in request.data or "review" in request.data:
+            roles.require(game, "SET_MATCHING_THRESHOLDS")
         try:
             if "tooling" in request.data:
                 controls.set_matching_tooling(game, str(request.data["tooling"]))
@@ -424,6 +435,7 @@ def rejection_policy(request: Request, game_id: int) -> Response:
     """The bureau's record rejection policy (D18): read it, or change it."""
     game = _game(request, game_id)
     if request.method == "POST":
+        roles.require(game, "SET_REJECTION_POLICY")
         try:
             controls.set_rejection_policy(game, str(_field(request, "policy")))
         except (ClockError, ValueError) as exc:
@@ -613,6 +625,11 @@ def _on_file(institution_id: int, account_number: str) -> dict[str, Any] | None:
 @api_view(["POST"])
 def resolve_work_item(request: Request, game_id: int, number: int) -> Response:
     game = _game(request, game_id)
+    roles.require(
+        game,
+        "RESOLVE_ITEM",
+        WorkItem.objects.filter(organization=game.organization, item_number=number).first(),
+    )
     try:
         item = controls.resolve_item(game, number, str(_field(request, "decision")))
     except (ClockError, WorkError, ReviewError, ValueError) as exc:
@@ -852,3 +869,15 @@ def _record_rows(game: Game, refs: list[list[Any]]) -> list[dict[str, Any]]:
             }
         )
     return sorted(rows, key=lambda r: (r["submission"], r["file"], r["row"]))
+
+
+@api_view(["GET", "POST"])
+def role_view(request: Request, game_id: int) -> Response:
+    """The player's role and the roles there are (P3.1). POST {"role": "DATA_OPERATIONS"}."""
+    game = _game(request, game_id)
+    if request.method == "POST":
+        try:
+            game = controls.switch_role(game, str(request.data.get("role", "")))
+        except ClockError as exc:
+            return _error(exc)
+    return Response({"current": controls.state(game).as_dict()["role"], "roles": roles.catalogue()})
