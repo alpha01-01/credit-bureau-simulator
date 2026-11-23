@@ -61,5 +61,9 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # The SQL console's role (P3.4): created once per server by a superuser, as here.
+      - name: Create the console role
+        run: PGPASSWORD=simb_ci psql -h localhost -U simb -d simb -c "CREATE ROLE simb_console NOLOGIN"
+
       - name: Run all checks
         run: backend/.venv/bin/python scripts/check.py

@@ -25,6 +25,8 @@ import { HealthPage } from '../pages/HealthPage'
 import { AccountsPage } from '../pages/AccountsPage'
 import { MissionsPage } from '../pages/MissionsPage'
 import { HandbookPage } from '../pages/HandbookPage'
+import { AnalyticsPage } from '../pages/AnalyticsPage'
+import { ConsolePage } from '../pages/ConsolePage'
 import { GameLayout } from './GameLayout'
 
 // The 3D office is loaded only when it is opened (three.js is large; P3.2).
@@ -103,6 +105,8 @@ const routes = [
               { path: 'health', element: <HealthPage /> },
               { path: 'missions', element: <MissionsPage /> },
               { path: 'handbook', element: <HandbookPage /> },
+              { path: 'analytics', element: <AnalyticsPage /> },
+              { path: 'console', element: <ConsolePage /> },
               {
                 path: 'office',
                 element: (
