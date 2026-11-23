@@ -3,8 +3,8 @@
 ## DOCUMENT 09 — PHASE 3 PLAN: VERSION 1 BREADTH
 
 **Document ID:** CBS-P3P-001
-**Version:** 0.1
-**Status:** Draft for owner review
+**Version:** 0.2
+**Status:** Approved by owner (23 November 2026), with the decisions in Section 8
 **Date:** 23 November 2026
 **Working title:** SimB
 **Depends on:** CBS-DRTP-001 (06, Phase 3 is outlined in Section 8), CBS-CGD-001 (07, depth tiers in Section 9, missions in Section 11.1, scenarios and difficulty in Section 12), the PRD (01, success criteria in Section 25), CBS-P2P-001 (08, Phase 2)
@@ -30,7 +30,7 @@ This document:
 4. maps the Version 1 success criteria to those increments (Section 6);
 5. lists the reference material each increment needs (Section 7), the decisions needed from the owner (Section 8) and the risks (Section 9).
 
-The 3D office stays in Phase 4 (Document 06, Section 9). Section 8, item 7 asks whether to run a short 3D trial earlier.
+The full 3D office stays in Phase 4 (Document 06, Section 9). A short 3D trial runs early in Phase 3 (P3.2, decided in Section 8).
 
 ---
 
@@ -75,6 +75,7 @@ The 3D office stays in Phase 4 (Document 06, Section 9). Section 8, item 7 asks 
 * No credit score, no analytics beyond the dashboard, no business reports, no batch enquiries.
 * The economy is fixed: no inflation, interest rates or shocks.
 * Only the Established scenario, at one difficulty.
+* No mobile loans in the world, although they are a large and growing share of real Ghanaian lending.
 
 ---
 
@@ -113,10 +114,34 @@ Each increment ends as in Phase 2: tests that judge it against the truth, a play
 
 **Done when:** the player can switch between CEO and Data Operations; each role sees only its own workspace and actions; the API refuses an action outside the current role; a switch replays exactly (PRD criterion 13).
 
-## P3.2 — Analytics I: portfolio analytics and the SQL console
+## P3.2 — A short 3D trial (owner's decision, 23 November 2026)
+
+* One floor of the office in React Three Fiber, in a simple low-poly style: Data Operations desks, a meeting room and the server rack.
+* Driven only by live game state: staff at their desks, away training or gone; the queue's size shown on the desks; the server rack's lights during an outage.
+* Clicking a desk, the rack or a person opens the matching 2D screen. The 2D game stays complete without it.
+* A performance budget measured on the dev laptop: frame rate, load time and memory.
+
+**Done when:** the floor shows the game as it changes (a hire appears, an outage lights the rack) without a page reload; it holds the frame-rate budget on the dev laptop; the art style and the budget are written up as the brief for Phase 4.
+
+## P3.3 — Mobile loans in the world
+
+Banks, savings and loans companies, microfinance lenders and fintechs grant small loans through mobile money: **GHS 10 to GHS 20,000, for one week to three months.** They are the most numerous loans in the market, and the Bank of Ghana widened credit reporting to telcos and fintechs in 2026.
+
+* **The world:** a mobile-loan product at some lenders (and one or two digital lenders), with terms in days. Borrowers take repeated small loans, sometimes from several lenders at once ("stacking"); repayment follows the same hidden risk as their other borrowing, plus a mobile-specific behaviour (ASSUMPTION).
+* **Time:** a one-week loan begins and ends inside a month, so the world records each loan's daily schedule and its month-end state. A month-end file shows the loan as closed, current or overdue.
+* **Reporting:** providers report mobile loans in the consumer template (CONC). The 2012 code list has no mobile-loan facility type, so the code is an ASSUMPTION for the owner to confirm (Section 7).
+* **Scale:** mobile loans can outnumber all other loans many times over. The world size and the pipeline are measured before and after; the P3.0 targets still hold.
+* **Reports:** mobile loans appear on credit reports, and a short **mobile loan report** is sold for small, fast decisions (R8 placeholder).
+
+**Done when:**
+* the world produces mobile loans whose amounts, terms, repeat borrowing and default rates are recorded in `docs/assumptions.md` and checked by tests;
+* they flow through the pipeline into the bureau with lineage, and the month's replay still matches;
+* a default month still computes inside the P3.0 target.
+
+## P3.4 — Analytics I: portfolio analytics and the SQL console
 
 * Portfolio analytics: the bureau's own data by lender, product, region and vintage. Covers arrears rates, roll rates and the age of accounts at default, using the default definition of 90+ days past due within 12 months (D13).
-* A read-only **SQL console** that sees only the player's own game. It uses a dedicated database role with row-level security, a statement timeout and a row limit. It can never see the world layer or another game.
+* A read-only **SQL console** that sees only the player's own game: the bureau's tables, the ledger and the work items (owner's decision, 23 November 2026). It uses a dedicated database role with row-level security, a statement timeout and a row limit. It can never see the world layer or another game.
 * Data Analytics becomes a Playable department with this workspace.
 
 **Done when:**
@@ -124,30 +149,70 @@ Each increment ends as in Phase 2: tests that judge it against the truth, a play
 * tests show the console cannot read the world, another game, or anything writeable;
 * a heavy query is stopped by the timeout.
 
-## P3.3 — Analytics II: the scorecard workbench
+## P3.5 — Analytics II: the scorecard workbench
 
-The workbench builds a scorecard on the bureau's own data, in steps:
+**Three scorecards and a composite** (owner's decision, 23 November 2026). Loans of different lengths behave differently, so each term has its own scorecard:
 
-* choose a dataset (an observation date and a 12-month outcome window);
-* engineer features: arrears history, utilisation, number of accounts, enquiries, age of the file;
-* bin the features and compute weight of evidence;
+| Scorecard | Loans it is built on | Population |
+| --- | --- | --- |
+| **Short term** | Up to 3 months: mostly mobile loans (P3.3) | Many thin files; frequent, recent behaviour |
+| **Mid term** | Over 3 months, up to a year | Personal and salary loans, overdrafts, hire purchase |
+| **Long term** | Over a year | Term, auto, housing and mortgage loans |
+| **Composite** | Everyone with a file | Combines the three |
+
+The workbench builds each scorecard on the bureau's own data, in steps:
+
+* choose a dataset: an observation date and an outcome window. The default for every scorecard is 90+ days past due within 12 months (D13); the short-term scorecard may also be tried on a shorter window as an option;
+* engineer features (recommended starting sets below);
+* bin the features and compute weight of evidence and information value;
 * fit a logistic regression;
-* scale the score (points to double the odds);
+* scale the score;
 * validate with AUC, Gini and KS on a held-out sample;
 * deploy the model, then monitor it in later months (population stability).
 
-**Fairness checks:** the workbench reports whether restricted attributes (such as gender) are used or proxied, and the outcome gaps between groups. Fairness checks always run against the bureau's own data.
+**Recommended starting variables** (to adjust as play and R16 show):
 
-**The truth behind it:** the world knows each borrower's true risk. The debrief shows how close the scorecard came, and what the bureau's data errors cost in score quality.
+| Short term | Mid term | Long term |
+| --- | --- | --- |
+| Mobile loans taken in the last 3 and 6 months | Worst days past due in 12 months | Worst days past due in 24 months |
+| Share repaid on time | Months since the last delinquency | Months since the last delinquency |
+| Worst days past due in 6 months | Utilisation of overdrafts and cards | Age of the oldest account |
+| Loans open at once across lenders (stacking) | Number of open accounts | Secured share of borrowing |
+| Enquiries in the last 30 days | Enquiries in the last 6 months | Instalments against total balances |
+| Months since the first mobile loan | Age of the file | Dud cheques and judgements |
+| Trend in loan size | Mobile-loan history as a feature | Number of facilities ever |
+
+**Score scale and risk bands** (recommendation; adjust as needed):
+
+* Each score runs from **300 to 850**: 600 points at odds of 30 good to 1 bad, and 20 points to double the odds.
+* **The composite score** is a weighted blend of the scorecards that apply to the borrower. Each weight is the share of the borrower's recent borrowing (by balance and count) in that term, with a minimum for any term the borrower has. A borrower with only mobile loans gets the short-term score. The blend's weights are themselves fitted and validated like a scorecard.
+* **Five risk bands:**
+
+| Band | Score | Risk |
+| --- | --- | --- |
+| A | 750–850 | Very low |
+| B | 680–749 | Low |
+| C | 600–679 | Medium |
+| D | 520–599 | High |
+| E | 300–519 | Very high |
+
+* **Thin files:** with no usable history, the score is "no score" (not 300), with the reason given.
+* **Reason codes:** the four variables that cost the borrower most points, in plain words.
+
+**Fairness** (owner's decision, 23 November 2026): a player may build a model on restricted attributes (such as gender). The workbench flags it, and so do proxies it detects; the outcome gaps between groups are shown. If the model is deployed, Compliance raises a finding (P3.7). Fairness checks always run against the bureau's own data.
+
+**The truth behind it:** the world knows each borrower's true risk. The debrief shows how close each scorecard came, and what the bureau's data errors cost in score quality.
 
 **Done when:**
 * a scorecard built from clean data ranks the world's true risk measurably better than one built from data loaded under careless policies;
+* each term's scorecard beats a single scorecard on its own loans, and the composite beats each on the whole population;
 * the AUC, Gini and KS figures agree with an independent calculation;
-* a deployed model's monitoring flags drift when the economy changes (with P3.10).
+* a model built on a restricted attribute is flagged, and once deployed produces a Compliance finding;
+* a deployed model's monitoring flags drift when the economy changes (with P3.12).
 
-## P3.4 — The credit score product
+## P3.6 — The credit score product
 
-* Deployed scores appear on reports, with a risk band and reason codes.
+* Deployed scores appear on reports: the composite score with its band and reason codes, and the three term scores beneath it.
 * The score is priced separately (R8); lenders' demand responds to how well the score predicts.
 * Lenders use the score when deciding. The P2.8 decline rule becomes "the report and the score".
 
@@ -156,9 +221,10 @@ The workbench builds a scorecard on the bureau's own data, in steps:
 * a poor score loses them business;
 * score revenue posts to the ledger.
 
-## P3.5 — Compliance (Playable)
+## P3.7 — Compliance (Playable)
 
-* **Consent and permissible purpose** (R12): enquiries carry their evidence. The compliance officer samples enquiries, finds the ones without proper grounds, and acts on the subscriber.
+* **Consent and permissible purpose** (R12): the borrower gives consent on the lender's application form, and the lender keeps it. Each enquiry carries a reference to that evidence. The compliance officer samples enquiries, asks lenders for the forms, finds the ones without proper grounds, and acts on the subscriber.
+* **Fairness findings:** a deployed scorecard that uses a restricted attribute becomes a finding (P3.5).
 * **Access reviews:** who in the bureau can see what, reviewed periodically. Excess access becomes a finding.
 * **Retention** (R7, R11): records past their retention period must be dropped from reports. Missing this is a finding.
 * **Audit findings,** each with a deadline and a remedy.
@@ -169,7 +235,7 @@ The workbench builds a scorecard on the bureau's own data, in steps:
 * a missed return or a retention breach climbs the regulator's ladder;
 * each rule cites its source (Act 726, L.I. 2394, Act 843 or a directive).
 
-## P3.6 — Finance (Playable)
+## P3.8 — Finance (Playable)
 
 * Bank reconciliation: statement lines matched to ledger entries, with differences investigated.
 * Payables: supplier bills approved and paid on terms.
@@ -181,21 +247,21 @@ The workbench builds a scorecard on the bureau's own data, in steps:
 * the budget report agrees with the ledger;
 * a late supplier payment has a consequence (a penalty, or a supplier holding back service).
 
-## P3.7 — Sales (Playable) and cross-department workflows
+## P3.9 — Sales (Playable) and cross-department workflows
 
 * Prospecting with research on each lender's needs; meetings; negotiation over price, volume, term and service levels; contract terms (R8).
 * The PRD's cross-department workflow (Section 16) runs end to end: Sales signs, Compliance checks the subscriber, IT connects it, Finance bills it, and Support answers its questions. Each step is a work item in its department.
 
 **Done when:** a new subscriber passes through every department's step with a hand-off at each; a step left undone holds up the next, visibly; terms negotiated in the deal show up in billing.
 
-## P3.8 — Customer Support and Product Development (Managed)
+## P3.10 — Customer Support and Product Development (Managed)
 
 * **Support:** tickets from subscribers and data subjects. Volume rises with errors, outages and disputes. Staffing and response times move satisfaction.
-* **Product Development:** a menu of products to develop, at a cost and over time. The score (P3.4), business reports (P3.9) and batch enquiries (P3.9) are developed here before they can be sold.
+* **Product Development:** a menu of products to develop, at a cost and over time. The score (P3.6), business reports (P3.11) and batch enquiries (P3.11) are developed here before they can be sold.
 
 **Done when:** an outage produces a measurable wave of tickets; a product becomes saleable only once it has been developed.
 
-## P3.9 — Business credit reports and batch enquiries
+## P3.11 — Business credit reports and batch enquiries
 
 * Business reports from the business credit, dud cheque and judgement data already loaded. Business entities are matched by registration number.
 * Batch enquiries: a lender sends a file of applicants and gets back a file of reports, priced per record (R8).
@@ -205,7 +271,7 @@ The workbench builds a scorecard on the bureau's own data, in steps:
 * a batch file is answered record by record, with hits and misses that agree with single enquiries;
 * both are billed correctly.
 
-## P3.10 — Economy
+## P3.12 — Economy
 
 The economy moves through progressive stages (PRD, Section 15). Each stage's variables are set by defined rules from the seed:
 
@@ -226,7 +292,7 @@ The bureau reads only published indicators, never the world's state.
 * costs rise with inflation;
 * a scorecard deployed before a shock shows drift in its monitoring.
 
-## P3.11 — Scenarios and difficulty
+## P3.13 — Scenarios and difficulty
 
 * **Sandbox:** free play with adjustable parameters (world size, starting cash, provider quality, economy stage).
 * **Startup Bureau:** start with capital and nothing else. Rent an office, buy IT, hire the first team, sign the first providers and subscribers, and build the database from the first file (PRD, Section 4.2).
@@ -237,7 +303,7 @@ The bureau reads only published indicators, never the world's state.
 * the same strategy measurably fares better at Beginner than at Expert;
 * every scenario replays exactly.
 
-## P3.12 — Missions M7–M8 and Handbook v2
+## P3.14 — Missions M7–M8 and Handbook v2
 
 * **M7, The dispute:** consumer rights, correction workflows, regulator deadlines.
 * **M8, Hire or automate?** Capacity, skill, tooling and the cost of quality.
@@ -246,7 +312,7 @@ The bureau reads only published indicators, never the world's state.
 
 **Done when:** a scripted player completes M7, M8 and each new mission from what the screens show; every regulatory citation is either confirmed by the owner or marked TO_CONFIRM.
 
-## P3.13 — Balancing and exit
+## P3.15 — Balancing and exit
 
 * Strategy runs widened to the new levers: score quality, compliance effort, pricing, scenario and difficulty.
 * Team playthroughs of Startup and Sandbox at two difficulties.
@@ -260,15 +326,15 @@ The bureau reads only published indicators, never the world's state.
 
 | Milestone | Increments | What the player gets |
 | --- | --- | --- |
-| **A: ready to widen** | Playtests, P3.0, P3.1 | A faster, trusted base; real roles and workspaces |
-| **B: the data pays** | P3.2, P3.3, P3.4 | Analytics, a scorecard and a score that sells, all judged against the truth |
-| **C: a whole company** | P3.5, P3.6, P3.7, P3.8, P3.9 | Compliance, Finance and Sales to play; Support and Product to manage; business and batch products |
-| **D: a changing world** | P3.10, P3.11 | An economy with stages and shocks; Sandbox, Startup and difficulty |
-| **E: teach and finish** | P3.12, P3.13 | New missions, Handbook v2, balance, exit |
+| **A: ready to widen** | Playtests, P3.0, P3.1, P3.2 | A faster, trusted base; real roles and workspaces; a first look at the office in 3D |
+| **B: the data pays** | P3.3, P3.4, P3.5, P3.6 | Mobile loans; analytics, three scorecards and a composite score that sells, all judged against the truth |
+| **C: a whole company** | P3.7, P3.8, P3.9, P3.10, P3.11 | Compliance, Finance and Sales to play; Support and Product to manage; business and batch products |
+| **D: a changing world** | P3.12, P3.13 | An economy with stages and shocks; Sandbox, Startup and difficulty |
+| **E: teach and finish** | P3.14, P3.15 | New missions, Handbook v2, balance, exit |
 
 Milestone B comes before C because analytics and the score are the payoff of good data, the core of the game. It is also the biggest step in what the game teaches.
 
-The economy (P3.10) could move into milestone B, since the scorecard's monitoring is most interesting once the economy moves. It sits in D so that B does not wait on it.
+The economy (P3.12) could move into milestone B, since the scorecard's monitoring is most interesting once the economy moves. It sits in D so that B does not wait on it.
 
 **Estimate:** Document 06 allows 4–6 months. Phase 2's engineering went much faster than its estimate, but Phase 3 depends more on reference material (R8, R12, R16), owner review and playtesting. A realistic plan is **3–5 months**, set mostly by those inputs.
 
@@ -276,24 +342,24 @@ The economy (P3.10) could move into milestone B, since the scorecard's monitorin
 
 # 6. Version 1 Success Criteria (PRD, Section 25)
 
-Phase 3's exit is PRD criteria 1 and 3–15, at the depth tiers of Document 07, Section 9. Criterion 2 (the 3D office) belongs to Phase 4; criterion 16 (multiplayer) to Version 2.
+Phase 3's exit is PRD criteria 1 and 3–15, at the depth tiers of Document 07, Section 9. Criterion 2 (the 3D office) belongs to Phase 4, with a first trial in P3.2; criterion 16 (multiplayer) to Version 2.
 
 | # | Criterion | Where it stands | Phase 3 work |
 | --- | --- | --- | --- |
-| 1 | Establish or manage a functioning bureau | Manage: yes | Establish: P3.11 (Startup) |
-| 3 | Synthetic institutions submit credit data | Yes | Business data used fully in P3.9 |
+| 1 | Establish or manage a functioning bureau | Manage: yes | Establish: P3.13 (Startup) |
+| 3 | Synthetic institutions submit credit data | Yes | Mobile loans in P3.3; business data used fully in P3.11 |
 | 4 | Submissions validated, cleaned, processed | Yes | — |
 | 5 | Accepted records loaded | Yes | — |
-| 6 | Customer and account history maintained | Yes | Retention in P3.5 |
-| 7 | Analytics on accumulated data | Dashboard only | P3.2 |
-| 8 | Credit scoring models developed and evaluated | No | P3.3 |
-| 9 | Products sold, revenue recorded | Individual reports | P3.4, P3.9 |
-| 10 | Statements from recorded transactions | Yes | Reconciliation and budgets in P3.6 |
-| 11 | Employees perform departmental tasks | Data Operations; managed elsewhere | P3.5–P3.8 |
-| 12 | Departments exchange information through connected workflows | Partly | P3.7 |
+| 6 | Customer and account history maintained | Yes | Retention in P3.7 |
+| 7 | Analytics on accumulated data | Dashboard only | P3.4 |
+| 8 | Credit scoring models developed and evaluated | No | P3.5 |
+| 9 | Products sold, revenue recorded | Individual reports | P3.6, P3.11 |
+| 10 | Statements from recorded transactions | Yes | Reconciliation and budgets in P3.8 |
+| 11 | Employees perform departmental tasks | Data Operations; managed elsewhere | P3.7–P3.10 |
+| 12 | Departments exchange information through connected workflows | Partly | P3.9 |
 | 13 | Switch between CEO and departmental roles | No | P3.1 |
-| 14 | Different starting experiences and difficulty | Established only | P3.11 |
-| 15 | Economy introduces complexity progressively | Fixed economy | P3.10 |
+| 14 | Different starting experiences and difficulty | Established only | P3.13 |
+| 15 | Economy introduces complexity progressively | Fixed economy | P3.12 |
 
 Department tiers at the end of Phase 3 (Document 07, Section 9):
 
@@ -308,27 +374,38 @@ As in Phase 2, rules live in configuration, so placeholders never stop building;
 
 | Increment | Needs | Blocking for release? |
 | --- | --- | --- |
-| P3.3, P3.4 | R16 scorecard practice (score ranges, bands, typical variables, reason codes) | Yes |
-| P3.4, P3.7, P3.9 | R8 pricing (reports, scores, business reports, batch; contract structures) | Yes |
-| P3.5 | R12 consent and permissible purpose; R7 L.I. 2394 (retention, access); R11 Bank of Ghana directives (returns, retention) | Yes |
-| P3.6 | R14 operating costs; R18 taxes (already partly in) | Yes for costs |
-| P3.9 | R9 report layouts (business report) | Yes |
-| P3.10 | R15 Bank of Ghana statistics; Ghana inflation and policy-rate history (public) | No (tuning) |
-| P3.11 | R13 salaries; R14 costs (Startup budget) | Yes |
-| P3.12 | R6, R7, R10, R11, R19 (Handbook v2) | Yes |
+| P3.3 | The facility-type code lenders use for mobile loans; typical mobile-loan amounts, terms, fees and default rates (BoG reports, R15) | Yes for the code |
+| P3.5, P3.6 | R16 scorecard practice. **Owner's direction (23 November 2026):** short-, mid- and long-term scorecards and a composite; Claude's recommended variables, scale and bands (P3.5), adjusted as play shows | No (owner's direction stands) |
+| P3.3, P3.6, P3.9, P3.11 | R8 pricing. **No published prices found;** placeholders in `references/pricing-placeholders.md`, adjusted as needed (owner, 23 November 2026) | No (placeholders accepted) |
+| P3.7 | R12 consent: taken on the lender's application form (owner, 23 November 2026); permissible purposes other than lending still to confirm; R7 L.I. 2394 (retention, access); R11 Bank of Ghana directives (returns, retention) | Yes |
+| P3.8 | R14 operating costs; R18 taxes (already partly in) | Yes for costs |
+| P3.11 | R9 report layouts (business report) | Yes |
+| P3.12 | R15 Bank of Ghana statistics; Ghana inflation and policy-rate history (public) | No (tuning) |
+| P3.13 | R13 salaries; R14 costs (Startup budget) | Yes |
+| P3.14 | R6, R7, R10, R11, R19 (Handbook v2) | Yes |
 
 ---
 
 # 8. Decisions for the Owner
 
-1. **Approve this plan,** or reorder Section 4.
-2. **Close Phase 2 first?** The proposal is to run the playtests (Section 3) while P3.0 is built, and start P3.1 only after the joint review.
-3. **The balancing finding** (`docs/balancing/README.md`): choose an option, or wait for the playtest. It goes into P3.0.
-4. **The SQL console (P3.2):** players write real SQL against their own game's bureau data, read-only and isolated. Confirm the scope: bureau tables only, or ledger and work items too?
-5. **Fairness in the scorecard (P3.3):** should the workbench let a player build a model on restricted attributes, flag it and show the consequences? Or refuse those attributes outright? Recommendation: allow it, flag it, and have Compliance raise a finding. That way the game teaches why it matters.
-6. **Reference material:** which of R8, R12 and R16 can arrive during milestone B, so P3.3–P3.5 use real rules.
-7. **A short 3D trial?** One floor tied to live game state, 1–2 weeks, after the playtests. It would settle the art style and performance budget early, and give the portfolio something visual. The full office stays in Phase 4.
+Decided 23 November 2026:
+
+1. **The plan is approved.**
+2. **Phase 2 closes first:** the playtests (Section 3) run while P3.0 is built.
+3. **The balancing finding:** still open; it goes into P3.0 with the playtest notes.
+4. **The SQL console (P3.4)** sees the bureau's tables, the ledger and the work items.
+5. **Fairness (P3.5):** a player may use restricted attributes. The workbench flags it, and Compliance raises a finding if the model is deployed.
+6. **Reference material:**
+   * R8: no prices are published, so reasonable placeholders are used, to be adjusted as needed;
+   * R12: consent is given on the lender's application form;
+   * R16: three term scorecards and a composite, with Claude's recommended variables, scale and bands (P3.5).
+7. **A short 3D trial:** yes, as P3.2.
+
+Still open:
+
 8. **GitHub CI:** clear the account-level Actions issue so checks run on every pull request.
+9. **Mobile loans (P3.3):** which facility-type code lenders use for mobile loans, since the 2012 code list has none. Until then, `119` (non-secured loan), with the term in days, is the ASSUMPTION.
+10. **Other permissible purposes (R12):** besides a loan application, may a subscriber enquire to review an existing borrower, to screen an employee or tenant, or to collect a debt? With what consent?
 
 ---
 
@@ -352,7 +429,7 @@ As in Phase 2, rules live in configuration, so placeholders never stop building;
 | Field | Value |
 | --- | --- |
 | Document ID | CBS-P3P-001 |
-| Version | 0.1 |
-| Status | Draft for owner review |
-| Change history | 0.1 first draft after Phase 2 |
-| Next step | Owner decisions in Section 8; Phase 2 playtests; P3.0 |
+| Version | 0.2 |
+| Status | Approved |
+| Change history | 0.1 first draft after Phase 2; 0.2 approved; owner's decisions recorded; 3D trial (P3.2) and mobile loans (P3.3) added; term scorecards and composite in P3.5 |
+| Next step | Phase 2 playtests; P3.0 |

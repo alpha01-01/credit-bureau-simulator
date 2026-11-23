@@ -22,7 +22,7 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 | R5 | **Submission calendar and SLAs**: reporting deadlines, frequency, correction/resubmission practice | Month loop, provider lateness, SLA penalties | **Partly received**: resubmission deadlines (`data-formats.md`, section 2). Reporting deadline still needed |
 | R6 | **Credit Reporting Act, 2007 (Act 726)** (and any amendments) | Handbook, regulator rules | Needed (public) |
 | R7 | **Credit Reporting Regulations, 2020 (L.I. 2394)**, especially dispute resolution (Regs 23–26), consent, access, retention | Dispute workflow and deadlines, consent, retention | Needed (public). Regulations 23-26 cover disputes; the text could not be fetched (the public copy refused requests). The game uses a placeholder deadline (A-056) |
-| R8 | **Pricing**: GHS prices for individual reports, business reports, batch enquiries; typical contract structures (pay-per-use, bundles, subscriptions) | Products, billing, demand model | Needed |
+| R8 | **Pricing**: GHS prices for individual reports, business reports, batch enquiries; typical contract structures (pay-per-use, bundles, subscriptions) | Products, billing, demand model | **Placeholders accepted** (owner, 23 November 2026): `pricing-placeholders.md`; no public prices found |
 
 ### Priority 2 — needed for Version 1
 
@@ -31,11 +31,11 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 | R9 | **Credit report layout(s)** — sections and fields of individual and business reports (synthetic sample) | Report product, report QA work items | Needed |
 | R10 | **Data Protection Act, 2012 (Act 843)** — relevant sections | Handbook, access control, compliance events | Needed (public) |
 | R11 | **Bank of Ghana directives and notices** on credit reporting (e.g. data retention, participation of non-bank institutions, credit scoring) | Regulator rules, events | Needed (public) |
-| R12 | **Consent and permissible-purpose practice**: how subscribers evidence consent; what purposes are allowed | Enquiry workflow | Needed |
+| R12 | **Consent and permissible-purpose practice**: how subscribers evidence consent; what purposes are allowed | Enquiry workflow | **Partly answered** (owner, 23 November 2026): consent is given on the lender's application form; other permissible purposes still to confirm |
 | R13 | **Typical bureau organisation**: roles, headcount, salary bands (GHS) | Starting organisation, payroll | Needed |
 | R14 | **Typical operating costs**: rent (Accra office), IT infrastructure, software licences | Finance, startup scenario | Needed |
 | R15 | **Bank of Ghana credit reporting annual reports** (market statistics: enquiries, records, participants) | Calibrating world scale and demand | Public |
-| R16 | **Scorecard practice**: score ranges, risk bands, typical variables | Analytics, scoring product | Needed |
+| R16 | **Scorecard practice**: score ranges, risk bands, typical variables | Analytics, scoring product | **Owner's direction** (23 November 2026): short-, mid- and long-term scorecards and a composite; variables, scale and bands as recommended in Document 09, P3.5 |
 | R18 | **Ghana taxes affecting the bureau**: VAT and levies on services (rates and how levies are treated), PAYE monthly bands, SSNIT rates and remittance dates | Finance: invoices, payroll, remittances | Needed (public) |
 | R17 | **Ghana public holidays**: the current statutory list (Public Holidays and Commemorative Days Act, as amended), the weekend observance rule, and how Eid dates are announced | Working-day calendar, SLA days | Needed (public) |
 | R19 | **Corporate Insolvency and Restructuring Act, 2020 (Act 1015)**: the statutory demand (days to pay), when a company is presumed insolvent, and the overdraft and creditor practice of Ghanaian banks | The insolvency path (A-065) | Needed (public) |
