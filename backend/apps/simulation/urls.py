@@ -55,6 +55,12 @@ urlpatterns = [
     path("games/<int:game_id>/office/", departments_api.office_view, name="office"),
     path("games/<int:game_id>/analytics/", analytics_api.analytics_view, name="analytics"),
     path("games/<int:game_id>/console/", analytics_api.console_view, name="console"),
+    path("games/<int:game_id>/scorecards/", analytics_api.scorecards_view, name="scorecards"),
+    path(
+        "games/<int:game_id>/scorecards/<int:number>/",
+        analytics_api.scorecard_detail,
+        name="scorecard",
+    ),
     path("games/<int:game_id>/handbook/", learning_api.handbook_view, name="handbook"),
     path(
         "games/<int:game_id>/submissions/<str:reference>/feedback/",

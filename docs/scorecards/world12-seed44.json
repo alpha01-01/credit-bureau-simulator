@@ -1,0 +1,235 @@
+{
+  "world": 12,
+  "seed": 44,
+  "scale": "default",
+  "observation": "2026-06-30",
+  "window": 6,
+  "careless": {
+    "match_auto_link": 0.6,
+    "match_review": 0.6
+  },
+  "results": {
+    "clean": {
+      "models": {
+        "SHORT": {
+          "holdout": {
+            "customers": 2573,
+            "bads": 659,
+            "auc": 0.8606,
+            "gini": 0.7212,
+            "ks": 0.5981
+          },
+          "truth": {
+            "customers": 2573,
+            "true_defaults": 759,
+            "auc_against_truth": 0.8322,
+            "auc_against_bureau_labels": 0.8605,
+            "labels": {
+              "both_default": 657,
+              "bureau_only": 2,
+              "truth_only": 102,
+              "neither": 1812
+            }
+          }
+        },
+        "MID": {
+          "holdout": {
+            "customers": 889,
+            "bads": 94,
+            "auc": 0.8292,
+            "gini": 0.6583,
+            "ks": 0.621
+          },
+          "truth": {
+            "customers": 889,
+            "true_defaults": 114,
+            "auc_against_truth": 0.8057,
+            "auc_against_bureau_labels": 0.8294,
+            "labels": {
+              "both_default": 94,
+              "bureau_only": 0,
+              "truth_only": 20,
+              "neither": 775
+            }
+          }
+        },
+        "LONG": {
+          "holdout": {
+            "customers": 4671,
+            "bads": 301,
+            "auc": 0.8356,
+            "gini": 0.6713,
+            "ks": 0.6151
+          },
+          "truth": {
+            "customers": 4671,
+            "true_defaults": 389,
+            "auc_against_truth": 0.7886,
+            "auc_against_bureau_labels": 0.8356,
+            "labels": {
+              "both_default": 283,
+              "bureau_only": 18,
+              "truth_only": 106,
+              "neither": 4264
+            }
+          }
+        },
+        "ALL": {
+          "holdout": {
+            "customers": 6638,
+            "bads": 1051,
+            "auc": 0.8912,
+            "gini": 0.7823,
+            "ks": 0.6623
+          },
+          "truth": {
+            "customers": 6638,
+            "true_defaults": 1406,
+            "auc_against_truth": 0.8148,
+            "auc_against_bureau_labels": 0.891,
+            "labels": {
+              "both_default": 1024,
+              "bureau_only": 27,
+              "truth_only": 382,
+              "neither": 5205
+            }
+          }
+        }
+      },
+      "term_against_single": {
+        "SHORT": {
+          "own": 0.8606,
+          "single": 0.8503
+        },
+        "MID": {
+          "own": 0.8292,
+          "single": 0.8237
+        },
+        "LONG": {
+          "own": 0.8356,
+          "single": 0.8369
+        }
+      },
+      "composite": {
+        "auc": 0.8636,
+        "each_term_on_everyone": {
+          "SHORT": 0.8613,
+          "MID": 0.8419,
+          "LONG": 0.8043
+        },
+        "single": 0.8777
+      }
+    },
+    "careless": {
+      "models": {
+        "SHORT": {
+          "holdout": {
+            "customers": 2574,
+            "bads": 662,
+            "auc": 0.8547,
+            "gini": 0.7094,
+            "ks": 0.593
+          },
+          "truth": {
+            "customers": 2574,
+            "true_defaults": 763,
+            "auc_against_truth": 0.8214,
+            "auc_against_bureau_labels": 0.8547,
+            "labels": {
+              "both_default": 659,
+              "bureau_only": 3,
+              "truth_only": 104,
+              "neither": 1808
+            }
+          }
+        },
+        "MID": {
+          "holdout": {
+            "customers": 892,
+            "bads": 85,
+            "auc": 0.8353,
+            "gini": 0.6705,
+            "ks": 0.59
+          },
+          "truth": {
+            "customers": 892,
+            "true_defaults": 106,
+            "auc_against_truth": 0.7916,
+            "auc_against_bureau_labels": 0.8352,
+            "labels": {
+              "both_default": 85,
+              "bureau_only": 0,
+              "truth_only": 21,
+              "neither": 786
+            }
+          }
+        },
+        "LONG": {
+          "holdout": {
+            "customers": 4670,
+            "bads": 288,
+            "auc": 0.8426,
+            "gini": 0.6851,
+            "ks": 0.6276
+          },
+          "truth": {
+            "customers": 4670,
+            "true_defaults": 372,
+            "auc_against_truth": 0.7854,
+            "auc_against_bureau_labels": 0.8428,
+            "labels": {
+              "both_default": 271,
+              "bureau_only": 17,
+              "truth_only": 101,
+              "neither": 4281
+            }
+          }
+        },
+        "ALL": {
+          "holdout": {
+            "customers": 6638,
+            "bads": 1062,
+            "auc": 0.8842,
+            "gini": 0.7683,
+            "ks": 0.6466
+          },
+          "truth": {
+            "customers": 6638,
+            "true_defaults": 1420,
+            "auc_against_truth": 0.814,
+            "auc_against_bureau_labels": 0.8842,
+            "labels": {
+              "both_default": 1035,
+              "bureau_only": 27,
+              "truth_only": 385,
+              "neither": 5191
+            }
+          }
+        }
+      },
+      "term_against_single": {
+        "SHORT": {
+          "own": 0.8547,
+          "single": 0.841
+        },
+        "MID": {
+          "own": 0.8353,
+          "single": 0.8097
+        },
+        "LONG": {
+          "own": 0.8426,
+          "single": 0.8392
+        }
+      },
+      "composite": {
+        "auc": 0.8566,
+        "each_term_on_everyone": {
+          "SHORT": 0.854,
+          "MID": 0.843,
+          "LONG": 0.7995
+        },
+        "single": 0.8703
+      }
+    }
+  }
+}

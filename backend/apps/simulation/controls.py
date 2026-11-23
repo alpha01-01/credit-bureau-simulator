@@ -27,7 +27,7 @@ from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
-from . import hr, it, missions, providers, roles, sales, solvency
+from . import hr, it, missions, providers, roles, sales, scorecards, solvency
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
@@ -44,6 +44,7 @@ from .models import (
     Notice,
     PlayerAction,
     Proposal,
+    ScoreModel,
     Severity,
 )
 
@@ -455,6 +456,47 @@ def switch_role(game: Game, role: str) -> Game:
     return game
 
 
+def build_scorecard(
+    game: Game, term: str, observation: date, window: int, features: list[str]
+) -> ScoreModel:
+    """Build a term scorecard in the workbench (P3.5)."""
+    with transaction.atomic():
+        try:
+            model = scorecards.build(
+                game, term, observation, window, list(features), game.current_tick
+            )
+        except scorecards.ScorecardError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "BUILD_SCORECARD", {
+            "term": term, "observation": observation.isoformat(), "window": window,
+            "features": list(features),
+        })  # fmt: skip
+    return model
+
+
+def build_composite(game: Game, observation: date, window: int) -> ScoreModel:
+    """Combine the deployed term scorecards into a composite score (P3.5)."""
+    with transaction.atomic():
+        try:
+            model = scorecards.build_composite(game, observation, window, game.current_tick)
+        except scorecards.ScorecardError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "BUILD_COMPOSITE", {"observation": observation.isoformat(), "window": window})
+    return model
+
+
+def deploy_scorecard(game: Game, number: int) -> ScoreModel:
+    """Put a scorecard into use (P3.5)."""
+    tick, at = _now(game)
+    with transaction.atomic():
+        try:
+            model = scorecards.deploy(game, number, tick, at)
+        except scorecards.ScorecardError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "DEPLOY_SCORECARD", {"number": number})
+    return model
+
+
 def set_campaign(game: Game, on: bool) -> Game:
     with transaction.atomic():
         record(game, "SET_CAMPAIGN", {"on": on})
@@ -619,6 +661,17 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             answer_mission(target, str(action.payload["code"]), str(action.payload["value"]))
         case "SET_CAMPAIGN":
             target = set_campaign(target, bool(action.payload["on"]))
+        case "BUILD_SCORECARD":
+            p = action.payload
+            build_scorecard(
+                target, str(p["term"]), date.fromisoformat(p["observation"]), int(p["window"]),
+                [str(f) for f in p["features"]],
+            )  # fmt: skip
+        case "BUILD_COMPOSITE":
+            p = action.payload
+            build_composite(target, date.fromisoformat(p["observation"]), int(p["window"]))
+        case "DEPLOY_SCORECARD":
+            deploy_scorecard(target, int(action.payload["number"]))
         case "SWITCH_ROLE":
             target = switch_role(target, str(action.payload["role"]))
         case "SET_ASSISTANCE":

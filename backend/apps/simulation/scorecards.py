@@ -1,0 +1,347 @@
+"""The scorecard workbench in the game (P3.5; Document 09).
+
+Building, combining and deploying scorecards are the Head of Data Analytics's
+actions, recorded and replayed (each model's random holdout comes from the world's
+seed and the model's number, so a replay builds the same model). The statistics live
+in the bureau layer (``apps.bureau.analytics``); this module adds what only the game
+knows: the world's truth behind each model (the debrief), the Compliance finding a
+restricted attribute brings, and monitoring in later months.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Any
+
+import numpy as np
+from django.db.models import Max
+
+from apps.bureau.analytics import scoredata as sd
+from apps.bureau.analytics import scoremath as sm
+from apps.bureau.analytics.portfolio import latest_reporting_date
+from apps.world.models import Loan
+
+from .feed import Feed
+from .judgement import customer_borrowers
+from .models import ComplianceFinding, Game, ScoreModel, Severity
+
+WINDOWS = (3, 6, 12)  # months; 12 is the default definition (D13)
+DRIFT_PSI = 0.25  # population stability above this: the population has shifted
+PSI_EDGES = [float(f) for _, f, _ in sorted(sm.BANDS, key=lambda b: b[1])][1:]  # band floors
+
+
+class ScorecardError(Exception):
+    """The workbench cannot do this; the message says why."""
+
+
+def _seed(game: Game, number: int) -> int:
+    return int(game.world.seed) * 10_000 + number
+
+
+def _first_reported(organization_id: int) -> date | None:
+    from apps.bureau.core.models import AccountObservation
+
+    first = (
+        AccountObservation.objects.filter(
+            credit_account__organization_id=organization_id, is_current=True
+        )
+        .order_by("reporting_date")
+        .values_list("reporting_date", flat=True)
+        .first()
+    )
+    return first
+
+
+def observation_dates(game: Game, window: int) -> list[str]:
+    """Month-ends that leave ``window`` months of outcome on file, after one month of history."""
+    first, last = _first_reported(game.organization_id), latest_reporting_date(game.organization_id)
+    if first is None or last is None:
+        return []
+    days = []
+    t = sd.months_back(first, -1)
+    while sd.months_back(t, -window) <= last:
+        days.append(t.isoformat())
+        t = sd.months_back(t, -1)
+    return days
+
+
+def options(game: Game) -> dict[str, Any]:
+    return {
+        "terms": [
+            {"code": sd.SHORT, "label": "Short term: up to 3 months (mostly mobile loans)"},
+            {"code": sd.MID, "label": "Mid term: over 3 months, up to a year"},
+            {"code": sd.LONG, "label": "Long term: over a year"},
+            {"code": sd.ALL, "label": "One scorecard for every loan (to compare)"},
+        ],
+        "features": [
+            {
+                "name": n,
+                "description": d,
+                "recommended_for": list(t),
+                "restricted": n in sd.RESTRICTED,
+            }
+            for n, (d, t) in sd.FEATURES.items()
+        ],
+        "windows": [
+            {"months": w, "observation_dates": observation_dates(game, w)} for w in WINDOWS
+        ],
+        "default_window": 12,
+    }
+
+
+def _next_number(game: Game) -> int:
+    return (ScoreModel.objects.filter(game=game).aggregate(n=Max("number"))["n"] or 0) + 1
+
+
+def _check_dates(game: Game, observation: date, window: int) -> None:
+    if window not in WINDOWS:
+        raise ScorecardError(f"The outcome window must be {', '.join(map(str, WINDOWS))} months")
+    if observation.isoformat() not in observation_dates(game, window):
+        raise ScorecardError(
+            f"{observation:%d %B %Y} does not leave {window} months of outcomes on file: "
+            "choose an earlier observation date or a shorter window"
+        )
+
+
+def _histogram(scores: np.ndarray) -> list[int]:
+    counts: np.ndarray = np.bincount(
+        np.searchsorted(np.array(PSI_EDGES), scores, side="right"), minlength=len(PSI_EDGES) + 1
+    )
+    return [int(c) for c in counts]
+
+
+def build(
+    game: Game, term: str, observation: date, window: int, features: list[str], tick: int
+) -> ScoreModel:
+    """Build a term scorecard (or one for every loan) and store it as a draft."""
+    if term not in sd.BUILDABLE:
+        raise ScorecardError(f"There is no term {term!r}")
+    _check_dates(game, observation, window)
+    number = _next_number(game)
+    data = sd.dataset(game.organization_id, term, observation, window)
+    try:
+        result = sd.build(data, features, _seed(game, number))
+    except ValueError as exc:
+        raise ScorecardError(str(exc)) from exc
+    scores = result.pop("scores")
+    all_scores = np.array(scores["scores"])
+    result["truth"] = debrief(game, term, data, all_scores, np.array(scores["holdout"]))
+    result["development"] = _histogram(all_scores)
+    spec = {k: result.pop(k) for k in ("binnings", "intercept", "coefficients")}
+    return ScoreModel.objects.create(
+        game=game, number=number, term=term, observation_date=observation, window_months=window,
+        features=features, seed=_seed(game, number), spec=spec, results=result, built_tick=tick,
+    )  # fmt: skip
+
+
+def build_composite(game: Game, observation: date, window: int, tick: int) -> ScoreModel:
+    """Combine the deployed term scorecards into one score, with weights fitted on the data."""
+    _check_dates(game, observation, window)
+    parts = list(
+        ScoreModel.objects.filter(
+            game=game, status=ScoreModel.Status.DEPLOYED, term__in=sd.TERMS
+        ).order_by("term")
+    )
+    if not parts:
+        raise ScorecardError(
+            "Deploy at least one term scorecard first: the composite combines them"
+        )
+    number = _next_number(game)
+    data = sd.dataset(game.organization_id, sd.ALL, observation, window)
+    if len(data.customers) < 100 or data.bad.sum() < 10:
+        raise ScorecardError("Too little data at that date for a composite")
+    log_odds = {}
+    for part in parts:
+        p = 1.0 / (1.0 + np.exp(-_logit(part, data)))
+        log_odds[part.term] = np.log(np.clip(p, 1e-9, 1 - 1e-9) / np.clip(1 - p, 1e-9, 1))
+    # Each term's log-odds counts only for customers who hold that term; presence itself
+    # gets a weight too (a customer with no long-term loan is not "average" on it).
+    columns = []
+    for part in parts:
+        present = data.present[part.term]
+        columns += [np.where(present, log_odds[part.term], 0.0), present.astype(float)]
+    x = np.column_stack(columns)
+    holdout = sd.split(data.customers, _seed(game, number))
+    intercept, coefficients = sm.fit_logistic(x[~holdout], data.bad[~holdout].astype(float))
+    p_bad = sm.predict_bad(intercept, coefficients, x)
+    scores = sm.score_of(p_bad)
+    each = {
+        part.term: sd.finite(sm.auc(data.bad[holdout], log_odds[part.term][holdout]))
+        for part in parts
+    }
+    results = {
+        "term": sd.COMPOSITE,
+        "observation": observation.isoformat(),
+        "components": [{"number": p.number, "term": p.term} for p in parts],
+        "weights": [
+            {
+                "term": p.term,
+                "log_odds_weight": round(float(coefficients[2 * i]), 4),
+                "presence_weight": round(float(coefficients[2 * i + 1]), 4),
+            }
+            for i, p in enumerate(parts)
+        ],
+        "holdout": {
+            "customers": int(holdout.sum()),
+            "bads": int(data.bad[holdout].sum()),
+            "auc": sd.finite(sm.auc(data.bad[holdout], p_bad[holdout])),
+            "gini": sd.finite(sm.gini(data.bad[holdout], p_bad[holdout])),
+            "ks": sd.finite(sm.ks(data.bad[holdout], p_bad[holdout])),
+        },
+        "each_term_on_everyone": each,
+        "score_bands": sd._bands(scores, data.bad),
+        "truth": debrief(game, sd.ALL, data, scores, holdout),
+        "development": _histogram(scores),
+        "fairness": {
+            "restricted_used": sorted({f for p in parts for f in p.features} & sd.RESTRICTED)
+        },
+    }
+    return ScoreModel.objects.create(
+        game=game, number=number, term=sd.COMPOSITE, observation_date=observation,
+        window_months=window, features=[], seed=_seed(game, number),
+        spec={"components": [p.number for p in parts], "intercept": intercept,
+              "coefficients": [float(c) for c in coefficients]},
+        results=results, built_tick=tick,
+    )  # fmt: skip
+
+
+def _logit(model: ScoreModel, data: sd.Dataset) -> np.ndarray:
+    columns = [
+        sd.stored_binning(b).transform(data.features[b["feature"]]) for b in model.spec["binnings"]
+    ]
+    result: np.ndarray = model.spec["intercept"] + np.column_stack(columns) @ np.array(
+        model.spec["coefficients"]
+    )
+    return result
+
+
+def scores_for(model: ScoreModel, data: sd.Dataset) -> np.ndarray:
+    """A stored model's scores for a dataset's customers (composites from their parts)."""
+    if model.term != sd.COMPOSITE:
+        return sm.score_of(1.0 / (1.0 + np.exp(-_logit(model, data))))
+    parts = {
+        p.number: p
+        for p in ScoreModel.objects.filter(game=model.game, number__in=model.spec["components"])
+    }
+    columns = []
+    for number in model.spec["components"]:
+        part = parts[number]
+        present = data.present[part.term]
+        columns += [np.where(present, _logit(part, data), 0.0), present.astype(float)]
+    p = sm.predict_bad(
+        model.spec["intercept"], np.array(model.spec["coefficients"]), np.column_stack(columns)
+    )
+    return sm.score_of(p)
+
+
+def deploy(game: Game, number: int, tick: int, at: datetime) -> ScoreModel:
+    """Put a model into use; the one it replaces for the same term is retired. A model that
+    uses a restricted attribute brings a Compliance finding."""
+    model = ScoreModel.objects.filter(game=game, number=number).first()
+    if model is None:
+        raise ScorecardError(f"There is no scorecard {number}")
+    if model.status == ScoreModel.Status.DEPLOYED:
+        raise ScorecardError(f"Scorecard {number} is already in use")
+    ScoreModel.objects.filter(game=game, term=model.term, status=ScoreModel.Status.DEPLOYED).update(
+        status=ScoreModel.Status.RETIRED
+    )
+    model.status, model.deployed_tick = ScoreModel.Status.DEPLOYED, tick
+    model.save(update_fields=["status", "deployed_tick"])
+    restricted = model.results.get("fairness", {}).get("restricted_used", [])
+    if restricted:
+        finding_number = (
+            ComplianceFinding.objects.filter(game=game).aggregate(n=Max("number"))["n"] or 0
+        ) + 1
+        detail = (
+            f"Scorecard {number} ({model.term.lower()} term) uses {', '.join(restricted)}, an "
+            "attribute that may not be used to decide credit. Retire it, or build one without it."
+        )
+        ComplianceFinding.objects.create(
+            game=game, number=finding_number, kind="RESTRICTED_ATTRIBUTE_IN_SCORECARD",
+            reference=f"SCORECARD-{number}", detail=detail, raised_tick=tick, raised_at=at,
+        )  # fmt: skip
+        feed = Feed(game, tick, at)
+        feed.add(
+            "COMPLIANCE_FINDING", Severity.WARNING, f"Compliance finding: scorecard {number} uses {restricted[0]}",
+            detail, {"screen": "scorecards", "params": {"number": str(number)}},
+        )  # fmt: skip
+        feed.save()
+    return model
+
+
+def debrief(
+    game: Game, term: str, data: sd.Dataset, scores: np.ndarray, holdout: np.ndarray
+) -> dict[str, Any]:
+    """How the model ranks the world's true outcomes on the holdout, and how many of the
+    bureau's labels its own data errors got wrong."""
+    customers = data.customers[holdout].tolist()
+    borrowers = customer_borrowers(game, customers)
+    people = {b[1] for b in borrowers.values() if b[0] == "person"}
+    defaulted: set[int] = set()
+    for person, disbursed, maturity, facility in Loan.objects.filter(
+        world=game.world,
+        customer__person_id__in=people,
+        first_default_period__gt=data.observation,
+        first_default_period__lte=data.window_end,
+    ).values_list("customer__person_id", "disbursement_date", "maturity_date", "facility_type"):
+        if term in (sd.ALL, sd.COMPOSITE) or sd.term_of(disbursed, maturity, facility) == term:
+            defaulted.add(person)
+    known = [i for i, c in enumerate(customers) if c in borrowers]
+    if not known:
+        return {}
+    true_bad = np.array(
+        [
+            borrowers[customers[i]][1] in defaulted and borrowers[customers[i]][0] == "person"
+            for i in known
+        ]
+    )
+    bureau_bad = data.bad[holdout][known]
+    held_scores = scores[holdout][known]
+    return {
+        "customers": len(known),
+        "true_defaults": int(true_bad.sum()),
+        "auc_against_truth": sd.finite(sm.auc(true_bad, -held_scores.astype(float)))
+        if 0 < true_bad.sum() < len(true_bad)
+        else None,
+        "auc_against_bureau_labels": sd.finite(sm.auc(bureau_bad, -held_scores.astype(float))),
+        "labels": {
+            "both_default": int((bureau_bad & true_bad).sum()),
+            "bureau_only": int((bureau_bad & ~true_bad).sum()),
+            "truth_only": int((~bureau_bad & true_bad).sum()),
+            "neither": int((~bureau_bad & ~true_bad).sum()),
+        },
+    }
+
+
+def monitor(game: Game, model: ScoreModel) -> dict[str, Any] | None:
+    """Population stability of a model's scores in the latest month against its development."""
+    latest = latest_reporting_date(game.organization_id)
+    if latest is None or latest <= model.observation_date:
+        return None
+    term = sd.ALL if model.term == sd.COMPOSITE else model.term
+    data = sd.dataset(game.organization_id, term, latest, 0)
+    if len(data.customers) == 0:
+        return None
+    now = _histogram(scores_for(model, data))
+    psi = _psi(model.results["development"], now)
+    return {
+        "as_of": latest.isoformat(), "customers": len(data.customers), "psi": round(psi, 4),
+        "drift": psi > DRIFT_PSI, "development": model.results["development"], "now": now,
+    }  # fmt: skip
+
+
+def _psi(expected: list[int], actual: list[int]) -> float:
+    e = np.array(expected, dtype=float) + sm.SMOOTHING
+    a = np.array(actual, dtype=float) + sm.SMOOTHING
+    pe, pa = e / e.sum(), a / a.sum()
+    return float(np.sum((pa - pe) * np.log(pa / pe)))
+
+
+def summary(model: ScoreModel) -> dict[str, Any]:
+    r = model.results
+    return {
+        "number": model.number, "term": model.term, "status": model.status,
+        "observation": model.observation_date.isoformat(), "window_months": model.window_months,
+        "features": model.features, "holdout": r.get("holdout"),
+        "restricted_used": r.get("fairness", {}).get("restricted_used", []),
+    }  # fmt: skip

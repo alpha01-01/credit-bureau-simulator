@@ -592,3 +592,58 @@ class EnquiryJudgement(models.Model):
 
     def __str__(self) -> str:
         return f"{self.enquiry_id}: {self.outcome}"
+
+
+class ScoreModel(models.Model):
+    """A scorecard built in the workbench (P3.5): its specification, results and status.
+
+    ``spec`` is what applying the model needs (bins, weights of evidence, coefficients);
+    ``results`` what the analyst sees (characteristics, validation, fairness, truth).
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Draft"
+        DEPLOYED = "DEPLOYED", "Deployed"
+        RETIRED = "RETIRED", "Retired"
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="score_models")
+    number = models.IntegerField()
+    term = models.CharField(max_length=10, help_text="SHORT, MID, LONG, ALL or COMPOSITE")
+    observation_date = models.DateField()
+    window_months = models.IntegerField()
+    features = models.JSONField(default=list)
+    seed = models.BigIntegerField()
+    spec = models.JSONField(default=dict)
+    results = models.JSONField(default=dict)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
+    built_tick = models.BigIntegerField()
+    deployed_tick = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "number"], name="score_model_unique_number")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} scorecard {self.number} ({self.term})"
+
+
+class ComplianceFinding(models.Model):
+    """Something Compliance has found that the bureau must put right (P3.5; grows in P3.7)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="compliance_findings")
+    number = models.IntegerField()
+    kind = models.CharField(max_length=40)
+    reference = models.CharField(max_length=60)
+    detail = models.TextField()
+    raised_tick = models.BigIntegerField()
+    raised_at = models.DateTimeField()
+    resolved_tick = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "number"], name="compliance_finding_unique")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} finding {self.number} {self.kind}"

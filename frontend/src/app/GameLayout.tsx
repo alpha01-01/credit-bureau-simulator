@@ -31,6 +31,7 @@ const NAV = [
   ['reviews', 'Reviews'],
   ['analytics', 'Analytics'],
   ['console', 'SQL console'],
+  ['scorecards', 'Scorecards'],
   ['handbook', 'Handbook'],
 ] as const
 

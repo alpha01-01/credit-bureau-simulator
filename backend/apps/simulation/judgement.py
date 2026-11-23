@@ -158,6 +158,44 @@ def customer_borrower(game: Game, customer_id: int) -> Borrower:
     return _customer_borrower(game.world_id, customer_id)
 
 
+def customer_borrowers(game: Game, customer_ids: list[int]) -> dict[int, Borrower]:
+    """``customer_borrower`` for many customers at once (P3.5: the scorecard's debrief)."""
+    firsts: dict[int, tuple[int, str, str]] = {}
+    for pk, customer, code, number in ProviderCustomerLink.objects.filter(
+        customer_id__in=customer_ids
+    ).values_list("pk", "customer_id", "institution__institution_code", "provider_customer_number"):
+        if customer not in firsts or pk < firsts[customer][0]:
+            firsts[customer] = (pk, code, number)
+    # Customers that lost a link to a correction: their first link may be the one moved.
+    corrected = set(
+        CorrectionRecord.objects.filter(from_customer_id__in=customer_ids).values_list(
+            "from_customer_id", flat=True
+        )
+    )
+    for customer in corrected:
+        link = first_link(customer)
+        if link is not None:
+            firsts[customer] = (
+                link.pk,
+                link.institution.institution_code,
+                link.provider_customer_number,
+            )
+    numbers = {number for _, _, number in firsts.values()}
+    world = {
+        (code, number): ("person", person)
+        if person is not None
+        else ("business", int(business or 0))
+        for code, number, person, business in LenderCustomer.objects.filter(
+            world_id=game.world_id, customer_number__in=numbers
+        ).values_list("lender__code", "customer_number", "person_id", "business_id")
+    }
+    return {
+        customer: world[(code, number)]
+        for customer, (_, code, number) in firsts.items()
+        if (code, number) in world
+    }
+
+
 def first_link(customer_id: int) -> ProviderCustomerLink | None:
     """The first provider link a bureau customer ever had: the one that created it.
 
