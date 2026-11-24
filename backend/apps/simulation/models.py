@@ -296,12 +296,93 @@ class Proposal(models.Model):
     sent_at = models.DateTimeField()
     status = models.CharField(max_length=10, default="PENDING")
     answered_at = models.DateTimeField(null=True, blank=True)
+    # The terms offered (P3.9); the defaults are the standard price list's.
+    term_months = models.IntegerField(default=12)
+    service_level = models.CharField(max_length=10, default="STANDARD")
+    monthly_minimum = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount_threshold = models.IntegerField(null=True, blank=True)
+    discount_rate = models.DecimalField(max_digits=5, decimal_places=4, default=0)
+    counter_price = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="The price the lender would sign at instead (status COUNTERED)",
+    )  # fmt: skip
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["game", "number"], name="proposal_unique")]
 
     def __str__(self) -> str:
         return f"Proposal {self.number} to {self.lender_code}: {self.status}"
+
+
+class LenderResearch(models.Model):
+    """What Sales has learnt about a lender (P3.9): its needs, then a meeting."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="research")
+    lender_code = models.CharField(max_length=30)
+    requested_tick = models.BigIntegerField()
+    ready_on = models.DateField()
+    findings = models.JSONField(default=dict, help_text="Shown once ready")
+    reported = models.BooleanField(default=False)
+    meeting_requested_tick = models.BigIntegerField(null=True, blank=True)
+    meeting_on = models.DateField(null=True, blank=True)
+    meeting_notes = models.JSONField(default=dict)
+    meeting_reported = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "lender_code"], name="research_unique")
+        ]
+
+    def __str__(self) -> str:
+        return f"Research on {self.lender_code}"
+
+
+class Onboarding(models.Model):
+    """A new subscriber's way through the company, one department after another (P3.9)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="onboardings")
+    number = models.IntegerField()
+    lender_code = models.CharField(max_length=30)
+    proposal = models.OneToOneField(Proposal, on_delete=models.CASCADE, related_name="onboarding")
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    signed_on = models.DateField()
+    give_up_on = models.DateField(help_text="The lender withdraws if not connected by then")
+    status = models.CharField(max_length=12, default="IN_PROGRESS")
+    live_on = models.DateField(null=True, blank=True)
+    ended_on = models.DateField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["game", "number"], name="onboarding_unique")]
+
+    def __str__(self) -> str:
+        return f"Onboarding {self.number} of {self.lender_code}: {self.status}"
+
+
+class OnboardingStep(models.Model):
+    """One department's part of an onboarding; it waits for the step before it."""
+
+    onboarding = models.ForeignKey(Onboarding, on_delete=models.CASCADE, related_name="steps")
+    position = models.IntegerField()
+    department = models.CharField(max_length=20)
+    code = models.CharField(max_length=20)
+    status = models.CharField(max_length=10, default="WAITING")
+    ready_on = models.DateField(null=True, blank=True)
+    due_on = models.DateField(null=True, blank=True, help_text="When the staff will have it done")
+    progress = models.IntegerField(default=0, help_text="Working days of work done")
+    held = models.CharField(max_length=200, blank=True, help_text="Why it is not moving")
+    done_on = models.DateField(null=True, blank=True)
+    done_tick = models.BigIntegerField(null=True, blank=True)
+    done_by = models.CharField(max_length=60, blank=True)
+    outcome = models.CharField(max_length=300, blank=True)
+    evidence = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["onboarding", "position"], name="step_unique")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.department} {self.code}: {self.status}"
 
 
 class Incident(models.Model):

@@ -51,6 +51,8 @@ from .models import (
     Game,
     GameStatus,
     LendingDecision,
+    OnboardingStep,
+    Proposal,
     RegulatorFinding,
 )
 from .sales import prospects
@@ -148,6 +150,23 @@ class Run:
     outcomes: dict[str, Any]
 
 
+def _onboard(game: Game) -> None:
+    """Sales takes a lender's counter-offer; the heads of Compliance and Finance settle
+    what their staff pass up (P3.9)."""
+    for number in Proposal.objects.filter(game=game, status="COUNTERED").values_list(
+        "number", flat=True
+    ):
+        with contextlib.suppress(ClockError):
+            controls.accept_counter(game, number)
+    for step in OnboardingStep.objects.filter(
+        onboarding__game=game, onboarding__status="IN_PROGRESS", status="ESCALATED"
+    ).select_related("onboarding"):
+        if step.code == "SUBSCRIBER_CHECK":
+            controls.decide_subscriber_check(game, step.onboarding.number, "APPROVE_WITH_WARNING")
+        elif step.code == "BILLING":
+            controls.set_up_billing(game, step.onboarding.number)
+
+
 def play(world: World, strategy: str, months: int) -> Game:
     game = controls.set_pause_rules(start_game(world), [], deadlines=False)
     for month in range(months):
@@ -155,6 +174,7 @@ def play(world: World, strategy: str, months: int) -> Game:
         current = controls.state(game).now.month
         while controls.state(game).now.month == current and game.status != GameStatus.ENDED:
             game = controls.advance_by(game, "next_event")
+            _onboard(game)
         if game.status == GameStatus.ENDED:
             break
     return game

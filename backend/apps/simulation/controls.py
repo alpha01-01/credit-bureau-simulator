@@ -30,7 +30,19 @@ from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
-from . import duties, finance_dept, hr, it, missions, providers, roles, sales, scorecards, solvency
+from . import (
+    duties,
+    finance_dept,
+    hr,
+    it,
+    missions,
+    onboarding,
+    providers,
+    roles,
+    sales,
+    scorecards,
+    solvency,
+)
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
@@ -394,16 +406,72 @@ def set_salary(game: Game, number: str, salary: Decimal) -> Employee:
     return employee
 
 
-def send_proposal(game: Game, lender: str, price: Decimal) -> Proposal:
+def send_proposal(
+    game: Game, lender: str, price: Decimal, terms: sales.Terms | None = None
+) -> Proposal:
+    """A proposal to a lender: the price and, from P3.9, the other terms."""
     tick, at = _now(game)
+    terms = terms or sales.Terms(price)
     with transaction.atomic():
         try:
             # The answer is scheduled from the next tick: the one the player is waiting for.
-            proposal = sales.propose(game, lender, price, tick + 1, at)
+            proposal = sales.propose(game, lender, terms, tick + 1, at)
         except sales.SalesError as exc:
             raise ClockError(str(exc)) from exc
-        record(game, "SEND_PROPOSAL", {"lender": lender, "price": str(proposal.unit_price)})
+        payload: dict[str, Any] = {"lender": lender, "price": str(proposal.unit_price)}
+        if sales.Terms.of(proposal) != sales.Terms(proposal.unit_price):
+            payload |= sales.Terms.of(proposal).payload()
+        record(game, "SEND_PROPOSAL", payload)
     return proposal
+
+
+def _sales(game: Game, action: str, payload: dict[str, Any], do: Any) -> Any:
+    """A Sales, Compliance or Finance step of winning and taking on a subscriber (P3.9)."""
+    tick, at = _now(game)
+    with transaction.atomic():
+        feed = Feed(game, tick, at)
+        try:
+            result = do(tick, at, feed.add)
+        except (sales.SalesError, onboarding.OnboardingError, duties.DutyError) as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, action, payload)
+        feed.save()
+    return result
+
+
+def research_lender(game: Game, lender: str) -> Any:
+    return _sales(
+        game, "RESEARCH_LENDER", {"lender": lender},
+        lambda tick, at, add: sales.research(game, lender, tick, at.date()),
+    )  # fmt: skip
+
+
+def meet_lender(game: Game, lender: str) -> Any:
+    return _sales(
+        game, "MEET_LENDER", {"lender": lender},
+        lambda tick, at, add: sales.meet(game, lender, tick, at.date()),
+    )  # fmt: skip
+
+
+def accept_counter(game: Game, number: int) -> Any:
+    return _sales(
+        game, "ACCEPT_COUNTER", {"number": number},
+        lambda tick, at, add: sales.accept_counter(game, number, at, add),
+    )  # fmt: skip
+
+
+def decide_subscriber_check(game: Game, number: int, decision: str) -> Any:
+    return _sales(
+        game, "DECIDE_SUBSCRIBER_CHECK", {"number": number, "decision": decision},
+        lambda tick, at, add: onboarding.decide_check(game, number, decision, tick, at, add),
+    )  # fmt: skip
+
+
+def set_up_billing(game: Game, number: int) -> Any:
+    return _sales(
+        game, "SET_UP_BILLING", {"number": number},
+        lambda tick, at, add: onboarding.set_up_billing(game, number, tick, at, add),
+    )  # fmt: skip
 
 
 def respond_to_outage(game: Game, response: str) -> Incident:
@@ -798,7 +866,21 @@ def _apply(target: Game, action: PlayerAction) -> Game:
         case "SET_SALARY":
             set_salary(target, str(action.payload["employee"]), Decimal(action.payload["salary"]))
         case "SEND_PROPOSAL":
-            send_proposal(target, str(action.payload["lender"]), Decimal(action.payload["price"]))
+            p = action.payload
+            send_proposal(
+                target, str(p["lender"]), Decimal(p["price"]), sales.Terms.from_payload(p)
+            )
+        case "RESEARCH_LENDER":
+            research_lender(target, str(action.payload["lender"]))
+        case "MEET_LENDER":
+            meet_lender(target, str(action.payload["lender"]))
+        case "ACCEPT_COUNTER":
+            accept_counter(target, int(action.payload["number"]))
+        case "DECIDE_SUBSCRIBER_CHECK":
+            p = action.payload
+            decide_subscriber_check(target, int(p["number"]), str(p["decision"]))
+        case "SET_UP_BILLING":
+            set_up_billing(target, int(action.payload["number"]))
         case "RESPOND_TO_OUTAGE":
             respond_to_outage(target, str(action.payload["response"]))
         case "SET_IT_CAPACITY":

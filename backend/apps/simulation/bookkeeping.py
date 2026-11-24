@@ -28,7 +28,7 @@ from apps.standards.calendar import is_working_day, next_working_day
 from apps.standards.rulebook import TAX_RULES
 from apps.world.generation.rng import stream
 
-from . import finance_dept
+from . import finance_dept, it
 from .clock import Calendar, previous_month_end
 from .feed import Feed
 from .models import EventType, Game, ScheduledEvent
@@ -63,7 +63,15 @@ def month_start(game: Game, cal: Calendar, tick: int, sequence: int, feed: Feed)
     # Invoices are dated the last day of the month the service was delivered, so the
     # revenue (and the VAT on it) belongs to that month, as accrual accounting requires.
     previous_end = previous_month_end(today)
-    invoices = invoice_usage(org, previous_end.replace(day=1), previous_end, previous_end, at)
+    # Premium contracts earn a credit for a month of long downtime (P3.9).
+    last_month = (
+        cal.tick_at(datetime.combine(previous_end.replace(day=1), time(0), tzinfo=UTC)),
+        tick - 1,
+    )
+    down = it.downtime_hours(game, *last_month) if last_month[1] >= 1 else 0.0
+    invoices = invoice_usage(
+        org, previous_end.replace(day=1), previous_end, previous_end, at, downtime_hours=down
+    )
     feed.invoices_issued(invoices, previous_end)
     events = []
     for invoice in invoices:

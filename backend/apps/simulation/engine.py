@@ -52,6 +52,7 @@ from . import (
     it,
     lending,
     missions,
+    onboarding,
     providers,
     sales,
     scorecards,
@@ -209,6 +210,10 @@ def run_tick(game_id: int, tick: int) -> bool:
             feed.morning(cal.tick_start(tick).date())
             it.morning(game, tick, cal.tick_start(tick).date(), feed.add)
             finance_dept.morning(  # P3.8: bills paid, the bank's answers, suppliers' patience
+                game, cal.tick_start(tick).date(), tick, cal.tick_start(tick), feed.add
+            )
+            sales.morning(game, cal.tick_start(tick).date(), feed.add)  # P3.9
+            onboarding.morning(  # P3.9: each department's part in taking on a subscriber
                 game, cal.tick_start(tick).date(), tick, cal.tick_start(tick), feed.add
             )
             solvency.morning(
