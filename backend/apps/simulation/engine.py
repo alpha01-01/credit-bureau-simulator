@@ -47,6 +47,7 @@ from . import (
     bookkeeping,
     compliance,
     duties,
+    finance_dept,
     hr,
     it,
     lending,
@@ -207,6 +208,9 @@ def run_tick(game_id: int, tick: int) -> bool:
         if (tick - 1) % TICKS_PER_DAY == 0:
             feed.morning(cal.tick_start(tick).date())
             it.morning(game, tick, cal.tick_start(tick).date(), feed.add)
+            finance_dept.morning(  # P3.8: bills paid, the bank's answers, suppliers' patience
+                game, cal.tick_start(tick).date(), tick, cal.tick_start(tick), feed.add
+            )
             solvency.morning(
                 game, cal.tick_start(tick).date(), cal.tick_start(tick), tick, feed.add
             )

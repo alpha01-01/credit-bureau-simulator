@@ -65,6 +65,13 @@ class Organization(models.Model):
     retention_years = models.PositiveSmallIntegerField(
         default=5, help_text="How long closed accounts stay on reports (P3.7; the law: 5)"
     )
+    bill_approval_limit = models.DecimalField(
+        max_digits=19, decimal_places=2, default=20000,
+        help_text="Supplier bills up to this are approved by delegated authority (P3.8)",
+    )  # fmt: skip
+    closed_through = models.DateField(
+        null=True, blank=True, help_text="The last month-end closed: no posting on or before it"
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     # Counters for the bureau's own reference numbers.

@@ -27,6 +27,8 @@ from apps.finance.events import (
 )
 from apps.finance.ledger import (
     BANK,
+    IT,
+    PAYABLES,
     PAYE_PAYABLE,
     PREPAID_RENT,
     RECEIVABLES,
@@ -42,7 +44,14 @@ from apps.finance.ledger import (
     post,
     reverse,
 )
-from apps.finance.models import ImmutableError, Invoice, JournalEntry, JournalLine, Payment
+from apps.finance.models import (
+    ImmutableError,
+    Invoice,
+    JournalEntry,
+    JournalLine,
+    Payment,
+    SupplierBill,
+)
 from apps.finance.statements import balance_sheet, income_statement, trial_balance
 from apps.org.models import Employee
 from apps.simulation import controls
@@ -169,14 +178,21 @@ def test_a_month_of_play_produces_the_expected_ledger(world: World) -> None:
     )  # fmt: skip
     net_pay = gross - employee_ssnit - income_tax
 
-    # Rent from the prepayment; IT hosting from the bank; two months of each.
+    # Rent from the prepayment; two months of each.
     assert balance(org, RENT) == 2 * MONTHLY_RENT
     assert balance(org, PREPAID_RENT) == 10 * MONTHLY_RENT
+    # Suppliers' bills (P3.8): IT hosting is a cost each month from the day its bill
+    # arrives; what is not yet paid is owed to the supplier.
+    bills = SupplierBill.objects.filter(organization=org)
+    assert balance(org, IT) == 2 * MONTHLY_IT
+    paid_bills = sum((b.amount + b.late_fee for b in bills if b.paid_on), Decimal("0"))
+    unpaid = sum((b.amount for b in bills if not b.paid_on), Decimal("0"))
+    assert -balance(org, PAYABLES) == unpaid > 0
 
     # The bank: opening, less costs paid, plus what subscribers paid.
     expected_bank = (
         OPENING_BANK
-        - 2 * MONTHLY_IT
+        - paid_bills
         - net_pay
         - income_tax
         - (employee_ssnit + employer_ssnit)

@@ -19,6 +19,14 @@ export function drillPath(gameId: number, drill: Drill): string {
     it: `${base}/it`,
     health: `${base}/health`,
     missions: `${base}/missions`,
+    compliance: `${base}/compliance`,
+    scorecards: `${base}/scorecards`,
+  }
+  if (drill.screen === 'finance') {
+    return `${base}/finance/${drill.params.tab ?? ''}`
+  }
+  if (drill.screen === 'scorecards' && drill.params.number) {
+    return `${base}/scorecards/${drill.params.number}`
   }
   if (drill.screen === 'review') {
     return `${base}/reviews/${drill.params.period}`

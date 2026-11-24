@@ -22,12 +22,15 @@ from apps.bureau.submissions.feedback import send_report
 from apps.bureau.submissions.mapping import MappingError, save_mapping
 from apps.bureau.submissions.models import FeedbackReport, FileStatus, Submission, SubmissionFile
 from apps.bureau.submissions.pipeline import process_submission
+from apps.finance import budget
+from apps.finance.budget import BudgetError
+from apps.finance.ledger import PostingError
 from apps.org.models import Employee
 from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
-from . import duties, hr, it, missions, providers, roles, sales, scorecards, solvency
+from . import duties, finance_dept, hr, it, missions, providers, roles, sales, scorecards, solvency
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
@@ -561,6 +564,85 @@ def review_access(game: Game) -> int:
     return removed
 
 
+# --- The Finance department (P3.8) -------------------------------------------------------
+
+
+def _finance(game: Game, action: str, payload: dict[str, Any], do: Any) -> Any:
+    """Do a Finance action at the current game time and record it."""
+    tick, at = _now(game)
+    with transaction.atomic():
+        try:
+            result = do(tick, at)
+        except (finance_dept.FinanceError, BudgetError, PostingError) as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, action, payload)
+    return result
+
+
+def approve_bill(game: Game, number: int) -> Any:
+    return _finance(
+        game, "APPROVE_BILL", {"number": number},
+        lambda tick, at: finance_dept.approve_bill(game, number),
+    )  # fmt: skip
+
+
+def reject_bill(game: Game, number: int) -> Any:
+    return _finance(
+        game, "REJECT_BILL", {"number": number},
+        lambda tick, at: finance_dept.reject_bill(game, number, at.date(), at),
+    )  # fmt: skip
+
+
+def set_approval_limit(game: Game, amount: Decimal) -> Any:
+    return _finance(
+        game, "SET_APPROVAL_LIMIT", {"amount": str(amount)},
+        lambda tick, at: finance_dept.set_approval_limit(game, amount),
+    )  # fmt: skip
+
+
+def post_statement_line(game: Game, period: date, line: int) -> Any:
+    return _finance(
+        game, "POST_STATEMENT_LINE", {"period": period.isoformat(), "line": line},
+        lambda tick, at: finance_dept.post_line(game, period, line, at),
+    )  # fmt: skip
+
+
+def query_statement_line(game: Game, period: date, line: int) -> Any:
+    return _finance(
+        game, "QUERY_STATEMENT_LINE", {"period": period.isoformat(), "line": line},
+        lambda tick, at: finance_dept.query_line(game, period, line, tick),
+    )  # fmt: skip
+
+
+def complete_reconciliation(game: Game, period: date) -> Any:
+    return _finance(
+        game, "COMPLETE_RECONCILIATION", {"period": period.isoformat()},
+        lambda tick, at: finance_dept.complete_reconciliation(game, period, at),
+    )  # fmt: skip
+
+
+def set_budget(game: Game, centre: str, amount: Decimal, month: date) -> Any:
+    return _finance(
+        game, "SET_BUDGET",
+        {"centre": centre, "amount": str(amount), "month": month.isoformat()},
+        lambda tick, at: budget.set_budget(game.organization, centre, amount, month),
+    )  # fmt: skip
+
+
+def review_budget(game: Game, period: date) -> Any:
+    return _finance(
+        game, "REVIEW_BUDGET", {"period": period.isoformat()},
+        lambda tick, at: finance_dept.review_budget(game, period, at),
+    )  # fmt: skip
+
+
+def close_month(game: Game, period: date) -> Any:
+    return _finance(
+        game, "CLOSE_MONTH", {"period": period.isoformat()},
+        lambda tick, at: finance_dept.close_month(game, period, at.date(), at),
+    )  # fmt: skip
+
+
 def set_campaign(game: Game, on: bool) -> Game:
     with transaction.atomic():
         record(game, "SET_CAMPAIGN", {"on": on})
@@ -736,6 +818,29 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             build_composite(target, date.fromisoformat(p["observation"]), int(p["window"]))
         case "DEPLOY_SCORECARD":
             deploy_scorecard(target, int(action.payload["number"]))
+        case "APPROVE_BILL":
+            approve_bill(target, int(action.payload["number"]))
+        case "REJECT_BILL":
+            reject_bill(target, int(action.payload["number"]))
+        case "SET_APPROVAL_LIMIT":
+            set_approval_limit(target, Decimal(action.payload["amount"]))
+        case "POST_STATEMENT_LINE":
+            p = action.payload
+            post_statement_line(target, date.fromisoformat(p["period"]), int(p["line"]))
+        case "QUERY_STATEMENT_LINE":
+            p = action.payload
+            query_statement_line(target, date.fromisoformat(p["period"]), int(p["line"]))
+        case "COMPLETE_RECONCILIATION":
+            complete_reconciliation(target, date.fromisoformat(action.payload["period"]))
+        case "SET_BUDGET":
+            p = action.payload
+            set_budget(
+                target, str(p["centre"]), Decimal(p["amount"]), date.fromisoformat(p["month"])
+            )
+        case "REVIEW_BUDGET":
+            review_budget(target, date.fromisoformat(action.payload["period"]))
+        case "CLOSE_MONTH":
+            close_month(target, date.fromisoformat(action.payload["period"]))
         case "RETIRE_SCORECARD":
             retire_scorecard(target, int(action.payload["number"]))
         case "SAMPLE_CONSENT":

@@ -105,6 +105,8 @@ def respond(game: Game, response: str, tick: int, on: date, at: datetime) -> Inc
     incident = active_incident(game, tick + 1)
     if incident is None:
         raise ITError("Systems are running: there is nothing to respond to")
+    if incident.kind == "SUPPLIER_HOLD":  # P3.8: only paying the hosting company helps
+        raise ITError("The hosting company has suspended service: pay its bill (Finance)")
     if incident.response:
         raise ITError(f"Already responding ({incident.response.lower()})")
     if response == "VENDOR":

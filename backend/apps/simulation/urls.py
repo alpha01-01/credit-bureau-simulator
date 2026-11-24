@@ -1,6 +1,15 @@
 from django.urls import path
 
-from . import analytics_api, api, compliance_api, departments_api, health_api, learning_api, ui_api
+from . import (
+    analytics_api,
+    api,
+    compliance_api,
+    departments_api,
+    finance_api,
+    health_api,
+    learning_api,
+    ui_api,
+)
 
 urlpatterns = [
     path("worlds/", ui_api.worlds, name="worlds"),
@@ -75,6 +84,10 @@ urlpatterns = [
     ),
     path("games/<int:game_id>/enquiries/", api.enquiries, name="enquiries"),
     path("games/<int:game_id>/finance/", api.finance, name="finance"),
+    path("games/<int:game_id>/finance/bills/", finance_api.bills_view, name="finance-bills"),
+    path("games/<int:game_id>/finance/bank/", finance_api.bank_view, name="finance-bank"),
+    path("games/<int:game_id>/finance/budget/", finance_api.budget_view, name="finance-budget"),
+    path("games/<int:game_id>/finance/close/", finance_api.close_view, name="finance-close"),
     path(
         "games/<int:game_id>/enquiries/<str:reference>/", api.enquiry_report, name="enquiry-report"
     ),

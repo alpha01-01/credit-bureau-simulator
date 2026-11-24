@@ -52,7 +52,19 @@ from apps.bureau.submissions.models import (
     TemplateMapping,
 )
 from apps.commercial.models import Contract, Product, Subscriber, UsageRecord
-from apps.finance.models import Account, Invoice, InvoiceLine, JournalEntry, JournalLine, Payment
+from apps.finance.models import (
+    Account,
+    BankStatement,
+    Budget,
+    Invoice,
+    InvoiceLine,
+    JournalEntry,
+    JournalLine,
+    MonthClose,
+    Payment,
+    StatementLine,
+    SupplierBill,
+)
 from apps.org.models import Employee, Organization
 from apps.workitems.models import WorkItem
 from apps.world.generation.persist import delete_world
@@ -108,6 +120,14 @@ _ENTRIES = f"SELECT id FROM {_table(JournalEntry)} WHERE organization_id = %(org
 _ORDER: tuple[tuple[type[Model], str], ...] = (
     (Consequence, "game_id = %(game)s"),
     (DataQualityReview, "game_id = %(game)s"),
+    (
+        StatementLine,
+        f"statement_id IN (SELECT id FROM {_table(BankStatement)} WHERE organization_id = %(org)s)",
+    ),
+    (BankStatement, "organization_id = %(org)s"),
+    (SupplierBill, "organization_id = %(org)s"),
+    (Budget, "organization_id = %(org)s"),
+    (MonthClose, "organization_id = %(org)s"),
     (Payment, "organization_id = %(org)s"),
     (
         InvoiceLine,

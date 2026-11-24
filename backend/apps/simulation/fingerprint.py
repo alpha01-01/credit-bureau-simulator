@@ -48,8 +48,17 @@ from apps.bureau.submissions.models import (
     TemplateMapping,
 )
 from apps.commercial.models import Contract, UsageRecord
-from apps.finance.models import Invoice, JournalLine, Payment
-from apps.org.models import Employee
+from apps.finance.models import (
+    BankStatement,
+    Budget,
+    Invoice,
+    JournalLine,
+    MonthClose,
+    Payment,
+    StatementLine,
+    SupplierBill,
+)
+from apps.org.models import Employee, Organization
 from apps.workitems.models import WorkItem
 
 from .models import (
@@ -122,14 +131,17 @@ def _fingerprint(game: Game) -> _Hasher:
     org = game.organization_id
     h = _Hasher()
     sub = "submission__submission_reference"
+    # The bureau's settings as stored: an in-memory copy may still hold a default
+    # (Decimal("20000") where the database gives Decimal("20000.00")).
+    bureau = Organization.objects.get(pk=org)
     _section(
         h,
         "game",
         [(game.clock_start, game.current_tick, game.status, game.speed,
-          game.organization.rejection_policy, game.pause_severities, game.pause_on_deadlines,
-          game.organization.rule_overrides, game.organization.matching_tooling,
-          game.organization.match_auto_link, game.organization.match_review, game.role,
-          game.organization.retention_years)],
+          bureau.rejection_policy, game.pause_severities, game.pause_on_deadlines,
+          bureau.rule_overrides, bureau.matching_tooling, bureau.match_auto_link,
+          bureau.match_review, game.role, bureau.retention_years, bureau.bill_approval_limit,
+          bureau.closed_through)],
     )  # fmt: skip
     _section(
         h,
@@ -575,5 +587,52 @@ def _fingerprint(game: Game) -> _Hasher:
         Payment.objects.filter(organization_id=org)
         .order_by("reference")
         .values_list("reference", "invoice__invoice_number", "amount", "received_on"),
+    )
+    # The Finance department (P3.8).
+    _section(
+        h,
+        "supplier_bills",
+        SupplierBill.objects.filter(organization_id=org)
+        .order_by("number")
+        .values_list(
+            "number", "supplier_code", "reference", "account_code", "amount", "bill_date",
+            "due_date", "status", "approved_by", "paid_on", "late_fee",
+            "journal__journal_reference", "payment_journal__journal_reference",
+            "duplicate_of__number",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "bank_statements",
+        BankStatement.objects.filter(organization_id=org)
+        .order_by("period")
+        .values_list(
+            "period", "opening_balance", "closing_balance", "received_at", "reconciled_at"
+        ),
+    )
+    _section(
+        h,
+        "statement_lines",
+        StatementLine.objects.filter(statement__organization_id=org)
+        .order_by("statement__period", "line_number")
+        .values_list(
+            "statement__period", "line_number", "value_date", "description", "reference",
+            "amount", "cause", "entry__journal_reference", "status",
+            "resolution__journal_reference", "corrects__line_number", "answer_tick", "answer",
+        ),
+    )  # fmt: skip
+    _section(
+        h,
+        "budgets",
+        Budget.objects.filter(organization_id=org)
+        .order_by("cost_centre", "effective_from")
+        .values_list("cost_centre", "effective_from", "amount"),
+    )
+    _section(
+        h,
+        "month_closes",
+        MonthClose.objects.filter(organization_id=org)
+        .order_by("period")
+        .values_list("period", "budget_reviewed_at", "closed_at"),
     )
     return h
