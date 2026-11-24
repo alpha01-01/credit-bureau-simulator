@@ -577,6 +577,7 @@ export type CustomerDetail = CustomerRow & {
 export type EnquiryRow = {
   reference: string
   subscriber: string
+  product: string
   purpose: string
   enquired_at: string
   outcome: 'HIT' | 'NO_HIT'

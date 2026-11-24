@@ -2,6 +2,7 @@
 
 GET/POST /api/v1/games/<id>/support/    tickets, response, satisfaction; {"agents": 3}
 GET/POST /api/v1/games/<id>/products/   the development menu; {"code": "CREDIT_SCORE"}
+GET      /api/v1/games/<id>/batches/    batch files (P3.11); ?reference= for one file
 """
 
 from __future__ import annotations
@@ -13,6 +14,9 @@ from typing import Any
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
+
+from apps.bureau.reports.batch import BATCH_ENQUIRY, result_file
+from apps.bureau.reports.models import BatchFile
 
 from . import controls, products, roles, support
 from .api import _error, _game
@@ -111,3 +115,45 @@ def products_view(request: Request, game_id: int) -> Response:
             return _error(exc)
     today = controls.state(game).now.date()
     return Response({"products": [_offering(game, o, today) for o in products.MENU.values()]})
+
+
+@api_view(["GET"])
+def batches_view(request: Request, game_id: int) -> Response:
+    """Batch files subscribers sent (P3.11); ?reference= for one file's records and result."""
+    game = _game(request, game_id)
+    files = BatchFile.objects.filter(organization=game.organization).select_related("subscriber")
+    body: dict[str, Any] = {
+        "launched": products.launched(game, BATCH_ENQUIRY),
+        "price": products.SOLD[BATCH_ENQUIRY][1],
+        "batches": [
+            {
+                "reference": b.reference,
+                "subscriber": b.subscriber.subscriber_code,
+                "name": b.subscriber.subscriber_name,
+                "received_at": b.received_at,
+                "records": b.records,
+                "hits": b.hits,
+            }
+            for b in files.order_by("-received_at", "reference")[:100]
+        ],
+        "batch": None,
+    }
+    if reference := request.query_params.get("reference"):
+        chosen = files.filter(reference=reference).first()
+        if chosen is not None:
+            body["batch"] = {
+                "reference": chosen.reference,
+                "rows": [
+                    {
+                        "row": r.row_number,
+                        "identifier": r.identifier_value,
+                        "name": r.subject_name,
+                        "outcome": r.enquiry.outcome,
+                        "report": r.enquiry.enquiry_reference,
+                        "accounts": r.enquiry.accounts_reported,
+                    }
+                    for r in chosen.rows.select_related("enquiry").order_by("row_number")
+                ],
+                "result_file": result_file(chosen),
+            }
+    return Response(body)

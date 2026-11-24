@@ -42,7 +42,7 @@ from apps.bureau.quality.models import (
     TransformationLog,
     ValidationIssue,
 )
-from apps.bureau.reports.models import CreditScore
+from apps.bureau.reports.models import BatchFile, BatchRecord, CreditScore
 from apps.bureau.submissions.models import (
     FeedbackReport,
     ProcessingRun,
@@ -146,6 +146,11 @@ _ORDER: tuple[tuple[type[Model], str], ...] = (
     (EnquiryJudgement, "game_id = %(game)s"),
     (SubscriberView, "game_id = %(game)s"),
     (UsageRecord, "organization_id = %(org)s"),
+    (
+        BatchRecord,
+        f"batch_id IN (SELECT id FROM {_table(BatchFile)} WHERE organization_id = %(org)s)",
+    ),
+    (BatchFile, "organization_id = %(org)s"),
     (CreditScore, "organization_id = %(org)s"),
     (Enquiry, "organization_id = %(org)s"),
     (

@@ -79,6 +79,7 @@ ROLES: dict[str, Role] = {
                 "compliance",
                 "support",
                 "products",
+                "batches",
             ),
             frozenset(
                 {
@@ -138,7 +139,7 @@ ROLES: dict[str, Role] = {
             "Head of Sales",
             "Looks after subscribers and wins new ones: researches lenders, meets them and "
             "negotiates price, term, service level, minimums and discounts (P3.9).",
-            ("subscribers", "sales", "enquiries"),
+            ("subscribers", "sales", "enquiries", "batches"),
             frozenset({"SEND_PROPOSAL", "RESEARCH_LENDER", "MEET_LENDER", "ACCEPT_COUNTER"}),
         ),
         Role(

@@ -20,11 +20,13 @@ import { SubmissionPage, SubmissionsPage } from '../pages/SubmissionsPage'
 import { SubscribersPage } from '../pages/SubscribersPage'
 import { StaffPage } from '../pages/StaffPage'
 import { OnboardingPage } from '../pages/OnboardingPage'
+import { ReportPage } from '../pages/ReportPage'
 import { ProductsPage } from '../pages/ProductsPage'
 import { SalesPage } from '../pages/SalesPage'
 import { SupportPage } from '../pages/SupportPage'
 import { ItPage } from '../pages/ItPage'
 import { HealthPage } from '../pages/HealthPage'
+import { BatchesPage } from '../pages/BatchesPage'
 import { AccountsPage } from '../pages/AccountsPage'
 import { MissionsPage } from '../pages/MissionsPage'
 import { HandbookPage } from '../pages/HandbookPage'
@@ -137,6 +139,8 @@ const routes = [
               { path: 'accounts', element: <AccountsPage /> },
               { path: 'customers/:reference', element: <CustomerPage /> },
               { path: 'enquiries', element: <EnquiriesPage /> },
+              { path: 'enquiries/:reference', element: <ReportPage /> },
+              { path: 'batches', element: <BatchesPage /> },
               {
                 path: 'finance',
                 element: <FinanceLayout />,

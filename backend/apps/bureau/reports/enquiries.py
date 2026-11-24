@@ -42,6 +42,8 @@ from apps.standards.submission_template import (
 )
 
 REPORT_LAYOUT = "SIMB-R1"  # R1 adds dishonoured cheques and judgments (P2.0c)
+BUSINESS_LAYOUT = "SIMB-B1"  # the business credit report (P3.11)
+BUSINESS_REPORT = "BUSINESS_REPORT"
 HISTORY_MONTHS = 12
 
 
@@ -77,7 +79,11 @@ def enquire(
             .first()
         )
         customer = identifier.customer if identifier else None
-        report = build_report(customer, at, include_score) if customer else {}
+        report: dict[str, Any] = {}
+        if customer is not None and product_code == BUSINESS_REPORT:
+            report = build_business_report(customer, at)
+        elif customer is not None:
+            report = build_report(customer, at, include_score)
         seq = organization.allocate("last_enquiry_seq")
         return Enquiry.objects.create(
             organization=organization,
@@ -92,7 +98,7 @@ def enquire(
             enquired_at=at,
             outcome=EnquiryOutcome.HIT if customer else EnquiryOutcome.NO_HIT,
             customer=customer,
-            accounts_reported=len(report.get("accounts", [])),
+            accounts_reported=len(report.get("accounts", report.get("facilities", []))),
             report=report,
         )
 
@@ -177,6 +183,27 @@ def build_report(customer: Customer, at: datetime, include_score: bool = False) 
         "dishonoured_cheques": cheques,
         "judgments": judgments,
     }
+
+
+def build_business_report(customer: Customer, at: datetime) -> dict[str, Any]:
+    """The business credit report (P3.11): the business as registered, then its
+    facilities, dishonoured cheques and court judgments exactly as loaded.
+
+    ASSUMPTION A-081: the layout ("SIMB-B1") is a placeholder until a real business
+    report layout (reference R9) is available.
+    """
+    report = build_report(customer, at)
+    business = getattr(customer, "business", None)
+    report["layout"] = BUSINESS_LAYOUT
+    if business is not None:
+        report["subject"] |= {
+            "registered_name": business.registered_name,
+            "trading_name": business.trading_name or None,
+            "registration_number": business.registration_number or None,
+            "tin": business.tin_number or None,
+        }
+    report["facilities"] = report.pop("accounts")
+    return report
 
 
 def cheques_on_file(customer: Customer, as_of: date) -> list[dict[str, Any]]:

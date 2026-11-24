@@ -720,6 +720,7 @@ def enquiries(request: Request, game_id: int) -> Response:
             {
                 "reference": e.enquiry_reference,
                 "subscriber": e.subscriber.subscriber_code,
+                "product": e.product_code,
                 "purpose": e.purpose,
                 "enquired_at": e.enquired_at.isoformat(),
                 "outcome": e.outcome,
