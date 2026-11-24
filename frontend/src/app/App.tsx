@@ -29,6 +29,7 @@ import { AnalyticsPage } from '../pages/AnalyticsPage'
 import { ConsolePage } from '../pages/ConsolePage'
 import { ScorecardPage, ScorecardsPage } from '../pages/ScorecardsPage'
 import { CompliancePage } from '../pages/CompliancePage'
+import { BankPage, BillsPage, BudgetPage, ClosePage } from '../pages/FinanceDeptPage'
 import { GameLayout } from './GameLayout'
 
 // The 3D office is loaded only when it is opened (three.js is large; P3.2).
@@ -137,6 +138,10 @@ const routes = [
                   { index: true, element: <StatementsPage /> },
                   { path: 'ledger', element: <LedgerPage /> },
                   { path: 'invoices', element: <InvoicesPage /> },
+                  { path: 'bills', element: <BillsPage /> },
+                  { path: 'bank', element: <BankPage /> },
+                  { path: 'budget', element: <BudgetPage /> },
+                  { path: 'close', element: <ClosePage /> },
                 ],
               },
             ],

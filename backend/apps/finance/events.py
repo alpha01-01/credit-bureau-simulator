@@ -97,36 +97,16 @@ def balance(organization: Organization, code: str, as_of: date | None = None) ->
 
 
 def month_start_costs(organization: Organization, month_first: date, at: datetime) -> None:
-    """Rent for the month (from the prepayment, renewing it when used up) and IT hosting."""
-    with transaction.atomic():
-        if balance(organization, PREPAID_RENT) < MONTHLY_RENT:
-            post(
-                organization, month_first, "Office rent: next 12 months paid in advance",
-                [dr(PREPAID_RENT, MONTHLY_RENT * 12), cr(BANK, MONTHLY_RENT * 12)],
-                "RENT_ADVANCE", at,
-            )  # fmt: skip
-        post(
-            organization, month_first, f"Office rent for {month_first:%B %Y}",
-            [dr(RENT, MONTHLY_RENT), cr(PREPAID_RENT, MONTHLY_RENT)], "RENT", at,
-        )  # fmt: skip
-        post(
-            organization, month_first, f"IT hosting for {month_first:%B %Y}",
-            [dr(IT, MONTHLY_IT), cr(BANK, MONTHLY_IT)], "IT_HOSTING", at,
-        )  # fmt: skip
-        capacity = IT_CAPACITY_COST[organization.it_capacity]
-        if capacity:
-            post(
-                organization, month_first,
-                f"Extra processing capacity for {month_first:%B %Y}",
-                [dr(IT, capacity), cr(BANK, capacity)], "IT_CAPACITY", at,
-            )  # fmt: skip
-        tooling = MATCHING_TOOLING_COST[organization.matching_tooling]
-        if tooling:
-            post(
-                organization, month_first,
-                f"Matching software ({organization.matching_tooling.lower()}) for {month_first:%B %Y}",
-                [dr(IT, tooling), cr(BANK, tooling)], "IT_TOOLING", at,
-            )  # fmt: skip
+    """The month's rent, from the prepayment.
+
+    IT hosting, the matching software and the landlord's renewal of the prepayment
+    arrive as suppliers' bills from P3.8 (``apps.finance.payables``), recorded when
+    received and paid on their terms.
+    """
+    post(
+        organization, month_first, f"Office rent for {month_first:%B %Y}",
+        [dr(RENT, MONTHLY_RENT), cr(PREPAID_RENT, MONTHLY_RENT)], "RENT", at,
+    )  # fmt: skip
 
 
 # --- Billing ---------------------------------------------------------------------------------

@@ -17,6 +17,10 @@ export function FinanceLayout() {
     ['', 'Statements'],
     ['ledger', 'Ledger'],
     ['invoices', 'Invoices'],
+    ['bills', 'Bills'],
+    ['bank', 'Bank'],
+    ['budget', 'Budget'],
+    ['close', 'Month-end close'],
   ]
   return (
     <div className="space-y-4">

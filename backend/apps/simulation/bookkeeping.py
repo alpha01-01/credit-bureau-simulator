@@ -28,6 +28,7 @@ from apps.standards.calendar import is_working_day, next_working_day
 from apps.standards.rulebook import TAX_RULES
 from apps.world.generation.rng import stream
 
+from . import finance_dept
 from .clock import Calendar, previous_month_end
 from .feed import Feed
 from .models import EventType, Game, ScheduledEvent
@@ -38,6 +39,7 @@ PAYMENT_TIME = time(10, 0)
 def open_game_books(game: Game) -> None:
     opening = game.clock_start - timedelta(days=1)
     open_books(game.organization, opening, datetime.combine(opening, time(17, 0), tzinfo=UTC))
+    finance_dept.ensure_budget(game, game.clock_start.replace(day=1))
 
 
 def last_working_day(day: date) -> date:
@@ -53,6 +55,9 @@ def month_start(game: Game, cal: Calendar, tick: int, sequence: int, feed: Feed)
     today = at.date()
     first = today.replace(day=1)
     org = game.organization
+    # Suppliers' bills (the landlord's renewal among them) and last month's bank
+    # statement first: the rent below is drawn from the prepayment (P3.8).
+    finance_dept.month_start(game, today, tick, at, feed.add)
     month_start_costs(org, first, at)
 
     # Invoices are dated the last day of the month the service was delivered, so the

@@ -25,4 +25,13 @@ describe('drillPath', () => {
     expect(drillPath(3, { screen: 'staff', params: {} })).toBe('/games/3/staff')
     expect(drillPath(3, { screen: 'health', params: {} })).toBe('/games/3/health')
   })
+  it('opens the department screens added in Phase 3', () => {
+    expect(drillPath(3, { screen: 'compliance', params: {} })).toBe('/games/3/compliance')
+    expect(drillPath(3, { screen: 'finance', params: { tab: 'bills' } })).toBe(
+      '/games/3/finance/bills',
+    )
+    expect(drillPath(3, { screen: 'scorecards', params: { number: '4' } })).toBe(
+      '/games/3/scorecards/4',
+    )
+  })
 })

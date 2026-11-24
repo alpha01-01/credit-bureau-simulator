@@ -226,8 +226,11 @@ def test_matching_policy_is_a_replayable_action_and_tooling_costs_money(world: W
     game = controls.set_pause_rules(game, [], deadlines=False)
     while controls.state(game).now.month < 2:
         game = controls.advance_by(game, "next_event")
-    licence = JournalEntry.objects.get(
-        organization=game.organization, source_type="IT_TOOLING", transaction_date__month=2
+    licence = JournalEntry.objects.get(  # the software supplier's bill (P3.8)
+        organization=game.organization,
+        source_type="SUPPLIER_BILL",
+        transaction_date__month=2,
+        description__contains="Matching software",
     )
     assert "advanced" in licence.description
 

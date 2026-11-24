@@ -24,6 +24,7 @@ CHART: tuple[tuple[str, str, str], ...] = (
     ("1010", "Bank - operating account", AccountType.ASSET),
     ("1100", "Accounts receivable", AccountType.ASSET),
     ("1300", "Prepaid rent", AccountType.ASSET),
+    ("2000", "Accounts payable", AccountType.LIABILITY),
     ("2100", "VAT and levies payable", AccountType.LIABILITY),
     ("2200", "PAYE payable", AccountType.LIABILITY),
     ("2210", "SSNIT contributions payable", AccountType.LIABILITY),
@@ -37,16 +38,32 @@ CHART: tuple[tuple[str, str, str], ...] = (
     ("5300", "Provider relations and training", AccountType.EXPENSE),
     ("5400", "Regulatory penalties", AccountType.EXPENSE),
 )
+# Accounts added after games began (P3.8): made when first needed, in games of any age.
+LATER_ACCOUNTS: dict[str, tuple[str, str]] = {
+    "2000": ("Accounts payable", AccountType.LIABILITY),
+    "5150": ("Utilities", AccountType.EXPENSE),
+    "5700": ("Late payment charges", AccountType.EXPENSE),
+    "5800": ("Bank charges", AccountType.EXPENSE),
+}
 
 BANK, RECEIVABLES, PREPAID_RENT = "1010", "1100", "1300"
 VAT_PAYABLE, PAYE_PAYABLE, SSNIT_PAYABLE = "2100", "2200", "2210"
 SHARE_CAPITAL, RETAINED = "3000", "3100"
 REVENUE = "4000"
 SALARIES, EMPLOYER_SSNIT, RENT, IT = "5000", "5010", "5100", "5200"
+PAYABLES, UTILITIES, LATE_CHARGES, BANK_CHARGES = "2000", "5150", "5700", "5800"
 
 
 class PostingError(Exception):
     pass
+
+
+def ensure_account(organization: Organization, code: str) -> None:
+    """Open one of the later accounts in this organisation's chart if it is not there yet."""
+    name, kind = LATER_ACCOUNTS[code]
+    Account.objects.get_or_create(
+        organization=organization, code=code, defaults={"name": name, "account_type": kind}
+    )
 
 
 def money(value: Decimal | int | str) -> Decimal:
@@ -99,7 +116,21 @@ def post(
     if debits != credits:
         raise PostingError(f"Unbalanced entry: debits {debits} != credits {credits}")
 
+    closed = (
+        Organization.objects.filter(pk=organization.pk)
+        .values_list("closed_through", flat=True)
+        .first()
+    )
+    if closed is not None and transaction_date <= closed:
+        raise PostingError(
+            f"{transaction_date:%d %B %Y} is in a closed month (closed through {closed:%d %B %Y})"
+        )
     with transaction.atomic():
+        missing_later = {
+            line.account for line in lines if line.account in LATER_ACCOUNTS
+        }  # made on first use
+        for code in sorted(missing_later):
+            ensure_account(organization, code)
         accounts = {
             a.code: a
             for a in Account.objects.filter(

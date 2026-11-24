@@ -147,9 +147,22 @@ ROLES: dict[str, Role] = {
         Role(
             FINANCE,
             "Head of Finance",
-            "Keeps the books: statements, ledger, invoices and cash. (More to do from P3.8.)",
+            "Keeps the books: approves and pays suppliers' bills, reconciles the bank, keeps "
+            "costs to budget and closes each month (P3.8).",
             ("finance",),
-            frozenset(),
+            frozenset(
+                {
+                    "APPROVE_BILL",
+                    "REJECT_BILL",
+                    "SET_APPROVAL_LIMIT",
+                    "POST_STATEMENT_LINE",
+                    "QUERY_STATEMENT_LINE",
+                    "COMPLETE_RECONCILIATION",
+                    "SET_BUDGET",
+                    "REVIEW_BUDGET",
+                    "CLOSE_MONTH",
+                }
+            ),
         ),
     )
 }
