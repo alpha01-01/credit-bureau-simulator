@@ -28,6 +28,7 @@ import { HandbookPage } from '../pages/HandbookPage'
 import { AnalyticsPage } from '../pages/AnalyticsPage'
 import { ConsolePage } from '../pages/ConsolePage'
 import { ScorecardPage, ScorecardsPage } from '../pages/ScorecardsPage'
+import { CompliancePage } from '../pages/CompliancePage'
 import { GameLayout } from './GameLayout'
 
 // The 3D office is loaded only when it is opened (three.js is large; P3.2).
@@ -109,6 +110,7 @@ const routes = [
               { path: 'analytics', element: <AnalyticsPage /> },
               { path: 'console', element: <ConsolePage /> },
               { path: 'scorecards', element: <ScorecardsPage /> },
+              { path: 'compliance', element: <CompliancePage /> },
               { path: 'scorecards/:number', element: <ScorecardPage /> },
               {
                 path: 'office',

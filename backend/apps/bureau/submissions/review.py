@@ -21,6 +21,7 @@ from apps.bureau.quality.models import (
     TransformationLog,
     ValidationIssue,
 )
+from apps.bureau.quality.returns import ReturnError, file_return
 from apps.bureau.quality.rules import Issue, relax, validate
 from apps.bureau.referencing.matching import DIFFERENT, SAME, Pending
 from apps.standards.rulebook import DATA_STANDARDS
@@ -53,6 +54,12 @@ def apply_decision(case: ReviewCase, decision: str, decided_by: str, at: datetim
             try:
                 resolve(case, decision, decided_by, at)
             except DisputeError as exc:
+                raise ReviewError(str(exc)) from exc
+            return case
+        if case.case_type == CaseType.REGULATORY_RETURN:  # P3.7: no record, a return to file
+            try:
+                file_return(case, decision, decided_by, at)
+            except ReturnError as exc:
                 raise ReviewError(str(exc)) from exc
             return case
 

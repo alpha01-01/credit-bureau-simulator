@@ -21,9 +21,10 @@ from apps.bureau.analytics import scoremath as sm
 from apps.bureau.analytics.portfolio import latest_reporting_date
 from apps.world.models import Loan
 
+from . import duties
 from .feed import Feed
 from .judgement import customer_borrowers
-from .models import ComplianceFinding, Game, ScoreModel, Severity
+from .models import Game, ScoreModel, Severity
 
 WINDOWS = (3, 6, 12)  # months; 12 is the default definition (D13)
 DRIFT_PSI = 0.25  # population stability above this: the population has shifted
@@ -242,23 +243,22 @@ def deploy(game: Game, number: int, tick: int, at: datetime) -> ScoreModel:
         raise ScorecardError(f"There is no scorecard {number}")
     if model.status == ScoreModel.Status.DEPLOYED:
         raise ScorecardError(f"Scorecard {number} is already in use")
-    ScoreModel.objects.filter(game=game, term=model.term, status=ScoreModel.Status.DEPLOYED).update(
-        status=ScoreModel.Status.RETIRED
+    replaced = ScoreModel.objects.filter(
+        game=game, term=model.term, status=ScoreModel.Status.DEPLOYED
     )
+    _settle_findings(game, list(replaced.values_list("number", flat=True)), tick)
+    replaced.update(status=ScoreModel.Status.RETIRED)
     model.status, model.deployed_tick = ScoreModel.Status.DEPLOYED, tick
     model.save(update_fields=["status", "deployed_tick"])
     restricted = model.results.get("fairness", {}).get("restricted_used", [])
     if restricted:
-        finding_number = (
-            ComplianceFinding.objects.filter(game=game).aggregate(n=Max("number"))["n"] or 0
-        ) + 1
         detail = (
             f"Scorecard {number} ({model.term.lower()} term) uses {', '.join(restricted)}, an "
             "attribute that may not be used to decide credit. Retire it, or build one without it."
         )
-        ComplianceFinding.objects.create(
-            game=game, number=finding_number, kind="RESTRICTED_ATTRIBUTE_IN_SCORECARD",
-            reference=f"SCORECARD-{number}", detail=detail, raised_tick=tick, raised_at=at,
+        duties.raise_finding(
+            game, "RESTRICTED_ATTRIBUTE_IN_SCORECARD", f"SCORECARD-{number}", detail,
+            f"Retire scorecard {number} (Data Analytics).", tick, at,
         )  # fmt: skip
         feed = Feed(game, tick, at)
         feed.add(
@@ -369,6 +369,26 @@ def _points_and_reasons(model: ScoreModel, data: sd.Dataset) -> tuple[np.ndarray
         order = np.argsort(-row, kind="mergesort")[:REASONS_SHOWN]
         reasons.append([descriptions[features[j]] for j in order if row[j] > 0.5])
     return scores_for(model, data), reasons
+
+
+def retire(game: Game, number: int, tick: int) -> ScoreModel:
+    """Take a scorecard out of use (P3.7): its term goes unscored until another is deployed.
+    Retiring a scorecard settles any finding about it."""
+    model = ScoreModel.objects.filter(game=game, number=number).first()
+    if model is None:
+        raise ScorecardError(f"There is no scorecard {number}")
+    if model.status != ScoreModel.Status.DEPLOYED:
+        raise ScorecardError(f"Scorecard {number} is not in use")
+    model.status = ScoreModel.Status.RETIRED
+    model.save(update_fields=["status"])
+    _settle_findings(game, [number], tick)
+    refresh_scores(game)
+    return model
+
+
+def _settle_findings(game: Game, numbers: list[int], tick: int) -> None:
+    for number in numbers:
+        duties.resolve_findings(game, tick, reference=f"SCORECARD-{number}")
 
 
 def refresh_scores(game: Game) -> int:

@@ -92,8 +92,11 @@ def scorecards_view(request: Request, game_id: int) -> Response:
             elif action == "deploy":
                 roles.require(game, "DEPLOY_SCORECARD")
                 model = controls.deploy_scorecard(game, int(data.get("number", 0)))
+            elif action == "retire":  # P3.7: e.g. to settle a fairness finding
+                roles.require(game, "RETIRE_SCORECARD")
+                model = controls.retire_scorecard(game, int(data.get("number", 0)))
             else:
-                return _error(ValueError("action must be build, composite or deploy"))
+                return _error(ValueError("action must be build, composite, deploy or retire"))
         except (ClockError, ValueError, TypeError) as exc:
             return _error(exc)
         return Response(scorecards.summary(model))

@@ -26,6 +26,7 @@ BASE_MINUTES: dict[str, float] = {
     CaseType.MATCH_REVIEW: 12.0,
     CaseType.UNLOADABLE_TRIAGE: 6.0,
     CaseType.DISPUTE: 45.0,
+    CaseType.REGULATORY_RETURN: 90.0,  # gathering the month's figures and filing them
 }
 COMFORTABLE_ITEMS_PER_DAY = 40
 LEARNING_RATE = 0.003
@@ -37,6 +38,7 @@ DECISION_WORDS: dict[str, str] = {
     Decision.RETURN_TO_PROVIDER: "return to provider",
     Decision.UPHOLD_DISPUTE: "uphold the dispute",
     Decision.REJECT_DISPUTE: "reject the dispute",
+    Decision.FILE_RETURN: "file the return",
 }
 
 
@@ -85,10 +87,12 @@ def judge(
     """An employee's decision on one item, drawn from the seeded stream."""
     p = p_correct(skill, difficulty, morale, tiredness)
     correct = bool(rng.random() < p)
+    wrong = [d for d in ALLOWED_DECISIONS[item_type] if d != correct_decision]
+    if not wrong:  # only one thing to do (a return): a slip still files it
+        correct = True
     if correct:
         decision = correct_decision
     else:
-        wrong = [d for d in ALLOWED_DECISIONS[item_type] if d != correct_decision]
         # The likely mistake is the opposite call; returning to the provider is the cautious one.
         weights = np.array([0.25 if d == Decision.RETURN_TO_PROVIDER else 1.0 for d in wrong])
         decision = wrong[int(rng.choice(len(wrong), p=weights / weights.sum()))]

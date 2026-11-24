@@ -112,6 +112,12 @@ def sync_work_items(game: Game, tick: int) -> int:
             if case.dispute is not None:  # due by the end of its statutory deadline
                 cal = Calendar(game.clock_start)
                 due = cal.first_tick_of_day(cal.index_of(case.dispute.due_date)) + TICKS_PER_DAY - 1
+        elif case.case_type == CaseType.REGULATORY_RETURN:  # P3.7: one thing to do, by a date
+            correct, basis = Decision.FILE_RETURN, "a return is filed, never refused"
+            difficulty = 0.3
+            cal = Calendar(game.clock_start)
+            filed_by = date.fromisoformat(case.evidence["due"])
+            due = cal.first_tick_of_day(cal.index_of(filed_by)) + TICKS_PER_DAY - 1
         elif case.case_type == CaseType.MATCH_REVIEW:
             correct, basis = _match_answer(game, case)
             score = case.score if case.score is not None else 0.5

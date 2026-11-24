@@ -592,6 +592,9 @@ class EnquiryJudgement(models.Model):
     hit = models.BooleanField()
     correct_person = models.BooleanField(null=True, blank=True)
     outcome = models.CharField(max_length=20)
+    grounds_held = models.BooleanField(
+        default=True, help_text="Truth: did the subscriber hold consent and a permitted purpose?"
+    )
 
     def __str__(self) -> str:
         return f"{self.enquiry_id}: {self.outcome}"
@@ -642,6 +645,9 @@ class ComplianceFinding(models.Model):
     raised_tick = models.BigIntegerField()
     raised_at = models.DateTimeField()
     resolved_tick = models.BigIntegerField(null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True, help_text="To be put right by (P3.7)")
+    remedy = models.CharField(max_length=300, blank=True)
+    escalated = models.BooleanField(default=False, help_text="Reported to the regulator, late")
 
     class Meta:
         constraints = [
@@ -650,3 +656,44 @@ class ComplianceFinding(models.Model):
 
     def __str__(self) -> str:
         return f"{self.game_id} finding {self.number} {self.kind}"
+
+
+class ConsentCheck(models.Model):
+    """A sample of a subscriber's enquiries whose consent forms Compliance asked for (P3.7)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="consent_checks")
+    number = models.IntegerField()
+    subscriber_code = models.CharField(max_length=30)
+    month = models.DateField(help_text="The month-end of the enquiries sampled")
+    sample = models.JSONField(default=list, help_text="Enquiry references asked about")
+    requested_tick = models.BigIntegerField()
+    answer_tick = models.BigIntegerField()
+    answered = models.BooleanField(default=False)
+    missing = models.JSONField(
+        default=list, help_text="Enquiries the lender could not show consent for"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["game", "number"], name="consent_check_unique")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} consent check {self.number} ({self.subscriber_code})"
+
+
+class Sanction(models.Model):
+    """What the bureau did about a subscriber's enquiries without grounds (P3.7)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="sanctions")
+    number = models.IntegerField()
+    subscriber_code = models.CharField(max_length=30)
+    kind = models.CharField(max_length=10, help_text="WARNING or SUSPENSION")
+    tick = models.BigIntegerField()
+    until_tick = models.BigIntegerField(null=True, blank=True, help_text="End of a suspension")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["game", "number"], name="sanction_unique")]
+
+    def __str__(self) -> str:
+        return f"{self.game_id} sanction {self.number} {self.kind} {self.subscriber_code}"

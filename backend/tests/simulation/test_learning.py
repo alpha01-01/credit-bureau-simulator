@@ -25,7 +25,7 @@ from apps.bureau.quality.models import CaseType
 from apps.simulation import controls
 from apps.simulation.bridge import start_game
 from apps.simulation.clock import TICKS_PER_DAY
-from apps.simulation.fingerprint import fingerprint
+from apps.simulation.fingerprint import differences, fingerprint
 from apps.simulation.models import Game, MissionState, Notice
 from apps.standards.handbook import BY_KEY, ENTRIES
 from apps.workitems.models import ItemStatus, WorkItem
@@ -201,7 +201,7 @@ def test_a_player_completes_the_campaign_from_what_the_screens_show(world: World
 
     # Replayed, answers and all, the campaign ends the same.
     copy = controls.replay(game, start_game(world, owner=owner))
-    assert fingerprint(copy) == fingerprint(game)
+    assert fingerprint(copy) == fingerprint(game), differences(copy, game)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -225,9 +225,18 @@ def test_assistance_toggles_and_the_handbook(world: World) -> None:
     # Extended deadlines: an item opened now is due ten working days on, not five.
     player.post("/assistance/", {"name": "assist_extended_deadlines", "on": True})
     controls.set_pause_rules(game, [], deadlines=False)
-    while not WorkItem.objects.filter(organization=game.organization).exists():
+    while (
+        not WorkItem.objects.filter(organization=game.organization)
+        .exclude(item_type=CaseType.REGULATORY_RETURN)
+        .exists()
+    ):
         game = controls.advance_by(game, "next_event")
-    item = WorkItem.objects.filter(organization=game.organization).order_by("item_number").first()
+    item = (
+        WorkItem.objects.filter(organization=game.organization)
+        .exclude(item_type=CaseType.REGULATORY_RETURN)  # due on the 15th by rule (P3.7)
+        .order_by("item_number")
+        .first()
+    )
     assert item is not None and item.due_tick is not None
     assert item.due_tick - item.created_tick >= 10 * TICKS_PER_DAY - TICKS_PER_DAY
 

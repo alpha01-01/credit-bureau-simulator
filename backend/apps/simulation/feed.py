@@ -33,7 +33,7 @@ from apps.finance.models import Invoice
 from apps.standards.calendar import is_working_day
 from apps.workitems.models import ItemStatus, WorkItem
 
-from . import compliance
+from . import compliance, duties
 from .clock import TICKS_PER_DAY, previous_month_end
 from .models import Game, GameStatus, Notice, Severity
 
@@ -216,6 +216,7 @@ class Feed:
         self._overdue_data(today, yesterday)
         self._overdue_invoices(today, yesterday)
         self._deadlines()
+        duties.morning(self.game, today, self.tick, self.at, self.add)  # P3.7
         compliance.morning_review(self.game, today, self.at, self.add)
 
     def _overdue_data(self, today: date, yesterday: date) -> None:

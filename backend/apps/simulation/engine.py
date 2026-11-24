@@ -46,6 +46,7 @@ from . import (
     board,
     bookkeeping,
     compliance,
+    duties,
     hr,
     it,
     lending,
@@ -313,6 +314,7 @@ def _schedule_month(game: Game, cal: Calendar, tick: int, feed: Feed) -> None:
     board.quarterly_review(game, today, cal.tick_start(tick), tick, feed.add)
     hr.month_update(game, today, feed.add)
     hr.candidates_for(game, today.replace(day=1))
+    duties.month_start(game, today, tick, cal.tick_start(tick), feed.add)  # P3.7
     sequence = _next_sequence(game)
     world = game.world
     if this_month > date.fromisoformat(world.config["history_end"]):

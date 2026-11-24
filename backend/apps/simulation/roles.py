@@ -75,6 +75,7 @@ ROLES: dict[str, Role] = {
                 "analytics",
                 "console",
                 "scorecards",
+                "compliance",
             ),
             frozenset(
                 {
@@ -112,10 +113,19 @@ ROLES: dict[str, Role] = {
         Role(
             COMPLIANCE,
             "Head of Compliance",
-            "Answers disputes from data subjects within their statutory deadline and watches the "
-            "bureau's standing with the regulator.",
-            ("disputes", "customers", "accounts", "enquiries", "health"),
-            frozenset({"RESOLVE_ITEM"}),
+            "Answers disputes within their statutory deadline, files the monthly return, checks "
+            "subscribers hold consent, keeps retention lawful, reviews staff access, and watches "
+            "the bureau's standing with the regulator (P3.7).",
+            ("compliance", "disputes", "customers", "accounts", "enquiries", "health"),
+            frozenset(
+                {
+                    "RESOLVE_ITEM",
+                    "SAMPLE_CONSENT",
+                    "SANCTION_SUBSCRIBER",
+                    "SET_RETENTION",
+                    "ACCESS_REVIEW",
+                }
+            ),
         ),
         Role(
             SALES,
@@ -130,7 +140,9 @@ ROLES: dict[str, Role] = {
             "Studies the bureau's data: portfolio analytics by lender, product, region and "
             "vintage, and a read-only SQL console over the bureau's own tables (P3.4).",
             ("analytics", "console", "scorecards", "customers", "accounts", "enquiries", "reviews"),
-            frozenset({"BUILD_SCORECARD", "BUILD_COMPOSITE", "DEPLOY_SCORECARD"}),
+            frozenset(
+                {"BUILD_SCORECARD", "BUILD_COMPOSITE", "DEPLOY_SCORECARD", "RETIRE_SCORECARD"}
+            ),
         ),
         Role(
             FINANCE,
@@ -153,6 +165,7 @@ ITEM_ROLES: dict[str, str] = {
     CaseType.MATCH_REVIEW: DATA_OPERATIONS,
     CaseType.UNLOADABLE_TRIAGE: DATA_OPERATIONS,
     CaseType.DISPUTE: COMPLIANCE,
+    CaseType.REGULATORY_RETURN: COMPLIANCE,
 }
 
 

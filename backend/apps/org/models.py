@@ -62,6 +62,9 @@ class Organization(models.Model):
     match_review = models.FloatField(
         default=0.75, help_text="Below auto-link, hold for review at or above this similarity"
     )
+    retention_years = models.PositiveSmallIntegerField(
+        default=5, help_text="How long closed accounts stay on reports (P3.7; the law: 5)"
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     # Counters for the bureau's own reference numbers.
@@ -117,6 +120,9 @@ class Employee(models.Model):
         max_digits=12, decimal_places=2, default=0, help_text="Gross, GHS"
     )
     is_active = models.BooleanField(default=True)
+    has_system_access = models.BooleanField(
+        default=True, help_text="Can reach the bureau's data; a leaver keeps it until reviewed"
+    )
     hired_on = models.DateField()
     # Work state, advanced by the simulation each tick.
     away_until_tick = models.BigIntegerField(

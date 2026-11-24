@@ -33,6 +33,7 @@ from apps.bureau.quality.models import (
     CleansingRule,
     CorrectionRecord,
     Dispute,
+    RegulatoryReturn,
     ReviewCase,
     TransformationLog,
     ValidationIssue,
@@ -55,6 +56,7 @@ from .models import (
     BoardReview,
     Candidate,
     ComplianceFinding,
+    ConsentCheck,
     Consequence,
     DataQualityReview,
     EnquiryJudgement,
@@ -69,6 +71,7 @@ from .models import (
     ProviderRelationship,
     RegulatorFinding,
     RegulatorStanding,
+    Sanction,
     ScheduledEvent,
     ScoreModel,
     SolvencyState,
@@ -125,7 +128,8 @@ def _fingerprint(game: Game) -> _Hasher:
         [(game.clock_start, game.current_tick, game.status, game.speed,
           game.organization.rejection_policy, game.pause_severities, game.pause_on_deadlines,
           game.organization.rule_overrides, game.organization.matching_tooling,
-          game.organization.match_auto_link, game.organization.match_review, game.role)],
+          game.organization.match_auto_link, game.organization.match_review, game.role,
+          game.organization.retention_years)],
     )  # fmt: skip
     _section(
         h,
@@ -435,6 +439,7 @@ def _fingerprint(game: Game) -> _Hasher:
         .values_list(
             "employee_number", "first_name", "last_name", "job_title", "skills", "experience",
             "morale", "work_day", "done_today", "monthly_salary", "is_active", "away_until_tick",
+            "has_system_access",
         ),
     )  # fmt: skip
     _section(
@@ -475,7 +480,17 @@ def _fingerprint(game: Game) -> _Hasher:
             *ComplianceFinding.objects.filter(game=game)
             .order_by("number")
             .values_list("number", "kind", "reference", "detail", "raised_tick", "raised_at",
-                         "resolved_tick"),
+                         "resolved_tick", "due_date", "remedy", "escalated"),
+            *ConsentCheck.objects.filter(game=game)
+            .order_by("number")
+            .values_list("number", "subscriber_code", "month", "sample", "requested_tick",
+                         "answer_tick", "answered", "missing"),
+            *Sanction.objects.filter(game=game)
+            .order_by("number")
+            .values_list("number", "subscriber_code", "kind", "tick", "until_tick"),
+            *RegulatoryReturn.objects.filter(organization_id=org)
+            .order_by("period")
+            .values_list("period", "due_date", "filed_at", "filed_by", "figures"),
             *Contract.objects.filter(subscriber__organization_id=org)
             .order_by("subscriber__subscriber_code", "start_date")
             .values_list("subscriber__subscriber_code", "subscriber__is_active", "unit_price",
@@ -530,6 +545,7 @@ def _fingerprint(game: Game) -> _Hasher:
         .order_by("enquiry__enquiry_reference")
         .values_list(
             "enquiry__enquiry_reference", "should_hit", "hit", "correct_person", "outcome",
+            "grounds_held",
         ),
     )  # fmt: skip
     _section(

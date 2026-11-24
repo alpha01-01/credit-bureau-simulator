@@ -167,6 +167,8 @@ def _readable(value: str) -> str:
 def explain(case: ReviewCase, result: Judgement) -> str:
     """The reasoning an employee records with a decision (Document 05: explainability)."""
     verdict = f"Decided: {DECISION_WORDS[result.decision]} (confidence {result.confidence:.2f})."
+    if case.case_type == CaseType.REGULATORY_RETURN:
+        return f"{verdict} The return for the month to {case.evidence.get('period', '?')} is filed."
     if case.case_type == CaseType.DISPUTE or case.record is None:
         claim = case.evidence.get("claim", "")
         accounts = ", ".join(" ".join(a) for a in case.evidence.get("accounts", []))

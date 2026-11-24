@@ -27,7 +27,7 @@ from apps.standards.rulebook import DATA_STANDARDS
 from apps.workitems.models import WorkItem
 from apps.workitems.work import resolve_by_player
 
-from . import hr, it, missions, providers, roles, sales, scorecards, solvency
+from . import duties, hr, it, missions, providers, roles, sales, scorecards, solvency
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
 from .engine import ClockError, advance, calendar, end_of_day_tick, next_event_tick
@@ -36,6 +36,7 @@ from .judgement import sync_work_items
 from .models import (
     SPEEDS,
     Checkpoint,
+    ConsentCheck,
     EventStatus,
     FundingRequest,
     Game,
@@ -44,6 +45,7 @@ from .models import (
     Notice,
     PlayerAction,
     Proposal,
+    Sanction,
     ScoreModel,
     Severity,
 )
@@ -497,6 +499,68 @@ def deploy_scorecard(game: Game, number: int) -> ScoreModel:
     return model
 
 
+def retire_scorecard(game: Game, number: int) -> ScoreModel:
+    """Take a scorecard out of use (P3.7), e.g. to settle a fairness finding."""
+    tick, _ = _now(game)
+    with transaction.atomic():
+        try:
+            model = scorecards.retire(game, number, tick)
+        except scorecards.ScorecardError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "RETIRE_SCORECARD", {"number": number})
+    return model
+
+
+# --- Compliance's duties (P3.7) ---------------------------------------------------------
+
+
+def sample_consent(game: Game, subscriber: str, month: date, size: int) -> ConsentCheck:
+    """Ask a subscriber for the consent forms behind a sample of a month's enquiries."""
+    tick, _ = _now(game)
+    with transaction.atomic():
+        try:
+            check = duties.sample_consent(game, subscriber, month, size, tick)
+        except duties.DutyError as exc:
+            raise ClockError(str(exc)) from exc
+        record(
+            game, "SAMPLE_CONSENT",
+            {"subscriber": subscriber, "month": month.isoformat(), "size": size},
+        )  # fmt: skip
+    return check
+
+
+def sanction_subscriber(game: Game, subscriber: str, kind: str) -> Sanction:
+    """Warn a subscriber, or suspend its enquiries for a month."""
+    tick, _ = _now(game)
+    with transaction.atomic():
+        try:
+            made = duties.sanction(game, subscriber, kind, tick)
+        except duties.DutyError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "SANCTION_SUBSCRIBER", {"subscriber": subscriber, "kind": kind})
+    return made
+
+
+def set_retention(game: Game, years: int) -> Game:
+    """How long reports keep closed accounts; the law allows 5 years at most."""
+    with transaction.atomic():
+        try:
+            duties.set_retention(game, years)
+        except duties.DutyError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "SET_RETENTION", {"years": years})
+    return game
+
+
+def review_access(game: Game) -> int:
+    """The quarter's access review: leavers lose their access. Returns how many did."""
+    tick, _ = _now(game)
+    with transaction.atomic():
+        removed = duties.review_access(game, tick)
+        record(game, "ACCESS_REVIEW")
+    return removed
+
+
 def set_campaign(game: Game, on: bool) -> Game:
     with transaction.atomic():
         record(game, "SET_CAMPAIGN", {"on": on})
@@ -672,6 +736,21 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             build_composite(target, date.fromisoformat(p["observation"]), int(p["window"]))
         case "DEPLOY_SCORECARD":
             deploy_scorecard(target, int(action.payload["number"]))
+        case "RETIRE_SCORECARD":
+            retire_scorecard(target, int(action.payload["number"]))
+        case "SAMPLE_CONSENT":
+            p = action.payload
+            sample_consent(
+                target, str(p["subscriber"]), date.fromisoformat(p["month"]), int(p["size"])
+            )
+        case "SANCTION_SUBSCRIBER":
+            sanction_subscriber(
+                target, str(action.payload["subscriber"]), str(action.payload["kind"])
+            )
+        case "SET_RETENTION":
+            target = set_retention(target, int(action.payload["years"]))
+        case "ACCESS_REVIEW":
+            review_access(target)
         case "SWITCH_ROLE":
             target = switch_role(target, str(action.payload["role"]))
         case "SET_ASSISTANCE":
