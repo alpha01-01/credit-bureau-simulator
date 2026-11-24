@@ -26,7 +26,14 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.bureau.core.models import AccountObservation, CreditAccount, Enquiry
-from apps.bureau.quality.models import ALLOWED_DECISIONS, CleansingRule, Dispute, RuleAction
+from apps.bureau.quality import returns
+from apps.bureau.quality.models import (
+    ALLOWED_DECISIONS,
+    CaseType,
+    CleansingRule,
+    Dispute,
+    RuleAction,
+)
 from apps.bureau.quality.rules import POLICIES, RELAXABLE, RULES
 from apps.bureau.submissions.feedback import as_csv, build_report
 from apps.bureau.submissions.models import StagingRecord, Submission
@@ -544,6 +551,27 @@ def work_item(request: Request, game_id: int, number: int) -> Response:
             if business and business.registration_date
             else None,
         }
+    if case.case_type == CaseType.REGULATORY_RETURN:  # P3.7: a return to gather and file
+        found = case.regulatory_return
+        return Response(
+            _item_summary(item)
+            | {
+                "provider": None,
+                "record": None,
+                "candidate": None,
+                "regulatory_return": {
+                    "period": found.period,
+                    "due_date": found.due_date,
+                    "filed_at": found.filed_at,
+                    "filed_by": found.filed_by or None,
+                    "figures": found.figures or returns.figures(game.organization, found.period),
+                },
+                "evidence": case.evidence,
+                "allowed_decisions": list(ALLOWED_DECISIONS[case.case_type]),
+                "explanation": item.explanation or None,
+            }
+            | _assist(game, item)
+        )
     if case.record is None:  # a dispute: the subject's claim and their report (P2.7)
         dispute = case.dispute
         flagged = {tuple(a) for a in dispute.accounts} if dispute else set()

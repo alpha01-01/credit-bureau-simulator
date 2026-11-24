@@ -117,6 +117,7 @@ def test_the_workbench_end_to_end() -> None:
     controls.deploy_scorecard(game, gendered.number)
     finding = ComplianceFinding.objects.get(game=game)
     assert finding.kind == "RESTRICTED_ATTRIBUTE_IN_SCORECARD" and "gender" in finding.detail
+    assert finding.due_date is not None and "Retire scorecard" in finding.remedy  # P3.7
     assert Notice.objects.filter(game=game, kind="COMPLIANCE_FINDING").exists()
     assert ScoreModel.objects.get(pk=built[sd.LONG].pk).status == "RETIRED"
     with pytest.raises(ClockError, match="already in use"):
@@ -139,6 +140,10 @@ def test_the_workbench_end_to_end() -> None:
     assert client.post(base, body, format="json").status_code == 403  # the CEO does not build
     working_as(Game.objects.get(pk=game.pk), "DATA_ANALYTICS")
     assert client.post(base, body, format="json").status_code == 200
+    # Retiring the gendered scorecard settles the finding (P3.7); the term goes unscored.
+    retired = client.post(base, {"action": "retire", "number": gendered.number}, format="json")
+    assert retired.status_code == 200 and retired.json()["status"] == "RETIRED"
+    assert ComplianceFinding.objects.get(game=game).resolved_tick is not None
     detail = client.get(f"{base}{single.number}/").json()
     first = detail["results"]["characteristics"][0]
     assert first["bins"] and "points" in first["bins"][0]

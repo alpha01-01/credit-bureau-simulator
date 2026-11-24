@@ -80,6 +80,12 @@ def _queue(world: World) -> Game:
         process_submission(deliver(game, sub), at=WHEN)
     sync_work_items(game, game.current_tick)
     Employee.objects.filter(organization=game.organization).update(is_active=False)
+    # Compliance's other duties are done, so only disputes bring findings here (P3.7).
+    for item in WorkItem.objects.filter(
+        organization=game.organization, item_type=CaseType.REGULATORY_RETURN
+    ):
+        controls.resolve_item(game, item.item_number, Decision.FILE_RETURN)
+    controls.review_access(game)
     return game
 
 

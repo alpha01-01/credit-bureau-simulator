@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Max
 
 from apps.bureau.core.models import (
     AccountObservation,
@@ -31,8 +32,10 @@ from apps.bureau.core.models import (
 from apps.bureau.quality.disputes import disputed_accounts
 from apps.bureau.reports.models import CreditScore
 from apps.org.models import Organization
+from apps.standards.compliance_rules import LEGAL_RETENTION_YEARS
 from apps.standards.enquiry import PURPOSES
 from apps.standards.submission_template import (
+    CLOSED_STATUS_CODES,
     CODE_LISTS,
     OPEN_STATUS_CODES,
     WRITTEN_OFF_STATUS_CODES,
@@ -96,11 +99,7 @@ def enquire(
 
 def build_report(customer: Customer, at: datetime, include_score: bool = False) -> dict[str, Any]:
     as_of = at.date()
-    accounts = list(
-        CreditAccount.objects.filter(customer=customer)
-        .select_related("institution")
-        .order_by("institution__institution_code", "facility_account_number")
-    )
+    accounts, held_too_long = _retained(customer, as_of)
     since = (as_of.replace(day=1) - timedelta(days=HISTORY_MONTHS * 31)).replace(day=1)
     history: dict[int, list[AccountObservation]] = defaultdict(list)
     for obs in AccountObservation.objects.filter(
@@ -172,6 +171,8 @@ def build_report(customer: Customer, at: datetime, include_score: bool = False) 
             "judgments": len(judgments),
         },
         **({"score": score} if include_score else {}),
+        # Closed accounts kept past the legal limit, by a longer retention (P3.7).
+        **({"held_past_legal_limit": held_too_long} if held_too_long else {}),
         "accounts": rows,
         "dishonoured_cheques": cheques,
         "judgments": judgments,
@@ -248,6 +249,43 @@ def _subject(customer: Customer) -> dict[str, Any]:
 
 def _mask(number: str) -> str:
     return "*" * max(len(number) - 4, 0) + number[-4:]
+
+
+def years_before(day: date, years: int) -> date:
+    try:
+        return day.replace(year=day.year - years)
+    except ValueError:  # 29 February
+        return day.replace(year=day.year - years, day=28)
+
+
+def _retained(customer: Customer, as_of: date) -> tuple[list[CreditAccount], int]:
+    """The customer's accounts a report may show (rule RETENTION, P3.7).
+
+    A closed account goes once the bureau's retention period has passed since it was
+    last reported. Also counts those shown although past the legal limit.
+    """
+    keep = Organization.objects.values_list("retention_years", flat=True).get(
+        pk=customer.organization_id
+    )
+    drop_before, legal_before = (
+        years_before(as_of, keep),
+        years_before(as_of, LEGAL_RETENTION_YEARS),
+    )
+    shown: list[CreditAccount] = []
+    held = 0
+    for account in (
+        CreditAccount.objects.filter(customer=customer)
+        .select_related("institution")
+        .annotate(last_reported=Max("observations__reporting_date"))
+        .order_by("institution__institution_code", "facility_account_number")
+    ):
+        closed_on = account.last_reported if account.account_status in CLOSED_STATUS_CODES else None
+        if closed_on is not None and closed_on < drop_before:
+            continue
+        if closed_on is not None and closed_on < legal_before:
+            held += 1
+        shown.append(account)
+    return shown, held
 
 
 def _iso(value: date | None) -> str | None:

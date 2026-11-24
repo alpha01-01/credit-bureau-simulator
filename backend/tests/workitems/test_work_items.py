@@ -194,7 +194,8 @@ def test_employees_work_the_queue_and_explain_every_decision(world: World) -> No
     for item in done:
         assert item.resolved_by == ResolvedBy.EMPLOYEE
         assert item.assignee is not None
-        assert item.explanation.startswith(("Identifier", "Errors"))
+        if item.item_type != CaseType.REGULATORY_RETURN:  # a return has no record (P3.7)
+            assert item.explanation.startswith(("Identifier", "Errors"))
         assert "Decided:" in item.explanation
         assert item.confidence is not None
         assert item.case.status == CaseStatus.RESOLVED

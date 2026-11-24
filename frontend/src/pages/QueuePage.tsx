@@ -16,6 +16,7 @@ const TYPE_LABEL: Record<string, string> = {
   MATCH_REVIEW: 'Match review',
   UNLOADABLE_TRIAGE: 'Unloadable triage',
   DISPUTE: 'Dispute',
+  REGULATORY_RETURN: 'Monthly return',
 }
 
 const BY_LABEL: Record<string, string> = {
@@ -31,6 +32,7 @@ const DECISION_LABEL: Record<string, string> = {
   RETURN_TO_PROVIDER: 'Return to provider',
   UPHOLD_DISPUTE: 'Uphold: not theirs, correct the report',
   REJECT_DISPUTE: 'Reject: the accounts are theirs',
+  FILE_RETURN: 'File the return with the Bank of Ghana',
 }
 
 export function QueuePage() {
@@ -118,7 +120,9 @@ export function WorkItemPage() {
       title={`${TYPE_LABEL[i.type]} #${i.number}`}
       subtitle={`Difficulty ${percent(i.difficulty)}`}
     >
-      {i.type === 'DISPUTE' ? (
+      {i.type === 'REGULATORY_RETURN' ? (
+        <ReturnEvidence item={i} />
+      ) : i.type === 'DISPUTE' ? (
         <DisputeEvidence item={i} />
       ) : i.type === 'MATCH_REVIEW' ? (
         <MatchEvidence item={i} />
@@ -168,7 +172,12 @@ export function WorkItemPage() {
                 onClick={() =>
                   resolve.mutate(
                     { decision: d },
-                    { onSuccess: () => navigate(`/games/${gameId}/queue`) },
+                    {
+                      onSuccess: () =>
+                        navigate(
+                          `/games/${gameId}/${i.type === 'REGULATORY_RETURN' ? 'compliance' : 'queue'}`,
+                        ),
+                    },
                   )
                 }
                 className="rounded border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand hover:text-white disabled:opacity-50"
@@ -209,6 +218,40 @@ function Field({
 function day(value: string | null | undefined) {
   const m = value?.match(/^(\d{4})-?(\d{2})-?(\d{2})$/)
   return m ? `${m[3]}/${m[2]}/${m[1]}` : value
+}
+
+const FIGURE_LABEL: Record<string, string> = {
+  customers: 'Customers on file',
+  accounts: 'Credit accounts on file',
+  enquiries: 'Enquiries in the month',
+  disputes_received: 'Disputes received in the month',
+  disputes_settled: 'Disputes settled in the month',
+}
+
+/** The monthly return to the Bank of Ghana (P3.7): the figures it reports, and its due date. */
+function ReturnEvidence({ item }: { item: WorkItemDetail }) {
+  const r = item.regulatory_return
+  if (!r) return null
+  return (
+    <Card title={`Return for the month to ${day(r.period)}`}>
+      <dl className="grid gap-1 text-sm sm:grid-cols-[auto_1fr] sm:gap-x-4">
+        <Field label="Due by" value={day(r.due_date)} />
+        <Field
+          label="Filed"
+          value={r.filed_at ? `${day(r.filed_at.slice(0, 10))} by ${r.filed_by}` : 'not yet'}
+        />
+        {Object.entries(r.figures).map(([k, v]) => (
+          <Field key={k} label={FIGURE_LABEL[k] ?? k} value={v.toLocaleString()} />
+        ))}
+      </dl>
+      <p className="mt-2 text-xs text-slate-500">
+        {r.filed_at
+          ? 'The figures as filed.'
+          : 'The figures as they stand now; filing takes them as they are then.'}{' '}
+        A return filed after its due date is a regulator finding.
+      </p>
+    </Card>
+  )
 }
 
 /** A subject's dispute: their claim, and the accounts on their file (P2.7). */

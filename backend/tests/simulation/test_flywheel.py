@@ -22,6 +22,7 @@ from apps.accounts.models import User
 from apps.commercial.models import Contract, Subscriber
 from apps.simulation import controls, lending
 from apps.simulation.bridge import start_game
+from apps.simulation.engine import advance
 from apps.simulation.fingerprint import fingerprint
 from apps.simulation.lending import serious_arrears
 from apps.simulation.models import DataQualityReview, Game, LendingDecision, Notice
@@ -49,7 +50,11 @@ def _year(world: World, careful: bool, owner: Any = None) -> Game:
         game = controls.set_matching_tooling(game, "ADVANCED")
     else:
         game.organization.institutions.update(is_active=False)  # no provider data comes in
+    game = advance(game, 1)  # the first month starts: the quarter's access review is due
     for _ in range(12):
+        # Both keep up with Compliance's quarterly access review (P3.7): the comparison is
+        # of data quality, not of a board's patience with unanswered findings.
+        controls.review_access(game)
         month = controls.state(game).now.month
         while controls.state(game).now.month == month:
             game = controls.advance_by(game, "next_event")

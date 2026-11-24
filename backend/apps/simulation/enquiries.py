@@ -22,7 +22,7 @@ from apps.standards.calendar import next_working_day
 from apps.world.generation.rng import stream
 from apps.world.models import Lender, Loan, LoanApplication
 
-from . import compliance, it, lending, scoreproduct
+from . import compliance, duties, it, lending, scoreproduct
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar
 from .consequences import trace
 from .demand import REFERENCE_PRICE, p_enquire, update_perception
@@ -136,9 +136,13 @@ def handle_application(
 
     view.opportunities += 1
     tick = feed.tick if feed else game.current_tick
-    if compliance.suspended(game) or it.systems_down(game, tick, memo):
+    blocked = ("subscriber-suspended", code, tick)
+    if blocked not in memo:
+        memo[blocked] = duties.subscriber_suspended(game, code, tick)
+    if compliance.suspended(game) or it.systems_down(game, tick, memo) or memo[blocked]:
         # A suspended bureau may not serve enquiries (P2.7); nor can one whose systems
-        # are down (P2.9). The lender lends without a report.
+        # are down (P2.9); nor a subscriber the bureau has suspended (P3.7). The lender
+        # lends without a report.
         view.save()
         lending.decide(game, application, code, None, tick)
         return None
@@ -195,7 +199,9 @@ def handle_application(
         hit=hit,
         correct_person=correct,
         outcome=outcome,
+        grounds_held=duties.grounds_held(game, code, period, seq, memo),
     )
+    duties.retention_breach(game, enquiry, at, feed.add if feed is not None else duties.quietly)
     view.enquiries += 1
     view.hits += int(hit)
     view.wrong_person += int(outcome == "WRONG_PERSON")

@@ -20,6 +20,7 @@ const NAV = [
   ['providers', 'Providers'],
   ['queue', 'Work queue'],
   ['rules', 'Rules'],
+  ['compliance', 'Compliance'],
   ['disputes', 'Disputes'],
   ['customers', 'Customers'],
   ['enquiries', 'Enquiries'],

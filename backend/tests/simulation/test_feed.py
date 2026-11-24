@@ -16,6 +16,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
+from apps.bureau.quality.models import CaseType
 from apps.bureau.submissions.pipeline import process_submission
 from apps.org.models import Employee
 from apps.simulation import controls
@@ -233,7 +234,9 @@ def test_untaken_work_due_today_stops_the_clock(world: World) -> None:
     # Only deadlines stop the clock here: the test is about work falling due, not about
     # whatever else the month brings (a subscriber reconsidering, say).
     game = controls.set_pause_rules(_queue(world), [], deadlines=True)
-    items = WorkItem.objects.filter(organization=game.organization, status=ItemStatus.OPEN)
+    items = WorkItem.objects.filter(organization=game.organization, status=ItemStatus.OPEN).exclude(
+        item_type=CaseType.REGULATORY_RETURN  # due on the 15th by rule, not in five days (P3.7)
+    )
     assert items.exists()
     assert {i.due_tick for i in items} == {due_tick(1)}
 
@@ -290,7 +293,8 @@ def test_feed_and_clock_api(world: World) -> None:
     feed = client.get(f"/api/v1/games/{game.pk}/feed/").json()
     assert feed["notices"][0]["kind"] == "CASH_LOW"
     assert feed["notices"][0]["drill"]["screen"] == "ledger"
-    assert client.get(f"/api/v1/games/{game.pk}/feed/?severity=INFO").json()["notices"] == []
+    info = client.get(f"/api/v1/games/{game.pk}/feed/?severity=INFO").json()["notices"]
+    assert [n["kind"] for n in info] == ["RETURN_OWED"]  # the month's return (P3.7), nothing else
     assert client.get(f"/api/v1/games/{game.pk}/feed/?before=x").status_code == 400
 
     rules = client.post(

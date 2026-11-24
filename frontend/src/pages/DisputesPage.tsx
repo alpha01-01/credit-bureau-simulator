@@ -4,6 +4,7 @@ import { useDisputes } from '../api/game'
 import { useGameId } from '../app/useGameId'
 import { Badge, Card, Empty, Failed, Loading, Page, Table, Td } from '../components/ui'
 import { count, dateTime, day } from '../lib/format'
+import { KIND_LABEL } from '../lib/findings'
 
 const LEVEL_TONE = ['good', 'warn', 'bad', 'bad', 'bad'] as const
 
@@ -52,9 +53,7 @@ export function DisputesPage() {
             <Table head={['Finding', 'Raised', 'What happened']}>
               {r.findings.map((f) => (
                 <tr key={`${f.kind}-${f.reference}`}>
-                  <Td>
-                    {f.kind === 'MISSED_DISPUTE_DEADLINE' ? 'Missed dispute deadline' : f.kind}
-                  </Td>
+                  <Td>{KIND_LABEL[f.kind] ?? f.kind}</Td>
                   <Td>{dateTime(f.raised_at)}</Td>
                   <Td>{f.detail}</Td>
                 </tr>

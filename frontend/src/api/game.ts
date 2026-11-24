@@ -446,7 +446,7 @@ export type SubmissionDetail = {
 
 export type WorkItemRow = {
   number: number
-  type: 'MATCH_REVIEW' | 'UNLOADABLE_TRIAGE' | 'DISPUTE'
+  type: 'MATCH_REVIEW' | 'UNLOADABLE_TRIAGE' | 'DISPUTE' | 'REGULATORY_RETURN'
   status: 'OPEN' | 'IN_PROGRESS' | 'DONE'
   difficulty: number
   created_tick: number
@@ -458,6 +458,13 @@ export type WorkItemRow = {
 
 export type WorkItemDetail = WorkItemRow & {
   provider: { code: string; name: string } | null
+  regulatory_return?: {
+    period: string
+    due_date: string
+    filed_at: string | null
+    filed_by: string | null
+    figures: Record<string, number>
+  }
   dispute?: {
     number: number
     subject: string

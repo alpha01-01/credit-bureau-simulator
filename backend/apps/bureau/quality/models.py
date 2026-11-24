@@ -100,6 +100,7 @@ class CaseType(models.TextChoices):
     MATCH_REVIEW = "MATCH_REVIEW", "Uncertain customer match"
     UNLOADABLE_TRIAGE = "UNLOADABLE_TRIAGE", "Unloadable record with a possible correction"
     DISPUTE = "DISPUTE", "A subject disputes accounts on their report"
+    REGULATORY_RETURN = "REGULATORY_RETURN", "The monthly return to the Bank of Ghana"
 
 
 class CaseStatus(models.TextChoices):
@@ -114,6 +115,7 @@ class Decision(models.TextChoices):
     RETURN_TO_PROVIDER = "RETURN_TO_PROVIDER", "Return to the provider for correction"
     UPHOLD_DISPUTE = "UPHOLD_DISPUTE", "Uphold: the accounts are not the subject's; correct"
     REJECT_DISPUTE = "REJECT_DISPUTE", "Reject: the accounts are the subject's"
+    FILE_RETURN = "FILE_RETURN", "File the return"
 
 
 ALLOWED_DECISIONS: dict[str, tuple[str, ...]] = {
@@ -124,6 +126,7 @@ ALLOWED_DECISIONS: dict[str, tuple[str, ...]] = {
     ),
     CaseType.UNLOADABLE_TRIAGE: (Decision.CORRECT_AND_LOAD, Decision.RETURN_TO_PROVIDER),
     CaseType.DISPUTE: (Decision.UPHOLD_DISPUTE, Decision.REJECT_DISPUTE),
+    CaseType.REGULATORY_RETURN: (Decision.FILE_RETURN,),
 }
 
 
@@ -245,3 +248,31 @@ class CorrectionRecord(models.Model):
 
     def __str__(self) -> str:
         return f"{self.kind} {self.credit_account_id}"
+
+
+class RegulatoryReturn(models.Model):
+    """The bureau's monthly return to the Bank of Ghana (P3.7; rule RETURN)."""
+
+    organization = models.ForeignKey(
+        "org.Organization", on_delete=models.CASCADE, related_name="returns"
+    )
+    period = models.DateField(help_text="The month-end the return is for")
+    due_date = models.DateField()
+    case = models.OneToOneField(
+        ReviewCase,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="regulatory_return",
+    )
+    filed_at = models.DateTimeField(null=True, blank=True)
+    filed_by = models.CharField(max_length=120, blank=True)
+    figures = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["organization", "period"], name="return_one_per_month")
+        ]
+
+    def __str__(self) -> str:
+        return f"Return for {self.period:%B %Y}"
