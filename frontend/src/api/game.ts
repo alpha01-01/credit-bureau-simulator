@@ -876,27 +876,54 @@ export function useStaff(id: number) {
   })
 }
 
-export type Proposal = {
+export type Terms = {
+  term_months: number
+  service_level: 'STANDARD' | 'PREMIUM'
+  monthly_minimum: string
+  discount_threshold: number | null
+  discount_rate: string
+}
+
+export type Proposal = Terms & {
   number: number
   lender: string
   price: string
   sent_at: string
-  status: 'PENDING' | 'ACCEPTED' | 'DECLINED'
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'COUNTERED' | 'LAPSED'
   answered_at: string | null
+  counter_price: string | null
+}
+
+export type LenderResearch = {
+  ready_on: string
+  findings: { volume: number; priority: string; values: string; type: string } | null
+  meeting_on: string | null
+  meeting: { price: string; said: string } | null
+  met_recently: boolean
 }
 
 export type SalesData = {
   reputation: { score: number; hit_rate: number; accuracy: number; enquiries: number }
   list_price: string
   answer_days: number
-  subscribers: {
+  research_days: number
+  meeting_days: number
+  counter_days: number
+  subscribers: ({
     code: string
     name: string
     active: boolean
     since: string
     price: string | null
+    end_date: string | null
+  } & Partial<Terms>)[]
+  prospects: {
+    code: string
+    name: string
+    type: string
+    waiting: boolean
+    research: LenderResearch | null
   }[]
-  prospects: { code: string; name: string; type: string; waiting: boolean }[]
   proposals: Proposal[]
 }
 

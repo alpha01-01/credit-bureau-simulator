@@ -35,7 +35,7 @@ CEO, DATA_OPERATIONS, COMPLIANCE, SALES, FINANCE, DATA_ANALYTICS = (
 )  # fmt: skip
 
 # Screens every role sees (the game layout's navigation keys).
-SHARED_SCREENS = ("", "office", "missions", "events", "handbook")
+SHARED_SCREENS = ("", "office", "missions", "events", "handbook", "onboarding")
 
 
 @dataclass(frozen=True)
@@ -124,15 +124,17 @@ ROLES: dict[str, Role] = {
                     "SANCTION_SUBSCRIBER",
                     "SET_RETENTION",
                     "ACCESS_REVIEW",
+                    "DECIDE_SUBSCRIBER_CHECK",
                 }
             ),
         ),
         Role(
             SALES,
             "Head of Sales",
-            "Looks after subscribers and wins new ones: proposals to lenders at a price.",
+            "Looks after subscribers and wins new ones: researches lenders, meets them and "
+            "negotiates price, term, service level, minimums and discounts (P3.9).",
             ("subscribers", "sales", "enquiries"),
-            frozenset({"SEND_PROPOSAL"}),
+            frozenset({"SEND_PROPOSAL", "RESEARCH_LENDER", "MEET_LENDER", "ACCEPT_COUNTER"}),
         ),
         Role(
             DATA_ANALYTICS,
@@ -161,6 +163,7 @@ ROLES: dict[str, Role] = {
                     "SET_BUDGET",
                     "REVIEW_BUDGET",
                     "CLOSE_MONTH",
+                    "SET_UP_BILLING",
                 }
             ),
         ),

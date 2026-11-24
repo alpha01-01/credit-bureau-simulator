@@ -33,5 +33,8 @@ describe('drillPath', () => {
     expect(drillPath(3, { screen: 'scorecards', params: { number: '4' } })).toBe(
       '/games/3/scorecards/4',
     )
+    expect(drillPath(3, { screen: 'onboarding', params: { number: '2' } })).toBe(
+      '/games/3/onboarding?number=2',
+    )
   })
 })

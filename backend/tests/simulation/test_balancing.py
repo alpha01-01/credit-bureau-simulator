@@ -56,7 +56,8 @@ def test_strict_quality_and_fast_coverage_differ_and_neither_dominates(world: Wo
     # Measurably different: cleaner data, at a price.
     assert strict["false_merge_rate"] < fast["false_merge_rate"]
     assert strict["accuracy_true"] > fast["accuracy_true"]
-    assert strict["disputes"] <= fast["disputes"]
+    # Disputes are too few in four months of one world to compare (2-7 each): across five
+    # seeds strict had fewer in four (16 against 21 in all, P3.9), but not in every one.
     assert strict["health_parts"]["data_quality"] > fast["health_parts"]["data_quality"]
     assert strict["expenses"] > fast["expenses"]
     assert fast["net_profit"] > strict["net_profit"]

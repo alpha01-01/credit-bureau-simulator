@@ -57,6 +57,16 @@ def systems_down(game: Game, tick: int, memo: dict[object, Any] | None = None) -
     return bool(memo[key])
 
 
+def downtime_hours(game: Game, first_tick: int, last_tick: int) -> float:
+    """Hours of working time the systems were down between two ticks (P3.9: service credits)."""
+    ticks = 0
+    for start, end in Incident.objects.filter(
+        game=game, started_tick__lte=last_tick, ends_tick__gte=first_tick
+    ).values_list("started_tick", "ends_tick"):
+        ticks += min(end, last_tick) - max(start, first_tick) + 1
+    return ticks / TICKS_PER_HOUR
+
+
 def waiting(game: Game) -> int:
     return Submission.objects.filter(
         organization=game.organization, submission_status=SubmissionStatus.RECEIVED

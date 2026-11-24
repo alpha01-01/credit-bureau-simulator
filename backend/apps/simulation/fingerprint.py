@@ -72,9 +72,12 @@ from .models import (
     FundingRequest,
     Game,
     Incident,
+    LenderResearch,
     LendingDecision,
     MissionState,
     Notice,
+    Onboarding,
+    OnboardingStep,
     PlayerAction,
     Proposal,
     ProviderRelationship,
@@ -465,7 +468,22 @@ def _fingerprint(game: Game) -> _Hasher:
             *Proposal.objects.filter(game=game)
             .order_by("number")
             .values_list("number", "lender_code", "unit_price", "sent_at", "status",
-                         "answered_at"),
+                         "answered_at", "term_months", "service_level", "monthly_minimum",
+                         "discount_threshold", "discount_rate", "counter_price"),
+            *LenderResearch.objects.filter(game=game)
+            .order_by("lender_code")
+            .values_list("lender_code", "requested_tick", "ready_on", "findings", "reported",
+                         "meeting_requested_tick", "meeting_on", "meeting_notes",
+                         "meeting_reported"),
+            *Onboarding.objects.filter(game=game)
+            .order_by("number")
+            .values_list("number", "lender_code", "proposal__number", "unit_price", "signed_on",
+                         "give_up_on", "status", "live_on", "ended_on"),
+            *OnboardingStep.objects.filter(onboarding__game=game)
+            .order_by("onboarding__number", "position")
+            .values_list("onboarding__number", "position", "department", "code", "status",
+                         "ready_on", "due_on", "progress", "held", "done_on", "done_tick",
+                         "done_by", "outcome", "evidence"),
             *Incident.objects.filter(game=game)
             .order_by("number")
             .values_list("number", "kind", "started_tick", "ends_tick", "response", "detail"),
@@ -506,7 +524,9 @@ def _fingerprint(game: Game) -> _Hasher:
             *Contract.objects.filter(subscriber__organization_id=org)
             .order_by("subscriber__subscriber_code", "start_date")
             .values_list("subscriber__subscriber_code", "subscriber__is_active", "unit_price",
-                         "start_date", "end_date"),
+                         "start_date", "end_date", "term_months", "service_level",
+                         "monthly_minimum", "discount_threshold", "discount_rate",
+                         "subscriber__billing_ready"),
         ],
     )  # fmt: skip
     _section(

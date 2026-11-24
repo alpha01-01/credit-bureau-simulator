@@ -5,7 +5,9 @@ POST /api/v1/games/<id>/staff/   {"action": "hire", "candidate": 2}
                                  {"action": "train", "employee": "E0001", "work_type": "DISPUTE"}
                                  {"action": "salary", "employee": "E0001", "salary": "7000"}
 GET  /api/v1/games/<id>/sales/   lenders we could sign, and our proposals
-POST /api/v1/games/<id>/sales/   {"lender": "SWC", "price": "18.00"}
+POST /api/v1/games/<id>/sales/   {"lender": "SWC", "price": "18.00", "term_months": 24, ...}
+                                 {"action": "research" | "meet", "lender": "SWC"}
+                                 {"action": "accept_counter", "number": 3}
 GET  /api/v1/games/<id>/it/      capacity, files waiting, outages
 POST /api/v1/games/<id>/it/      {"action": "respond", "response": "VENDOR" | "BACKUP"}
                                  {"action": "capacity", "level": "STANDARD" | "HIGH"}
@@ -31,7 +33,7 @@ from .api import _error, _game
 from .clock import TICKS_PER_HOUR
 from .demand import REFERENCE_PRICE
 from .engine import ClockError
-from .models import Game, Incident, Proposal
+from .models import Game, Incident, LenderResearch, Proposal
 from .reputation import reputation
 
 
@@ -109,24 +111,59 @@ def _proposal(p: Proposal) -> dict[str, Any]:
         "sent_at": p.sent_at,
         "status": p.status,
         "answered_at": p.answered_at,
+        "term_months": p.term_months,
+        "service_level": p.service_level,
+        "monthly_minimum": str(p.monthly_minimum),
+        "discount_threshold": p.discount_threshold,
+        "discount_rate": str(p.discount_rate),
+        "counter_price": str(p.counter_price) if p.counter_price is not None else None,
     }
+
+
+def _terms(data: Any) -> sales.Terms:
+    threshold = data.get("discount_threshold")
+    return sales.Terms(
+        price=_money(data.get("price")),
+        term_months=int(data.get("term_months") or 12),
+        service_level=str(data.get("service_level") or "STANDARD"),
+        monthly_minimum=_money(data.get("monthly_minimum") or "0"),
+        discount_threshold=None if threshold in (None, "") else int(threshold),
+        discount_rate=_money(data.get("discount_rate") or "0"),
+    )
 
 
 @api_view(["GET", "POST"])
 def sales_view(request: Request, game_id: int) -> Response:
     game = _game(request, game_id)
     if request.method == "POST":
-        roles.require(game, "SEND_PROPOSAL")
+        data, action = request.data, str(request.data.get("action") or "propose")
+        lender = str(data.get("lender", ""))
         try:
-            controls.send_proposal(
-                game, str(request.data.get("lender", "")), _money(request.data.get("price"))
-            )
-        except (ClockError, ValueError) as exc:
+            if action == "propose":
+                roles.require(game, "SEND_PROPOSAL")
+                terms = _terms(data)
+                controls.send_proposal(game, lender, terms.price, terms)
+            elif action == "research":
+                roles.require(game, "RESEARCH_LENDER")
+                controls.research_lender(game, lender)
+            elif action == "meet":
+                roles.require(game, "MEET_LENDER")
+                controls.meet_lender(game, lender)
+            elif action == "accept_counter":
+                roles.require(game, "ACCEPT_COUNTER")
+                controls.accept_counter(game, int(data.get("number", 0)))
+            else:
+                return _error(
+                    ValueError("action must be propose, research, meet or accept_counter")
+                )
+        except (ClockError, ValueError, TypeError) as exc:
             return _error(exc)
     _, at = controls._now(game)
+    today = at.date()
     pending = set(
         Proposal.objects.filter(game=game, status="PENDING").values_list("lender_code", flat=True)
     )
+    research = {r.lender_code: r for r in LenderResearch.objects.filter(game=game)}
     subscribers = []
     for s in Subscriber.objects.filter(organization=game.organization).order_by("subscriber_code"):
         contract = Contract.objects.filter(subscriber=s).order_by("-start_date").first()
@@ -137,13 +174,37 @@ def sales_view(request: Request, game_id: int) -> Response:
                 "active": s.is_active,
                 "since": s.since,
                 "price": str(contract.unit_price) if contract else None,
+                "term_months": contract.term_months if contract else None,
+                "service_level": contract.service_level if contract else None,
+                "monthly_minimum": str(contract.monthly_minimum) if contract else None,
+                "discount_rate": str(contract.discount_rate) if contract else None,
+                "discount_threshold": contract.discount_threshold if contract else None,
+                "end_date": contract.end_date if contract else None,
             }
         )
+
+    def _research(code: str) -> dict[str, Any] | None:
+        r = research.get(code)
+        if r is None:
+            return None
+        ready = r.ready_on <= today
+        met = r.meeting_on is not None and r.meeting_on <= today
+        return {
+            "ready_on": r.ready_on,
+            "findings": r.findings if ready else None,
+            "meeting_on": r.meeting_on,
+            "meeting": r.meeting_notes if met else None,
+            "met_recently": sales.met_recently(game, code, today),
+        }
+
     return Response(
         {
             "reputation": reputation(game, at)["subscribers"],
             "list_price": str(REFERENCE_PRICE),
             "answer_days": sales.ANSWER_DAYS,
+            "research_days": sales.RESEARCH_DAYS,
+            "meeting_days": sales.MEETING_DAYS,
+            "counter_days": sales.COUNTER_DAYS,
             "subscribers": subscribers,
             "prospects": [
                 {
@@ -151,6 +212,7 @@ def sales_view(request: Request, game_id: int) -> Response:
                     "name": lender.name,
                     "type": lender.lender_type,
                     "waiting": lender.code in pending,
+                    "research": _research(lender.code),
                 }
                 for lender in sales.prospects(game)
             ],

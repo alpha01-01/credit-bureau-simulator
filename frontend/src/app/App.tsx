@@ -19,6 +19,7 @@ import { RulesPage } from '../pages/RulesPage'
 import { SubmissionPage, SubmissionsPage } from '../pages/SubmissionsPage'
 import { SubscribersPage } from '../pages/SubscribersPage'
 import { StaffPage } from '../pages/StaffPage'
+import { OnboardingPage } from '../pages/OnboardingPage'
 import { SalesPage } from '../pages/SalesPage'
 import { ItPage } from '../pages/ItPage'
 import { HealthPage } from '../pages/HealthPage'
@@ -104,6 +105,7 @@ const routes = [
               { path: 'subscribers', element: <SubscribersPage /> },
               { path: 'staff', element: <StaffPage /> },
               { path: 'sales', element: <SalesPage /> },
+              { path: 'onboarding', element: <OnboardingPage /> },
               { path: 'it', element: <ItPage /> },
               { path: 'health', element: <HealthPage /> },
               { path: 'missions', element: <MissionsPage /> },

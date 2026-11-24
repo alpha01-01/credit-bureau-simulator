@@ -27,7 +27,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum
 
-from apps.commercial.models import Subscriber, UsageRecord
+from apps.commercial.models import Contract, ServiceLevel, Subscriber, UsageRecord
 from apps.org.models import Employee, Organization
 from apps.standards.rulebook import TAX_RULES, TaxRules
 
@@ -112,33 +112,72 @@ def month_start_costs(organization: Organization, month_first: date, at: datetim
 # --- Billing ---------------------------------------------------------------------------------
 
 
+SERVICE_CREDIT_HOURS = 4.0  # premium service: more downtime than this in a month earns a credit
+SERVICE_CREDIT_RATE = Decimal("0.10")  # of the month's usage (A-079)
+
+
 def invoice_usage(
-    organization: Organization, period_start: date, period_end: date, issue_date: date, at: datetime
+    organization: Organization,
+    period_start: date,
+    period_end: date,
+    issue_date: date,
+    at: datetime,
+    downtime_hours: float = 0.0,
 ) -> list[Invoice]:
-    """One invoice per subscriber for the period's uninvoiced usage."""
+    """One invoice per subscriber for its uninvoiced usage, on its contract's terms.
+
+    The terms Sales negotiated show on the invoice (P3.9): a volume discount on the
+    reports above the threshold, the monthly minimum made up when usage falls short,
+    and, for premium service, a credit for a month with more than
+    ``SERVICE_CREDIT_HOURS`` of downtime. A subscriber whose billing Finance has not
+    set up yet is left out; its usage waits and is billed with the next invoice.
+    """
     invoices = []
     with transaction.atomic():
         usage = UsageRecord.objects.select_for_update().filter(
             organization=organization,
             invoiced=False,
-            usage_at__date__gte=period_start,
             usage_at__date__lte=period_end,
+            subscriber__billing_ready=True,
         )
         by_subscriber: dict[int, list[UsageRecord]] = defaultdict(list)
         for record in usage.select_related("product").order_by("subscriber_id", "usage_at", "pk"):
             by_subscriber[record.subscriber_id].append(record)
+        # A monthly minimum is owed even in a month with no usage at all.
+        for contract in Contract.objects.filter(
+            subscriber__organization=organization,
+            subscriber__is_active=True,
+            subscriber__billing_ready=True,
+            monthly_minimum__gt=0,
+            start_date__lte=period_end,
+        ):
+            by_subscriber.setdefault(contract.subscriber_id, [])
         for subscriber_id in sorted(by_subscriber):
             records = by_subscriber[subscriber_id]
+            subscriber = Subscriber.objects.get(pk=subscriber_id)
+            # Each product's current contract: the one that started last.
+            current: dict[int, Contract] = {}
+            for contract in Contract.objects.filter(
+                subscriber=subscriber, start_date__lte=period_end
+            ).order_by("start_date", "pk"):
+                current[contract.product_id] = contract
             groups: dict[tuple[str, str, Decimal], int] = defaultdict(int)
             for r in records:
                 groups[(r.product.product_code, r.product.product_name, r.unit_price)] += r.quantity
-            subtotal = money(sum((p * q for (_, _, p), q in groups.items()), Decimal("0")))
+            lines = [
+                (code, name, qty, price, money(price * qty))
+                for (code, name, price), qty in sorted(groups.items())
+            ]
+            for contract in current.values():
+                lines += _terms(contract, lines, downtime_hours)
+            if not lines:
+                continue
+            subtotal = money(sum((x[4] for x in lines), Decimal("0")))
             rules = TAX_RULES.at(issue_date)  # the rate in force when the invoice is issued
             tax = money(subtotal * rules.vat_and_levies)
             total = subtotal + tax
             seq = organization.allocate("last_invoice_seq")
             number = f"INV{seq:07d}"
-            subscriber = Subscriber.objects.get(pk=subscriber_id)
             entry = post(
                 organization, issue_date,
                 f"Invoice {number}: {subscriber.subscriber_name}, {period_start:%B %Y}",
@@ -161,13 +200,49 @@ def invoice_usage(
             InvoiceLine.objects.bulk_create(
                 InvoiceLine(
                     invoice=invoice, product_code=code, description=name, quantity=qty,
-                    unit_price=price, amount=money(price * qty),
+                    unit_price=price, amount=amount,
                 )
-                for (code, name, price), qty in sorted(groups.items())
+                for code, name, qty, price, amount in lines
             )  # fmt: skip
             UsageRecord.objects.filter(pk__in=[r.pk for r in records]).update(invoiced=True)
             invoices.append(invoice)
     return invoices
+
+
+Line = tuple[str, str, int, Decimal, Decimal]  # code, description, quantity, unit price, amount
+
+
+def _terms(contract: Contract, usage: list[Line], downtime_hours: float) -> list[Line]:
+    """The lines the contract's negotiated terms add to the usage (P3.9)."""
+    added: list[Line] = []
+    code = contract.product.product_code
+    if contract.discount_rate and contract.discount_threshold is not None:
+        units = sum(q for c, _, q, p, _ in usage if c == code and p == contract.unit_price)
+        above = units - contract.discount_threshold
+        if above > 0:
+            off = money(contract.unit_price * contract.discount_rate)
+            added.append((
+                "VOLUME_DISCOUNT",
+                f"Volume discount: {contract.discount_rate:.0%} off reports above "
+                f"{contract.discount_threshold} a month",
+                above, -off, -money(off * above),
+            ))  # fmt: skip
+    used = sum((x[4] for x in usage + added), Decimal("0"))
+    if contract.monthly_minimum and used < contract.monthly_minimum:
+        short = money(contract.monthly_minimum - used)
+        added.append(("MINIMUM", f"Monthly minimum of GHS {contract.monthly_minimum:,.2f}",
+                      1, short, short))  # fmt: skip
+    if contract.service_level == ServiceLevel.PREMIUM and downtime_hours > SERVICE_CREDIT_HOURS:
+        base = sum((x[4] for x in usage + added), Decimal("0"))
+        credit = money(base * SERVICE_CREDIT_RATE)
+        if credit:
+            added.append((
+                "SERVICE_CREDIT",
+                f"Service credit: {downtime_hours:.1f} hours of downtime "
+                f"(premium service, over {SERVICE_CREDIT_HOURS:.0f})",
+                1, -credit, -credit,
+            ))  # fmt: skip
+    return added
 
 
 def receive_payment(invoice: Invoice, amount: Decimal, received_on: date, at: datetime) -> Payment:
