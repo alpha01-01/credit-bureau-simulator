@@ -52,6 +52,8 @@ from . import (
     missions,
     providers,
     sales,
+    scorecards,
+    scoreproduct,
     solvency,
 )
 from .bridge import deliver
@@ -148,6 +150,10 @@ def next_busy_tick(game: Game) -> int:
         organization_id=game.organization_id, submission_status=SubmissionStatus.RECEIVED
     ).exists():
         candidates.append(end_of_day_tick(current))
+    if game.world.config.get("mobile_loans"):
+        # Mobile lenders' checks are billed at each working day's end (P3.6), whether or
+        # not anything else happens that day.
+        candidates.append(end_of_day_tick(current))
     if has_work(game.organization, missions.held_for_player(game)):
         candidates.append(current + 1)  # staff are working through the queue
     ending = (
@@ -230,6 +236,11 @@ def run_tick(game_id: int, tick: int) -> bool:
 
         if cal.is_last_tick_of_day(tick):
             processed += _overnight_batch(game, tick, cal.tick_end(tick), feed)
+            today = cal.tick_start(tick).date()
+            since = max(_previous_working_day(today), game.clock_start - timedelta(days=1))
+            processed += bool(
+                scoreproduct.bill_mobile_checks(game, today, since, cal.tick_end(tick))
+            )
 
         if cal.is_last_tick_of_month(tick):
             payday = cal.tick_start(tick).date()
@@ -251,6 +262,9 @@ def run_tick(game_id: int, tick: int) -> bool:
             today = cal.tick_start(tick).date()
             period = period_end(today.year, today.month)
             build_review(game, cal, period, tick)
+            # The month's data is in: scores are refreshed, and lenders weigh the score (P3.6).
+            scorecards.refresh_scores(game)
+            scoreproduct.update_uptake(game)
             feed.add(
                 "REVIEW_READY",
                 Severity.INFO,
@@ -456,3 +470,12 @@ def end_of_month_tick(cal: Calendar, current: int) -> int:
 def end_of_day_tick(current: int) -> int:
     """Last tick of the day the next tick falls on."""
     return (current // TICKS_PER_DAY + 1) * TICKS_PER_DAY
+
+
+def _previous_working_day(day: date) -> date:
+    from apps.standards.calendar import is_working_day
+
+    before = day - timedelta(days=1)
+    while not is_working_day(before):
+        before -= timedelta(days=1)
+    return before

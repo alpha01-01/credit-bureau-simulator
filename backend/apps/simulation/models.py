@@ -556,6 +556,9 @@ class SubscriberView(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="subscriber_views")
     subscriber_code = models.CharField(max_length=30)
     perceived_value = models.FloatField(default=0.6)
+    score_uptake = models.FloatField(
+        default=0.0, help_text="Share of its enquiries a subscriber buys the score with (P3.6)"
+    )
     opportunities = models.IntegerField(default=0, help_text="Applications seen")
     enquiries = models.IntegerField(default=0)
     hits = models.IntegerField(default=0)

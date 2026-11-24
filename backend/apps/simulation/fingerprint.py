@@ -37,6 +37,7 @@ from apps.bureau.quality.models import (
     TransformationLog,
     ValidationIssue,
 )
+from apps.bureau.reports.models import CreditScore
 from apps.bureau.submissions.models import (
     FeedbackReport,
     ProcessingRun,
@@ -483,6 +484,15 @@ def _fingerprint(game: Game) -> _Hasher:
     )  # fmt: skip
     _section(
         h,
+        "scores",
+        CreditScore.objects.filter(organization_id=org)
+        .order_by("customer__customer_reference")
+        .values_list(
+            "customer__customer_reference", "as_of", "score", "band", "reasons", "terms", "model"
+        ),
+    )
+    _section(
+        h,
         "enquiries",
         Enquiry.objects.filter(organization_id=org)
         .order_by("enquiry_reference")
@@ -496,7 +506,8 @@ def _fingerprint(game: Game) -> _Hasher:
         h,
         "usage",
         UsageRecord.objects.filter(organization_id=org)
-        .order_by("enquiry__enquiry_reference")
+        .order_by("usage_at", "subscriber__subscriber_code", "product__product_code",
+                  "enquiry__enquiry_reference")
         .values_list(
             "enquiry__enquiry_reference", "subscriber__subscriber_code", "product__product_code",
             "quantity", "unit_price", "usage_at", "invoiced",
@@ -509,7 +520,7 @@ def _fingerprint(game: Game) -> _Hasher:
         .order_by("subscriber_code")
         .values_list(
             "subscriber_code", "perceived_value", "opportunities", "enquiries", "hits",
-            "wrong_person", "at_risk",
+            "wrong_person", "at_risk", "score_uptake",
         ),
     )  # fmt: skip
     _section(

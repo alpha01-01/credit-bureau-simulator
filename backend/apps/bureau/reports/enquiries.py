@@ -29,6 +29,7 @@ from apps.bureau.core.models import (
     EnquiryOutcome,
 )
 from apps.bureau.quality.disputes import disputed_accounts
+from apps.bureau.reports.models import CreditScore
 from apps.org.models import Organization
 from apps.standards.enquiry import PURPOSES
 from apps.standards.submission_template import (
@@ -55,6 +56,7 @@ def enquire(
     identifier_value: str,
     subject_name: str,
     at: datetime,
+    include_score: bool = False,
 ) -> Enquiry:
     """Search for a subject and log the enquiry, with the report delivered on a hit."""
     if purpose not in PURPOSES:
@@ -72,7 +74,7 @@ def enquire(
             .first()
         )
         customer = identifier.customer if identifier else None
-        report = build_report(customer, at) if customer else {}
+        report = build_report(customer, at, include_score) if customer else {}
         seq = organization.allocate("last_enquiry_seq")
         return Enquiry.objects.create(
             organization=organization,
@@ -92,7 +94,7 @@ def enquire(
         )
 
 
-def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
+def build_report(customer: Customer, at: datetime, include_score: bool = False) -> dict[str, Any]:
     as_of = at.date()
     accounts = list(
         CreditAccount.objects.filter(customer=customer)
@@ -154,6 +156,7 @@ def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
         customer=customer, enquired_at__gte=at - timedelta(days=365), enquired_at__lt=at
     ).count()
     cheques, judgments = cheques_on_file(customer, as_of), judgments_on_file(customer, as_of)
+    score = _score(customer) if include_score else None
     return {
         "layout": REPORT_LAYOUT,
         "as_of": as_of.isoformat(),
@@ -168,6 +171,7 @@ def build_report(customer: Customer, at: datetime) -> dict[str, Any]:
             "dishonoured_cheques": len(cheques),
             "judgments": len(judgments),
         },
+        **({"score": score} if include_score else {}),
         "accounts": rows,
         "dishonoured_cheques": cheques,
         "judgments": judgments,
@@ -248,3 +252,22 @@ def _mask(number: str) -> str:
 
 def _iso(value: date | None) -> str | None:
     return value.isoformat() if value else None
+
+
+BAND_LABELS = {"A": "Very low risk", "B": "Low risk", "C": "Medium risk", "D": "High risk",
+               "E": "Very high risk"}  # fmt: skip
+
+
+def _score(customer: Customer) -> dict[str, Any]:
+    """The customer's credit score, as the deployed scorecards last computed it (P3.6)."""
+    found = CreditScore.objects.filter(customer=customer).first()
+    if found is None:
+        return {"score": None, "note": "No score: no open account to score on."}
+    return {
+        "score": found.score,
+        "band": found.band,
+        "band_label": BAND_LABELS[found.band],
+        "reasons": found.reasons,
+        "terms": found.terms,
+        "as_of": found.as_of.isoformat(),
+    }

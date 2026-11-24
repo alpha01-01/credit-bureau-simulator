@@ -17,6 +17,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+from django.db.models import Sum
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -30,7 +31,7 @@ from apps.bureau.quality.rules import POLICIES, RELAXABLE, RULES
 from apps.bureau.submissions.feedback import as_csv, build_report
 from apps.bureau.submissions.models import StagingRecord, Submission
 from apps.bureau.submissions.review import ReviewError
-from apps.commercial.models import Subscriber
+from apps.commercial.models import Subscriber, UsageRecord
 from apps.finance import statements
 from apps.finance.events import MATCHING_TOOLING_COST
 from apps.org.models import Employee
@@ -39,7 +40,7 @@ from apps.workitems.work import WorkError
 
 from . import assets, assist, compliance, controls, lending, providers, roles
 from .engine import ClockError
-from .models import DataQualityReview, Game
+from .models import DataQualityReview, Game, SubscriberView
 from .reputation import reputation
 
 
@@ -184,8 +185,11 @@ def market(request: Request, game_id: int) -> Response:
     now = controls.state(game).now
     since = now - timedelta(days=91)
     rows = []
+    views = {v.subscriber_code: v for v in SubscriberView.objects.filter(game=game)}
     for s in Subscriber.objects.filter(organization=game.organization).order_by("subscriber_code"):
-        contracts = list(s.contracts.order_by("start_date"))
+        contracts = list(  # the report contract: the score and mobile checks go with it
+            s.contracts.filter(product__product_code="CONSUMER_REPORT").order_by("start_date")
+        )
         current = next((c for c in reversed(contracts) if c.end_date is None), None)
         recent = Enquiry.objects.filter(subscriber=s, enquired_at__gte=since)
         rows.append(
@@ -200,6 +204,13 @@ def market(request: Request, game_id: int) -> Response:
                 "renewals": max(len(contracts) - 1, 0),
                 "enquiries_3m": recent.count(),
                 "hits_3m": recent.filter(outcome="HIT").count(),
+                "score_uptake": views[s.subscriber_code].score_uptake
+                if s.subscriber_code in views
+                else 0.0,
+                "mobile_checks_3m": UsageRecord.objects.filter(
+                    subscriber=s, product__product_code="MOBILE_REPORT", usage_at__gte=since
+                ).aggregate(n=Sum("quantity"))["n"]
+                or 0,
             }
         )
     return Response({"reputation": reputation(game, now), "subscribers": rows})
@@ -686,6 +697,8 @@ def enquiries(request: Request, game_id: int) -> Response:
                 "outcome": e.outcome,
                 "customer": e.customer.customer_reference if e.customer else None,
                 "accounts_reported": e.accounts_reported,
+                "score": (e.report.get("score") or {}).get("score"),
+                "band": (e.report.get("score") or {}).get("band"),
             }
             for e in rows
         ],

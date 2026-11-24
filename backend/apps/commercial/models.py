@@ -81,8 +81,10 @@ class UsageRecord(models.Model):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="+")
     subscriber = models.ForeignKey(Subscriber, on_delete=models.PROTECT, related_name="usage")
     contract = models.ForeignKey(Contract, on_delete=models.PROTECT, related_name="usage")
-    enquiry = models.OneToOneField(
-        "bureau_core.Enquiry", on_delete=models.CASCADE, related_name="usage"
+    # A report and the score sold with it are two lines of one enquiry; mobile-loan checks,
+    # billed in bulk, have none (P3.6).
+    enquiry = models.ForeignKey(
+        "bureau_core.Enquiry", on_delete=models.CASCADE, related_name="usage", null=True, blank=True
     )
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="+")
     quantity = models.IntegerField(default=1)

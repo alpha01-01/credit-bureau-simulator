@@ -17,7 +17,7 @@ from typing import Any
 
 from django.conf import settings
 from django.db import close_old_connections, connection
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -179,9 +179,10 @@ def dashboard(request: Request, game_id: int) -> Response:
     hits = enquiries.filter(outcome=EnquiryOutcome.HIT).count()
     backlog = WorkItem.objects.filter(organization=org, status=ItemStatus.OPEN).count()
     submissions = Submission.objects.filter(organization=org, received_at__date__gte=month_start)
+    # Every line billed: reports, scores sold with them, mobile-loan checks in bulk (P3.6).
     billable = UsageRecord.objects.filter(
         organization=org, usage_at__date__gte=month_start, usage_at__date__lte=today
-    ).aggregate(total=Sum("unit_price"))["total"] or Decimal("0.00")
+    ).aggregate(total=Sum(F("quantity") * F("unit_price")))["total"] or Decimal("0.00")
     return Response(
         {
             "as_of": today,

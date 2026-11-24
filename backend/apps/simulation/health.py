@@ -126,7 +126,7 @@ def data_quality(game: Game, at: datetime) -> dict[str, Any]:
         organization=game.organization, outcome="UPHELD", resolved_at__gte=since
     ).count()
     reports = UsageRecord.objects.filter(
-        organization=game.organization, usage_at__gte=since
+        organization=game.organization, usage_at__gte=since, product__product_code="CONSUMER_REPORT"
     ).count()
     score = (
         0.4 * accuracy_score(accuracy)

@@ -187,9 +187,9 @@ def outcomes(game: Game) -> dict[str, Any]:
         "expenses": float(statement["total_expenses"]),
         "net_profit": float(statement["net_profit"]),
         "bank": float(balance(org, BANK, now.date())),
-        "reports_sold": UsageRecord.objects.filter(organization=org).aggregate(n=Sum("quantity"))[
-            "n"
-        ]
+        "reports_sold": UsageRecord.objects.filter(
+            organization=org, product__product_code="CONSUMER_REPORT"
+        ).aggregate(n=Sum("quantity"))["n"]
         or 0,
         # Data
         "accuracy_true": (truth.get("accuracy") or {}).get("share"),

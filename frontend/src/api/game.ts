@@ -321,6 +321,8 @@ export type MarketData = {
     renewals: number
     enquiries_3m: number
     hits_3m: number
+    score_uptake: number
+    mobile_checks_3m: number
   }[]
 }
 
@@ -573,6 +575,8 @@ export type EnquiryRow = {
   outcome: 'HIT' | 'NO_HIT'
   customer: string | null
   accounts_reported: number
+  score: number | null
+  band: string | null
 }
 
 export type StatementRow = { code: string; name: string; amount: string }
