@@ -36,6 +36,7 @@ from apps.world.models import LoanApplication
 
 from .models import Game, LendingDecision, SubscriberView
 
+REPORT = "CONSUMER_REPORT"
 SERIOUS_DAYS = 90
 CURRENT_ARREARS_DAYS = 30
 CONTRACT_MONTHS = 12
@@ -62,6 +63,15 @@ def serious_arrears(report: dict[str, Any]) -> bool:
     return False
 
 
+DECLINE_BANDS = {"E"}  # a score in these bands is declined like serious arrears (A-076)
+
+
+def very_high_risk(report: dict[str, Any]) -> bool:
+    """Does the report's score (if the lender bought it) put the applicant in a declined band?"""
+    score = report.get("score") or {}
+    return score.get("band") in DECLINE_BANDS
+
+
 def decide(
     game: Game,
     application: LoanApplication,
@@ -71,7 +81,7 @@ def decide(
 ) -> LendingDecision:
     """Record what the lender does with an application in this game."""
     checked = report is not None
-    flagged = bool(report) and serious_arrears(report or {})
+    flagged = bool(report) and (serious_arrears(report or {}) or very_high_risk(report or {}))
     return LendingDecision.objects.create(
         game=game,
         application=application,
@@ -189,8 +199,12 @@ def renewals(game: Game, today: date, at: datetime, add: Any) -> None:
     for subscriber in Subscriber.objects.filter(
         organization=game.organization, is_active=True
     ).order_by("subscriber_code"):
+        # The report contract is the one that renews; the score and the mobile loan report
+        # are bought alongside it (P3.6).
         contract = (
-            Contract.objects.filter(subscriber=subscriber, end_date__isnull=True)
+            Contract.objects.filter(
+                subscriber=subscriber, end_date__isnull=True, product__product_code=REPORT
+            )
             .order_by("-start_date")
             .first()
         )

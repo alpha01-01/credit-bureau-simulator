@@ -16,13 +16,13 @@ from typing import Any
 from apps.bureau.core.models import Enquiry, IdentifierType
 from apps.bureau.providers.models import Institution
 from apps.bureau.reports.enquiries import enquire
-from apps.commercial.models import Contract, Product, Subscriber
+from apps.commercial.models import Contract, Product, Subscriber, UsageRecord
 from apps.commercial.usage import active_contract, record_usage
 from apps.standards.calendar import next_working_day
 from apps.world.generation.rng import stream
 from apps.world.models import Lender, Loan, LoanApplication
 
-from . import compliance, it, lending
+from . import compliance, it, lending, scoreproduct
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar
 from .consequences import trace
 from .demand import REFERENCE_PRICE, p_enquire, update_perception
@@ -159,6 +159,7 @@ def handle_application(
         name = application.business.registered_name
         borrower = ("business", application.business.pk)
 
+    with_score = scoreproduct.buys_score(game, view, code, period, seq)
     enquiry = enquire(
         game.organization,
         subscriber,
@@ -169,8 +170,17 @@ def handle_application(
         id_value,
         name,
         at,
+        include_score=with_score,
     )
     record_usage(enquiry, product, contract)
+    if with_score and (enquiry.report.get("score") or {}).get("score") is not None:
+        # The score is billed only when one is delivered (P3.6).
+        item = scoreproduct.product(game, scoreproduct.SCORE)
+        terms = scoreproduct.contract(subscriber, item, at.date())
+        UsageRecord.objects.create(
+            organization=game.organization, subscriber=subscriber, contract=terms, enquiry=enquiry,
+            product=item, quantity=1, unit_price=terms.unit_price, usage_at=at,
+        )  # fmt: skip
 
     hit = enquiry.customer_id is not None
     correct = (

@@ -67,6 +67,8 @@ export function SubscribersPage() {
             'Renewed',
             'Checks (3 months)',
             'Found',
+            'Buys the score',
+            'Mobile checks (3 months)',
           ]}
         >
           {subscribers.map((s) => (
@@ -87,6 +89,8 @@ export function SubscribersPage() {
               <Td right>{count(s.renewals)}</Td>
               <Td right>{count(s.enquiries_3m)}</Td>
               <Td right>{s.enquiries_3m ? percent(s.hits_3m / s.enquiries_3m) : '—'}</Td>
+              <Td right>{percent(s.score_uptake)}</Td>
+              <Td right>{count(s.mobile_checks_3m)}</Td>
             </tr>
           ))}
         </Table>

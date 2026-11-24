@@ -30,7 +30,7 @@ from apps.simulation.bridge import start_game
 from apps.simulation.clock import TICKS_PER_DAY, TICKS_PER_HOUR
 from apps.simulation.demand import REFERENCE_PRICE
 from apps.simulation.engine import ClockError
-from apps.simulation.fingerprint import fingerprint
+from apps.simulation.fingerprint import differences, fingerprint
 from apps.simulation.models import Game, Incident, LendingDecision, Notice, Proposal
 from apps.workitems.models import ItemStatus, WorkItem
 from apps.world.generation import build_world
@@ -124,7 +124,11 @@ def test_hiring_signing_and_an_outage_show_in_queue_revenue_and_freshness(world:
     assert grow_wait < base_wait
 
     # Revenue: SwiftCash's checks are billed at the price it agreed.
-    swc = UsageRecord.objects.filter(organization=grow.organization, subscriber=subscriber)
+    swc = UsageRecord.objects.filter(  # its report checks; its mobile checks are billed apart
+        organization=grow.organization,
+        subscriber=subscriber,
+        product__product_code="CONSUMER_REPORT",
+    )
     print(f"revenue base {_revenue(base)} grow {_revenue(grow)}; SWC checks {swc.count()}")  # noqa: T201
     assert swc.exists() and {u.unit_price for u in swc} == {price}
     assert _revenue(grow) > _revenue(base)
@@ -193,7 +197,7 @@ def test_hiring_signing_and_an_outage_show_in_queue_revenue_and_freshness(world:
 
     # The same actions replayed give the same game.
     replayed = controls.replay(grow, start_game(world))
-    assert fingerprint(replayed) == fingerprint(grow)
+    assert fingerprint(replayed) == fingerprint(grow), differences(replayed, grow)
 
 
 @pytest.mark.django_db(transaction=True)

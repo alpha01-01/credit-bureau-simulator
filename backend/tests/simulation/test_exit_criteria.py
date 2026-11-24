@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from django.db.models import Sum
+from django.db.models import F, Sum
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
@@ -100,8 +100,11 @@ def _consistent(game: Game) -> None:
     ):
         assert item.decision and item.case.decision == item.decision, item.item_number
 
-    # Every report sold was billed once, to the subscriber that asked for it.
-    assert not UsageRecord.objects.filter(organization=org, enquiry__isnull=True).exists()
+    # Every report sold was billed once, to the subscriber that asked for it. (Mobile-loan
+    # checks, billed in bulk, have no enquiry: P3.6.)
+    assert not UsageRecord.objects.filter(
+        organization=org, enquiry__isnull=True, product__product_code="CONSUMER_REPORT"
+    ).exists()
 
 
 def _total(response: Any) -> int:
@@ -147,12 +150,14 @@ def test_three_months_run_cleanly_and_every_figure_drills_to_its_records(world: 
             billed = UsageRecord.objects.filter(
                 organization=game.organization, usage_at__date__gte=drill["params"]["start"]
             )
-            assert (
-                total == billed.count()
-                and Decimal(value) == billed.aggregate(s=Sum("unit_price"))["s"]
-            )
+            # The drill lists the enquiries (one report line each); the figure is every line
+            # billed, scores and mobile-loan checks included (P3.6).
+            reports = billed.filter(product__product_code="CONSUMER_REPORT")
+            assert total == reports.count()
+            assert Decimal(value) == billed.aggregate(s=Sum(F("quantity") * F("unit_price")))["s"]
         elif m["key"] == "receivables":
-            assert Decimal(value) == sum((Decimal(r["outstanding"]) for r in rows), Decimal(0))
+            owed = sum((Decimal(r["outstanding"]) for r in rows), Decimal(0))
+            assert Decimal(str(value)).quantize(Decimal("0.01")) == owed.quantize(Decimal("0.01"))
         elif m["key"] in ("revenue", "cash"):
             account = drill["params"]["account"]
             assert total <= 200 or m["key"] == "cash"  # the list holds every entry behind it

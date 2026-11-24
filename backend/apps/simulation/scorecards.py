@@ -266,6 +266,7 @@ def deploy(game: Game, number: int, tick: int, at: datetime) -> ScoreModel:
             detail, {"screen": "scorecards", "params": {"number": str(number)}},
         )  # fmt: skip
         feed.save()
+    refresh_scores(game)  # reports carry the new scores at once (P3.6)
     return model
 
 
@@ -345,3 +346,70 @@ def summary(model: ScoreModel) -> dict[str, Any]:
         "features": model.features, "holdout": r.get("holdout"),
         "restricted_used": r.get("fairness", {}).get("restricted_used", []),
     }  # fmt: skip
+
+
+# --- The score on reports (P3.6) --------------------------------------------------------------
+
+REASONS_SHOWN = 4
+SCORED_ORDER = (sd.LONG, sd.MID, sd.SHORT)  # without a composite: the longest term held
+
+
+def _points_and_reasons(model: ScoreModel, data: sd.Dataset) -> tuple[np.ndarray, list[list[str]]]:
+    """Each customer's score on a term model, and the characteristics that cost them most."""
+    descriptions = {name: d for name, (d, _) in sd.FEATURES.items()}
+    losses = []
+    for b, coef in zip(model.spec["binnings"], model.spec["coefficients"], strict=True):
+        binning = sd.stored_binning(b)
+        points = -coef * np.array(binning.woe) * sm.FACTOR
+        losses.append(points.max() - points[binning.bin_of(data.features[b["feature"]])])
+    loss = np.column_stack(losses)
+    features = [b["feature"] for b in model.spec["binnings"]]
+    reasons = []
+    for row in loss:
+        order = np.argsort(-row, kind="mergesort")[:REASONS_SHOWN]
+        reasons.append([descriptions[features[j]] for j in order if row[j] > 0.5])
+    return scores_for(model, data), reasons
+
+
+def refresh_scores(game: Game) -> int:
+    """Score every individual customer on file with the deployed scorecards, at the latest
+    reporting month. Returns how many customers have a score."""
+    from apps.bureau.reports.models import CreditScore
+
+    deployed = {
+        m.term: m for m in ScoreModel.objects.filter(game=game, status=ScoreModel.Status.DEPLOYED)
+    }
+    CreditScore.objects.filter(organization_id=game.organization_id).delete()
+    terms = [t for t in SCORED_ORDER if t in deployed]
+    latest = latest_reporting_date(game.organization_id)
+    if not terms or latest is None:
+        return 0
+    data = sd.dataset(game.organization_id, sd.ALL, latest, 0, scoring=True)
+    per_term = {t: _points_and_reasons(deployed[t], data) for t in terms}
+    composite = deployed.get(sd.COMPOSITE)
+    main = scores_for(composite, data) if composite else None
+    rows = []
+    for i, customer in enumerate(data.customers.tolist()):
+        held = [t for t in terms if data.present[t][i]]
+        if not held:
+            continue  # nothing open to score on: "no score" (a thin or closed file)
+        term_scores = {t: int(per_term[t][0][i]) for t in held}
+        if main is not None:
+            score, source = int(main[i]), f"COMPOSITE-{composite.number}"  # type: ignore[union-attr]
+        else:
+            score, source = term_scores[held[0]], f"{held[0]}-{deployed[held[0]].number}"
+        weakest = min(held, key=lambda t: term_scores[t])
+        rows.append(
+            CreditScore(
+                organization_id=game.organization_id,
+                customer_id=customer,
+                as_of=latest,
+                score=score,
+                band=sm.band_of(score),
+                reasons=per_term[weakest][1][i],
+                terms=term_scores,
+                model=source,
+            )
+        )
+    CreditScore.objects.bulk_create(rows, batch_size=5000)
+    return len(rows)

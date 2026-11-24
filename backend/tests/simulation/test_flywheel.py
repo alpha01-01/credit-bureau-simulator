@@ -92,10 +92,13 @@ def test_a_careful_bureaus_lenders_lend_better_and_stay(world: World) -> None:
     gone = Subscriber.objects.filter(organization=careless.organization, is_active=False)
     assert gone.count() == lost
     for subscriber in gone:
-        ended = Contract.objects.get(subscriber=subscriber)
+        ended = Contract.objects.get(subscriber=subscriber, product__product_code="CONSUMER_REPORT")
         assert ended.end_date is not None
     stayed = Subscriber.objects.filter(organization=careful.organization)
-    assert all(Contract.objects.filter(subscriber=s).count() == 2 for s in stayed)
+    assert all(
+        Contract.objects.filter(subscriber=s, product__product_code="CONSUMER_REPORT").count() == 2
+        for s in stayed
+    )
 
     # The year-end review shows the books.
     review = DataQualityReview.objects.filter(game=careful).order_by("-period").first()

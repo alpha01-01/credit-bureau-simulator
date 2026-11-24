@@ -212,8 +212,14 @@ def _counts(
         return dict(cursor.fetchall())
 
 
-def dataset(organization_id: int, term: str, t: date, window_months: int) -> Dataset:
-    """The population, outcome and every feature for one term at observation date ``t``."""
+def dataset(
+    organization_id: int, term: str, t: date, window_months: int, scoring: bool = False
+) -> Dataset:
+    """The population, outcome and every feature for one term at observation date ``t``.
+
+    ``scoring`` is for scoring rather than building (P3.6): everyone with an account on
+    file at ``t``, those in default included, and no outcome.
+    """
     window_end = months_back(t, -window_months)
     accounts = _accounts(organization_id, t, window_end)
     known = [a for a in accounts if a.disbursed <= t]
@@ -235,6 +241,8 @@ def dataset(organization_id: int, term: str, t: date, window_months: int) -> Dat
         if any(_in(term, a.term) and open_now(a) for a in accts)
         and not any(open_now(a) and a.dpd_now >= DEFAULT_DPD for a in accts)
     )
+    if scoring:
+        population = sorted(by_customer)
     bad = np.array(
         [
             any(_in(term, a.term) and a.worst_after >= DEFAULT_DPD for a in later[c])

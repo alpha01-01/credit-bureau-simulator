@@ -27,7 +27,16 @@ export function EnquiriesPage() {
       {rows.data && <Shown rows={rows.data} />}
       {rows.data && rows.data.length > 0 && (
         <Table
-          head={['Reference', 'When', 'Subscriber', 'Purpose', 'Outcome', 'Customer', 'Accounts']}
+          head={[
+            'Reference',
+            'When',
+            'Subscriber',
+            'Purpose',
+            'Outcome',
+            'Customer',
+            'Accounts',
+            'Score',
+          ]}
         >
           {rows.data.map((e) => (
             <tr key={e.reference}>
@@ -53,6 +62,7 @@ export function EnquiriesPage() {
                 )}
               </Td>
               <Td right>{count(e.accounts_reported)}</Td>
+              <Td right>{e.score === null ? '—' : `${e.score} ${e.band}`}</Td>
             </tr>
           ))}
         </Table>
