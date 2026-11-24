@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from apps.commercial.models import Product
 from apps.finance import payables
 
 from . import finance_dept
@@ -24,6 +25,11 @@ from .compliance import add_working_days
 from .models import Game, ProductDevelopment
 
 DEVELOPER = ("DEVWORKS", "DevWorks Software Ltd")
+# What each developed product sells at (R8 placeholders, A-081): name, list price.
+SOLD = {
+    "BUSINESS_REPORT": ("Business credit report", Decimal("60.00")),
+    "BATCH_ENQUIRY": ("Batch enquiry, per record", Decimal("13.50")),
+}
 ACCOUNT = "5900"
 
 
@@ -63,6 +69,17 @@ MENU = {
 
 class ProductError(Exception):
     pass
+
+
+def sale_item(game: Game, code: str) -> Product:
+    """The bureau's product for a developed offering, created on first sale."""
+    name, price = SOLD[code]
+    found, _ = Product.objects.get_or_create(
+        organization=game.organization,
+        product_code=code,
+        defaults={"product_name": name, "list_price": price},
+    )
+    return found
 
 
 def launched(game: Game, code: str) -> bool:

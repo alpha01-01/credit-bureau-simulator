@@ -28,7 +28,7 @@ from apps.standards.calendar import is_working_day, next_working_day
 from apps.standards.rulebook import TAX_RULES
 from apps.world.generation.rng import stream
 
-from . import finance_dept, it
+from . import batches, finance_dept, it
 from .clock import Calendar, previous_month_end
 from .feed import Feed
 from .models import EventType, Game, ScheduledEvent
@@ -73,6 +73,7 @@ def month_start(game: Game, cal: Calendar, tick: int, sequence: int, feed: Feed)
         org, previous_end.replace(day=1), previous_end, previous_end, at, downtime_hours=down
     )
     feed.invoices_issued(invoices, previous_end)
+    batches.month_start(game, today, tick, at, feed.add)  # P3.11: this month's batch files
     events = []
     for invoice in invoices:
         paid_on = _payment_date(game, invoice)

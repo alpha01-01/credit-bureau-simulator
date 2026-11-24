@@ -38,7 +38,7 @@ from apps.bureau.quality.models import (
     TransformationLog,
     ValidationIssue,
 )
-from apps.bureau.reports.models import CreditScore
+from apps.bureau.reports.models import BatchFile, BatchRecord, CreditScore
 from apps.bureau.submissions.models import (
     FeedbackReport,
     ProcessingRun,
@@ -547,6 +547,20 @@ def _fingerprint(game: Game) -> _Hasher:
             "customer__customer_reference", "as_of", "score", "band", "reasons", "terms", "model"
         ),
     )
+    _section(
+        h,
+        "batches",
+        [
+            *BatchFile.objects.filter(organization_id=org)
+            .order_by("reference")
+            .values_list("reference", "subscriber__subscriber_code", "received_at", "records",
+                         "hits"),
+            *BatchRecord.objects.filter(batch__organization_id=org)
+            .order_by("batch__reference", "row_number")
+            .values_list("batch__reference", "row_number", "identifier_type", "identifier_value",
+                         "subject_name", "enquiry__enquiry_reference"),
+        ],
+    )  # fmt: skip
     _section(
         h,
         "enquiries",

@@ -5,6 +5,12 @@ import { useGameId } from '../app/useGameId'
 import { Badge, Empty, Failed, Loading, Page, Table, Td, Shown } from '../components/ui'
 import { count, dateTime, day } from '../lib/format'
 
+const PRODUCT: Record<string, string> = {
+  CONSUMER_REPORT: 'consumer report',
+  BUSINESS_REPORT: 'business report',
+  BATCH_ENQUIRY: 'batch',
+}
+
 export function EnquiriesPage() {
   const gameId = useGameId()
   const [params] = useSearchParams()
@@ -31,6 +37,7 @@ export function EnquiriesPage() {
             'Reference',
             'When',
             'Subscriber',
+            'Product',
             'Purpose',
             'Outcome',
             'Customer',
@@ -40,9 +47,17 @@ export function EnquiriesPage() {
         >
           {rows.data.map((e) => (
             <tr key={e.reference}>
-              <Td>{e.reference}</Td>
+              <Td>
+                <Link
+                  className="font-mono text-brand hover:underline"
+                  to={`/games/${gameId}/enquiries/${e.reference}`}
+                >
+                  {e.reference}
+                </Link>
+              </Td>
               <Td>{dateTime(e.enquired_at)}</Td>
               <Td>{e.subscriber}</Td>
+              <Td>{PRODUCT[e.product] ?? e.product}</Td>
               <Td>{e.purpose.replace('_', ' ').toLowerCase()}</Td>
               <Td>
                 <Badge tone={e.outcome === 'HIT' ? 'good' : 'warn'}>

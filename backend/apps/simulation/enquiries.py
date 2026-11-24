@@ -15,14 +15,14 @@ from typing import Any
 
 from apps.bureau.core.models import Enquiry, IdentifierType
 from apps.bureau.providers.models import Institution
-from apps.bureau.reports.enquiries import enquire
+from apps.bureau.reports.enquiries import BUSINESS_REPORT, enquire
 from apps.commercial.models import Contract, Product, Subscriber, UsageRecord
 from apps.commercial.usage import active_contract, record_usage
 from apps.standards.calendar import next_working_day
 from apps.world.generation.rng import stream
 from apps.world.models import Lender, Loan, LoanApplication
 
-from . import compliance, duties, it, lending, scoreproduct
+from . import compliance, duties, it, lending, products, scoreproduct
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar
 from .consequences import trace
 from .demand import REFERENCE_PRICE, p_enquire, update_perception
@@ -133,6 +133,17 @@ def handle_application(
         memo[key] = (subscriber, product, active_contract(subscriber.pk, product, at.date()))
     subscriber, product, contract = memo[key]
     price = contract.unit_price
+    if application.business is not None:  # the business report, once developed (P3.11)
+        business = ("business-report", code, at.date())
+        if business not in memo:
+            memo[business] = None
+            if products.launched(game, BUSINESS_REPORT):
+                item = products.sale_item(game, BUSINESS_REPORT)
+                memo[business] = (item, scoreproduct.contract(subscriber, item, at.date()))
+        if memo[business] is not None:
+            product, contract = memo[business]
+            # Lenders weigh its price against its list price, as they do the report's.
+            price = contract.unit_price * REFERENCE_PRICE / product.list_price
 
     view.opportunities += 1
     tick = feed.tick if feed else game.current_tick
@@ -163,11 +174,13 @@ def handle_application(
         name = application.business.registered_name
         borrower = ("business", application.business.pk)
 
-    with_score = scoreproduct.buys_score(game, view, code, period, seq)
+    with_score = product.product_code == PRODUCT and scoreproduct.buys_score(
+        game, view, code, period, seq
+    )
     enquiry = enquire(
         game.organization,
         subscriber,
-        PRODUCT,
+        product.product_code,
         "NEW_CREDIT",
         f"CONSENT-{code}-{period:%Y%m}-{seq:05d}",
         id_type,
