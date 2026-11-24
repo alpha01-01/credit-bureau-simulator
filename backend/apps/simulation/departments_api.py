@@ -28,7 +28,7 @@ from apps.finance.events import IT_CAPACITY_COST
 from apps.org.models import Employee
 from apps.workitems.models import ItemStatus, WorkItem
 
-from . import controls, hr, it, roles, sales
+from . import controls, economy, hr, it, roles, sales
 from .api import _error, _game
 from .clock import TICKS_PER_HOUR
 from .demand import REFERENCE_PRICE
@@ -66,6 +66,7 @@ def staff(request: Request, game_id: int) -> Response:
         except (ClockError, ValueError) as exc:
             return _error(exc)
     tick = game.current_tick
+    wages = economy.wage_factor(game, controls.this_month(game))
     team = [
         {
             "number": e.employee_number,
@@ -74,7 +75,7 @@ def staff(request: Request, game_id: int) -> Response:
             "skills": e.skills,
             "morale": e.morale,
             "salary": str(e.monthly_salary),
-            "market_salary": str(hr.market_salary(e.job_title)),
+            "market_salary": str(hr.market_salary(e.job_title, wages)),
             "hired_on": e.hired_on,
             "active": e.is_active,
             "away": e.away_until_tick > tick,

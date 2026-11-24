@@ -96,7 +96,9 @@ def balance(organization: Organization, code: str, as_of: date | None = None) ->
 # --- Monthly costs -------------------------------------------------------------------------
 
 
-def month_start_costs(organization: Organization, month_first: date, at: datetime) -> None:
+def month_start_costs(
+    organization: Organization, month_first: date, at: datetime, rent: Decimal = MONTHLY_RENT
+) -> None:
     """The month's rent, from the prepayment.
 
     IT hosting, the matching software and the landlord's renewal of the prepayment
@@ -105,7 +107,7 @@ def month_start_costs(organization: Organization, month_first: date, at: datetim
     """
     post(
         organization, month_first, f"Office rent for {month_first:%B %Y}",
-        [dr(RENT, MONTHLY_RENT), cr(PREPAID_RENT, MONTHLY_RENT)], "RENT", at,
+        [dr(RENT, rent), cr(PREPAID_RENT, rent)], "RENT", at,
     )  # fmt: skip
 
 

@@ -166,8 +166,14 @@ export type ScoreModelDetail = ScoreModelSummary & {
     customers: number
     psi: number
     drift: boolean
+    shift?: 'stable' | 'moderate' | 'major'
     development: number[]
     now: number[]
+    since_deployment?: {
+      from: string
+      psi: number
+      shift: 'stable' | 'moderate' | 'major'
+    } | null
   } | null
 }
 

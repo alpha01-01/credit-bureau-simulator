@@ -12,7 +12,8 @@ a pure function of the seed.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+import json
+from dataclasses import asdict, fields
 from datetime import date
 from typing import Any
 
@@ -31,7 +32,7 @@ from apps.world.models import (
 from apps.world.models import Business as BusinessRow
 
 from . import GeneratedWorld, build_world
-from .config import GENERATOR_VERSION, PRODUCTS
+from .config import GENERATOR_VERSION, PRODUCTS, EconomyModel
 from .engine import PERSON, PRODUCT_CODES, STATUS_NAMES
 from .persist import (
     _copy_columns,
@@ -41,12 +42,24 @@ from .persist import (
     account_number,
     copy_rows,
     customer_number,
+    economy_row,
     loan_month_partition,
 )
 
 
 class WorldAdvanceError(Exception):
     pass
+
+
+def stored_economy(config: dict[str, Any]) -> EconomyModel:
+    """The world's economy as it was made; worlds made before P3.12 have no stages."""
+    stored = dict(config.get("economy") or {})
+    stored.setdefault("stages", False)
+    known = {f.name for f in fields(EconomyModel)}
+    values: dict[str, Any] = {
+        k: tuple(v) if isinstance(v, list) else v for k, v in stored.items() if k in known
+    }
+    return EconomyModel(**values)
 
 
 def _months_between(start: date, end: date) -> int:
@@ -70,6 +83,7 @@ def extend_world(world_id: int) -> date:
             anchor,
             extra_months=extra,
             mobile_loans=bool(world.config.get("mobile_loans", False)),
+            economy=stored_economy(world.config),
         )
         result = generated.result
         t = len(result.months) - 1
@@ -81,8 +95,18 @@ def extend_world(world_id: int) -> date:
             cursor = wrapper.cursor
             _write_month(cursor, world, generated, t, period)
 
+        stress, stage, inflation, price, wages, rate, growth, events = economy_row(result, t)
         EconomyMonth.objects.create(
-            world=world, period=period, stress_index=float(result.stress[t])
+            world=world,
+            period=period,
+            stress_index=stress,
+            stage=stage,
+            inflation=inflation,
+            price_index=price,
+            wage_index=wages,
+            policy_rate=rate,
+            growth=growth,
+            events=json.loads(events),
         )
         world.history_end = period
         world.stats = asdict(generated.stats)

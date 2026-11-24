@@ -28,7 +28,7 @@ from apps.standards.calendar import is_working_day, next_working_day
 from apps.standards.rulebook import TAX_RULES
 from apps.world.generation.rng import stream
 
-from . import batches, finance_dept, it
+from . import batches, economy, finance_dept, it
 from .clock import Calendar, previous_month_end
 from .feed import Feed
 from .models import EventType, Game, ScheduledEvent
@@ -57,8 +57,9 @@ def month_start(game: Game, cal: Calendar, tick: int, sequence: int, feed: Feed)
     org = game.organization
     # Suppliers' bills (the landlord's renewal among them) and last month's bank
     # statement first: the rent below is drawn from the prepayment (P3.8).
+    economy.month_start(game, today, feed.add)  # last month's figures published (P3.12)
     finance_dept.month_start(game, today, tick, at, feed.add)
-    month_start_costs(org, first, at)
+    month_start_costs(org, first, at, finance_dept.monthly_rent(game))
 
     # Invoices are dated the last day of the month the service was delivered, so the
     # revenue (and the VAT on it) belongs to that month, as accrual accounting requires.

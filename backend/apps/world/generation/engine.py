@@ -25,6 +25,7 @@ from typing import Any
 import numpy as np
 
 from .config import PRODUCTS, WorldConfig
+from .economy import economy_path
 from .population import Branch, Businesses, People, footprint_mask
 from .rng import stream
 
@@ -166,6 +167,8 @@ class SimulationResult:
     # Mobile loans (P3.3), a stream of their own beside the engine's; None in worlds
     # made without them.
     mobile: Any = None
+    # The economy's other series (P3.12): stages, inflation, rates, wages, events.
+    economy: Any = None
 
 
 class Engine:
@@ -191,7 +194,10 @@ class Engine:
         self.months = first_month + np.arange(config.simulated_months).astype("timedelta64[M]")
         self._anchor_t = total - 1  # index of the original history_end month
         self.history_start = config.scale.burn_in_months
-        self.stress = self._economy()
+        self.economy = economy_path(
+            config.economy, config.seed, config.simulated_months, self._anchor_t
+        )
+        self.stress = self.economy.stress
 
         # Branch lookup: (lender, region) -> branch indices; head office as fallback.
         self._branches: dict[tuple[int, int], list[int]] = {}
@@ -223,19 +229,6 @@ class Engine:
             )
             self._monthly_originations.append(target / max(life, 1.0))
 
-    # -- economy -------------------------------------------------------------
-
-    def _economy(self) -> np.ndarray:
-        econ = self.config.economy
-        rng = stream(self.config.seed, "economy.stress")
-        shocks = rng.standard_normal(len(self.months)) * econ.stress_sigma
-        stress = np.zeros(len(self.months))
-        level = econ.stress_mean
-        for t in range(len(self.months)):
-            level = econ.stress_mean + econ.stress_phi * (level - econ.stress_mean) + shocks[t]
-            stress[t] = level
-        return stress
-
     # -- main loop -----------------------------------------------------------
 
     def run(self) -> SimulationResult:
@@ -257,6 +250,7 @@ class Engine:
             customers=self.customers,
             customer_seq=self.customer_seq,
             snapshots=self.snapshots,
+            economy=self.economy,
         )
 
     # -- monthly repayment behaviour ----------------------------------------
@@ -474,7 +468,7 @@ class Engine:
         months_to_end = self._anchor_t - t  # negative after the original history: growth continues
         econ = self.config.economy
         growth = (1.0 + econ.annual_lending_growth) ** (-months_to_end / 12.0)
-        cycle = np.exp(-econ.lending_stress_elasticity * self.stress[t])
+        cycle = self.economy.lending[t]  # stress and, from P3.12, dearer credit
 
         active = np.flatnonzero(self.book["status"] == ACTIVE)
         person_loans = np.bincount(

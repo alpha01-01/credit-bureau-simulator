@@ -10,6 +10,7 @@ written; loans that ended during burn-in never become visible to anyone.
 
 from __future__ import annotations
 
+import json
 import shutil
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict
@@ -119,9 +120,9 @@ def write_world(
         copy_rows(
             cursor,
             "world_economymonth",
-            ("world_id", "period", "stress_index"),
+            ECONOMY_COLUMNS,
             (
-                (world_id, period_ends[t], float(result.stress[t]))
+                (world_id, period_ends[t], *economy_row(result, t))
                 for t in range(result.history_start, len(months))
             ),
         )
@@ -436,6 +437,22 @@ def _json(value: Any) -> str:
     import json
 
     return json.dumps(value, default=str, sort_keys=True)
+
+
+ECONOMY_COLUMNS = (
+    "world_id", "period", "stress_index", "stage", "inflation", "price_index", "wage_index",
+    "policy_rate", "growth", "events",
+)  # fmt: skip
+
+
+def economy_row(result: Any, t: int) -> tuple[Any, ...]:
+    """A month of the economy, as stored (after world_id and period)."""
+    e = result.economy
+    return (
+        float(result.stress[t]), e.stage[t], float(e.inflation[t]), float(e.price_index[t]),
+        float(e.wage_index[t]), float(e.policy_rate[t]), float(e.growth[t]),
+        json.dumps(e.events[t]),
+    )  # fmt: skip
 
 
 def _config_snapshot(config: WorldConfig) -> dict[str, Any]:

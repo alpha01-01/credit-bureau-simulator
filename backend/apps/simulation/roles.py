@@ -36,7 +36,7 @@ CEO, DATA_OPERATIONS, COMPLIANCE, SALES, FINANCE, DATA_ANALYTICS = (
 )  # fmt: skip
 
 # Screens every role sees (the game layout's navigation keys).
-SHARED_SCREENS = ("", "office", "missions", "events", "handbook", "onboarding")
+SHARED_SCREENS = ("", "office", "missions", "events", "handbook", "onboarding", "economy")
 
 
 @dataclass(frozen=True)

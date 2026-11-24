@@ -290,6 +290,29 @@ export function ScorecardPage() {
               Over 0.25: the people being scored no longer look like those the scorecard was built
               on.
             </p>
+            {m.monitoring.since_deployment && (
+              <p className="mt-2 text-sm">
+                Since it went live ({day(m.monitoring.since_deployment.from)}), by score decile:{' '}
+                <strong>{m.monitoring.since_deployment.psi.toFixed(3)}</strong>{' '}
+                <Badge
+                  tone={
+                    m.monitoring.since_deployment.shift === 'major'
+                      ? 'bad'
+                      : m.monitoring.since_deployment.shift === 'moderate'
+                        ? 'warn'
+                        : 'good'
+                  }
+                >
+                  {m.monitoring.since_deployment.shift === 'stable'
+                    ? 'stable'
+                    : `${m.monitoring.since_deployment.shift} shift`}
+                </Badge>
+                <span className="block text-xs text-slate-500">
+                  Over 0.1 a shift worth watching, over 0.25 a major one: the population has changed
+                  since launch (an economic shock does this).
+                </span>
+              </p>
+            )}
           </Card>
         )}
       </div>

@@ -14,6 +14,7 @@ const NAV = [
   ['office', 'Office'],
   ['missions', 'Missions'],
   ['events', 'Events'],
+  ['economy', 'Economy'],
   ['dashboard', 'Dashboard'],
   ['health', 'Health'],
   ['submissions', 'Submissions'],

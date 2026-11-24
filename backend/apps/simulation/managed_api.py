@@ -18,7 +18,7 @@ from rest_framework.response import Response
 from apps.bureau.reports.batch import BATCH_ENQUIRY, result_file
 from apps.bureau.reports.models import BatchFile
 
-from . import controls, products, roles, support
+from . import controls, economy, products, roles, support
 from .api import _error, _game
 from .engine import ClockError
 from .finance_dept import AGENT_MONTHLY
@@ -157,3 +157,10 @@ def batches_view(request: Request, game_id: int) -> Response:
                 "result_file": result_file(chosen),
             }
     return Response(body)
+
+
+@api_view(["GET"])
+def economy_view(request: Request, game_id: int) -> Response:
+    """The published economic indicators (P3.12), with the rule behind each."""
+    game = _game(request, game_id)
+    return Response(economy.indicators(game, controls.state(game).now.date()))
