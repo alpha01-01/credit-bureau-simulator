@@ -20,7 +20,9 @@ import { SubmissionPage, SubmissionsPage } from '../pages/SubmissionsPage'
 import { SubscribersPage } from '../pages/SubscribersPage'
 import { StaffPage } from '../pages/StaffPage'
 import { OnboardingPage } from '../pages/OnboardingPage'
+import { ProductsPage } from '../pages/ProductsPage'
 import { SalesPage } from '../pages/SalesPage'
+import { SupportPage } from '../pages/SupportPage'
 import { ItPage } from '../pages/ItPage'
 import { HealthPage } from '../pages/HealthPage'
 import { AccountsPage } from '../pages/AccountsPage'
@@ -106,6 +108,8 @@ const routes = [
               { path: 'staff', element: <StaffPage /> },
               { path: 'sales', element: <SalesPage /> },
               { path: 'onboarding', element: <OnboardingPage /> },
+              { path: 'support', element: <SupportPage /> },
+              { path: 'products', element: <ProductsPage /> },
               { path: 'it', element: <ItPage /> },
               { path: 'health', element: <HealthPage /> },
               { path: 'missions', element: <MissionsPage /> },

@@ -26,6 +26,8 @@ COST_CENTRES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("IT", "IT", ("5200",)),
     ("COMPLIANCE", "Compliance", ("5400",)),
     ("FINANCE", "Finance", ("5600", "5700", "5800")),
+    ("SUPPORT", "Customer Support", ("5250",)),
+    ("PRODUCT", "Product Development", ("5900",)),
 )
 UNALLOCATED = "UNALLOCATED"
 CENTRE_OF = {account: code for code, _, accounts in COST_CENTRES for account in accounts}

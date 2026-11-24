@@ -72,6 +72,12 @@ def scoring_model(game: Game) -> ScoreModel | None:
 
 
 def warranted_uptake(game: Game) -> float:
+    """The share of enquiries a fair score would sell to: none until Product Development
+    has built the score product (P3.10)."""
+    from .products import launched
+
+    if not launched(game, SCORE):
+        return 0.0
     model = scoring_model(game)
     if model is None:
         return 0.0

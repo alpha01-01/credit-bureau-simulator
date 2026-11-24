@@ -90,6 +90,7 @@ from .models import (
     Onboarding,
     OnboardingStep,
     PlayerAction,
+    ProductDevelopment,
     Proposal,
     ProviderRelationship,
     RegulatorFinding,
@@ -99,6 +100,7 @@ from .models import (
     ScoreModel,
     SolvencyState,
     SubscriberView,
+    SupportTicket,
     TickLog,
 )
 
@@ -196,6 +198,8 @@ _ORDER: tuple[tuple[type[Model], str], ...] = (
     ),
     (Onboarding, "game_id = %(game)s"),
     (LenderResearch, "game_id = %(game)s"),
+    (SupportTicket, "game_id = %(game)s"),
+    (ProductDevelopment, "game_id = %(game)s"),
     (Proposal, "game_id = %(game)s"),
     (Incident, "game_id = %(game)s"),
     (SolvencyState, "game_id = %(game)s"),

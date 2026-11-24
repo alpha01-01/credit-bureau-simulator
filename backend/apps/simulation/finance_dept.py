@@ -63,6 +63,9 @@ SOFTWARE = ("MATCHSOFT", "MatchSoft Systems Ltd")
 POWER = ("ECG", "Electricity Company of Ghana")
 INTERNET = ("NETLINK", "NetLink Business Internet")
 LANDLORD = ("RIDGEPROP", "Ridge Properties Ltd")
+CONTACT_CENTRE = ("CALLPOINT", "CallPoint Contact Centre Ltd")
+AGENT_MONTHLY = Decimal("4500.00")  # a contact-centre agent a month (A-080)
+SUPPORT_ACCOUNT = "5250"
 DUPLICATE_CHANCE = 0.1
 HOLD_AFTER_WORKING_DAYS = 10
 HOLD = "SUPPLIER_HOLD"
@@ -109,6 +112,8 @@ def ensure_budget(game: Game, month_first: date) -> None:
         + MATCHING_TOOLING_COST[org.matching_tooling],
         "COMPLIANCE": Decimal("0"),
         "FINANCE": FINANCE_BUDGET,
+        "SUPPORT": AGENT_MONTHLY * org.support_staff,
+        "PRODUCT": Decimal("0"),
     }  # fmt: skip
     for centre, amount in plan.items():
         budget.set_budget(org, centre, amount, month_first)
@@ -137,6 +142,9 @@ def _bills(game: Game, today: date, at: datetime, add: Any) -> None:
         (POWER, f"ECG-{month}", f"Electricity for {today:%B %Y}", UTILITIES,
          Decimal(int(stream(seed, f"power:{month}").integers(2500, 4501))), 14),
         (INTERNET, f"NL-{month}", f"Internet for {today:%B %Y}", UTILITIES, Decimal("1800.00"), 30),
+        (CONTACT_CENTRE, f"CP-{month}",
+         f"Customer support: {org.support_staff} agent(s) for {today:%B %Y}", SUPPORT_ACCOUNT,
+         AGENT_MONTHLY * org.support_staff, 30),
     ]  # fmt: skip
     if balance(org, PREPAID_RENT) < MONTHLY_RENT:
         due.insert(0, (LANDLORD, f"RP-{month}", "Office rent: the next 12 months in advance",

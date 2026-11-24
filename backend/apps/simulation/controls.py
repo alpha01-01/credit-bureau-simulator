@@ -37,11 +37,13 @@ from . import (
     it,
     missions,
     onboarding,
+    products,
     providers,
     roles,
     sales,
     scorecards,
     solvency,
+    support,
 )
 from .checkpoints import checkpoint_now
 from .clock import REAL_SECONDS_PER_TICK_AT_1X, TICKS_PER_HOUR
@@ -474,6 +476,32 @@ def set_up_billing(game: Game, number: int) -> Any:
     )  # fmt: skip
 
 
+# --- Managed departments: Customer Support and Product Development (P3.10) --------------
+
+
+def set_support_staff(game: Game, agents: int) -> Game:
+    with transaction.atomic():
+        try:
+            support.set_staff(game, agents)
+        except support.SupportError as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "SET_SUPPORT_STAFF", {"agents": agents})
+    return game
+
+
+def develop_product(game: Game, code: str) -> Any:
+    tick, at = _now(game)
+    with transaction.atomic():
+        feed = Feed(game, tick, at)
+        try:
+            project = products.develop(game, code, tick, at.date(), at, feed.add)
+        except (products.ProductError, PostingError) as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, "DEVELOP_PRODUCT", {"code": code})
+        feed.save()
+    return project
+
+
 def respond_to_outage(game: Game, response: str) -> Incident:
     tick, at = _now(game)
     with transaction.atomic():
@@ -870,6 +898,10 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             send_proposal(
                 target, str(p["lender"]), Decimal(p["price"]), sales.Terms.from_payload(p)
             )
+        case "SET_SUPPORT_STAFF":
+            set_support_staff(target, int(action.payload["agents"]))
+        case "DEVELOP_PRODUCT":
+            develop_product(target, str(action.payload["code"]))
         case "RESEARCH_LENDER":
             research_lender(target, str(action.payload["lender"]))
         case "MEET_LENDER":

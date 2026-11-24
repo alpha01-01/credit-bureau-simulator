@@ -29,6 +29,8 @@ const NAV = [
   ['onboarding', 'Onboarding'],
   ['staff', 'Staff'],
   ['it', 'IT'],
+  ['support', 'Support'],
+  ['products', 'Products'],
   ['finance', 'Finance'],
   ['reviews', 'Reviews'],
   ['analytics', 'Analytics'],
