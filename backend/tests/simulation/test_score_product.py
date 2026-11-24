@@ -10,6 +10,7 @@ lending test judges by each applicant's true hidden risk, the world's cause of d
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ from apps.bureau.core.models import Enquiry
 from apps.bureau.reports.models import CreditScore
 from apps.commercial.models import Contract, UsageRecord
 from apps.finance.models import InvoiceLine
-from apps.simulation import controls, scorecards, scoreproduct
+from apps.simulation import controls, products, scorecards, scoreproduct
 from apps.simulation.bridge import start_game
 from apps.simulation.fingerprint import differences, fingerprint
 from apps.simulation.models import Game, LendingDecision, ScoreModel, SubscriberView
@@ -38,6 +39,13 @@ pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.slow]
 @pytest.fixture(autouse=True)
 def _storage(settings: Any, tmp_path: Path) -> None:
     settings.STORAGE_ROOT = tmp_path
+
+
+@pytest.fixture(autouse=True)
+def _score_developed_at_once(monkeypatch: Any) -> None:
+    """The score product is developed in no time here (P3.10 tests the development)."""
+    quick = dataclasses.replace(products.MENU[scoreproduct.SCORE], working_days=0)
+    monkeypatch.setitem(products.MENU, scoreproduct.SCORE, quick)
 
 
 @pytest.fixture
@@ -59,6 +67,7 @@ def _scored_game(world: World, owner: User | None = None) -> Game:
         model = controls.build_scorecard(game, term, observation, window, sd.recommended(term))
         controls.deploy_scorecard(game, model.number)
     controls.deploy_scorecard(game, controls.build_composite(game, observation, window).number)
+    controls.develop_product(game, scoreproduct.SCORE)  # P3.10: launched at once here
     return game
 
 

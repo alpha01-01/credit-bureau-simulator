@@ -385,6 +385,46 @@ class OnboardingStep(models.Model):
         return f"{self.department} {self.code}: {self.status}"
 
 
+class SupportTicket(models.Model):
+    """A question or complaint to Customer Support (P3.10)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="tickets")
+    number = models.IntegerField()
+    source = models.CharField(max_length=12, help_text="SUBSCRIBER or SUBJECT")
+    subscriber_code = models.CharField(max_length=30, blank=True)
+    topic = models.CharField(max_length=20)
+    opened_on = models.DateField()
+    opened_tick = models.BigIntegerField()
+    due_on = models.DateField(help_text="Answered by then, it is on time")
+    answered_on = models.DateField(null=True, blank=True)
+    answered_tick = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["game", "number"], name="ticket_unique")]
+        indexes = [models.Index(fields=["game", "answered_on", "number"])]
+
+    def __str__(self) -> str:
+        return f"Ticket {self.number} ({self.topic})"
+
+
+class ProductDevelopment(models.Model):
+    """A product Product Development builds before it can be sold (P3.10)."""
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="developments")
+    code = models.CharField(max_length=30)
+    started_on = models.DateField(null=True, blank=True)
+    started_tick = models.BigIntegerField(null=True, blank=True)
+    ready_on = models.DateField(null=True, blank=True)
+    launched_on = models.DateField(null=True, blank=True)
+    cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["game", "code"], name="development_unique")]
+
+    def __str__(self) -> str:
+        return f"{self.code}: {'launched' if self.launched_on else 'in development'}"
+
+
 class Incident(models.Model):
     """An IT incident (P2.9): while it lasts, nothing is processed and enquiries fail."""
 

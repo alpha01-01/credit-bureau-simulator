@@ -42,8 +42,10 @@ CHART: tuple[tuple[str, str, str], ...] = (
 LATER_ACCOUNTS: dict[str, tuple[str, str]] = {
     "2000": ("Accounts payable", AccountType.LIABILITY),
     "5150": ("Utilities", AccountType.EXPENSE),
+    "5250": ("Customer support", AccountType.EXPENSE),
     "5700": ("Late payment charges", AccountType.EXPENSE),
     "5800": ("Bank charges", AccountType.EXPENSE),
+    "5900": ("Product development", AccountType.EXPENSE),
 }
 
 BANK, RECEIVABLES, PREPAID_RENT = "1010", "1100", "1300"

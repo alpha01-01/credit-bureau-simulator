@@ -8,7 +8,8 @@ replays act as the whole company, and so do the headless strategy runs.
 
 The chief executive sees every screen and keeps the company's decisions: money
 (funding, investment in tooling and IT capacity) and the departments that are
-managed rather than played (Document 07, Section 9: HR and IT). Department heads
+managed rather than played (Document 07, Section 9: HR, IT, Customer Support and
+Product Development). Department heads
 see their own screens and the shared ones.
 
 Taking over a department is not instant: a role switch takes ``CHANGEOVER_TICKS``
@@ -76,10 +77,14 @@ ROLES: dict[str, Role] = {
                 "console",
                 "scorecards",
                 "compliance",
+                "support",
+                "products",
             ),
             frozenset(
                 {
                     "REQUEST_FUNDING",
+                    "SET_SUPPORT_STAFF",
+                    "DEVELOP_PRODUCT",
                     "SET_MATCHING_TOOLING",
                     "SET_IT_CAPACITY",
                     "RESPOND_TO_OUTAGE",

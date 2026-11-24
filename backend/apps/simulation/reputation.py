@@ -2,8 +2,9 @@
 
 ASSUMPTION A-061, scores out of 100:
 
-* **Subscribers** (the last three months): 40% hit rate, 40% report accuracy (hits
-  that were the right person), 20% disputes settled on time.
+* **Subscribers** (the last three months): 35% hit rate, 35% report accuracy (hits
+  that were the right person), 15% disputes settled on time, 15% their support tickets
+  answered on time (P3.10, A-080; full marks with no tickets yet).
 * **Providers**: their average goodwill towards the bureau, which feedback,
   training and fair enforcement raise and penalties lower.
 * **Regulator**: 100, less 15 for each finding in the last six months and 10 for
@@ -53,7 +54,11 @@ def reputation(game: Game, at: datetime) -> dict[str, Any]:
     hit_rate = hits / enquiries if enquiries else 0.0
     accuracy = 1 - wrong / hits if hits else 1.0
     timely = on_time / disputes if disputes else 1.0
-    subscribers = 100 * (0.4 * hit_rate + 0.4 * accuracy + 0.2 * timely)
+    from .support import satisfaction
+
+    support = satisfaction(game, at)
+    answered = support["score"] if support["score"] is not None else 1.0
+    subscribers = 100 * (0.35 * hit_rate + 0.35 * accuracy + 0.15 * timely + 0.15 * answered)
 
     goodwill = list(
         ProviderRelationship.objects.filter(game=game).values_list("goodwill", flat=True)
@@ -73,6 +78,7 @@ def reputation(game: Game, at: datetime) -> dict[str, Any]:
             "hit_rate": round(hit_rate, 4),
             "accuracy": round(accuracy, 4),
             "disputes_on_time": round(timely, 4),
+            "support_on_time": round(answered, 4),
             "enquiries": enquiries,
         },
         "providers": {"score": _clamp(providers), "providers": len(goodwill)},

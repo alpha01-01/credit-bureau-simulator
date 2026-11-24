@@ -72,6 +72,9 @@ class Organization(models.Model):
     closed_through = models.DateField(
         null=True, blank=True, help_text="The last month-end closed: no posting on or before it"
     )
+    support_staff = models.IntegerField(
+        default=2, help_text="Contact-centre agents answering tickets (P3.10)"
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     # Counters for the bureau's own reference numbers.

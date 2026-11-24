@@ -79,6 +79,7 @@ from .models import (
     Onboarding,
     OnboardingStep,
     PlayerAction,
+    ProductDevelopment,
     Proposal,
     ProviderRelationship,
     RegulatorFinding,
@@ -88,6 +89,7 @@ from .models import (
     ScoreModel,
     SolvencyState,
     SubscriberView,
+    SupportTicket,
     TickLog,
 )
 
@@ -144,7 +146,7 @@ def _fingerprint(game: Game) -> _Hasher:
           bureau.rejection_policy, game.pause_severities, game.pause_on_deadlines,
           bureau.rule_overrides, bureau.matching_tooling, bureau.match_auto_link,
           bureau.match_review, game.role, bureau.retention_years, bureau.bill_approval_limit,
-          bureau.closed_through)],
+          bureau.closed_through, bureau.support_staff)],
     )  # fmt: skip
     _section(
         h,
@@ -470,6 +472,13 @@ def _fingerprint(game: Game) -> _Hasher:
             .values_list("number", "lender_code", "unit_price", "sent_at", "status",
                          "answered_at", "term_months", "service_level", "monthly_minimum",
                          "discount_threshold", "discount_rate", "counter_price"),
+            *SupportTicket.objects.filter(game=game)
+            .order_by("number")
+            .values_list("number", "source", "subscriber_code", "topic", "opened_on",
+                         "opened_tick", "due_on", "answered_on", "answered_tick"),
+            *ProductDevelopment.objects.filter(game=game)
+            .order_by("code")
+            .values_list("code", "started_on", "started_tick", "ready_on", "launched_on", "cost"),
             *LenderResearch.objects.filter(game=game)
             .order_by("lender_code")
             .values_list("lender_code", "requested_tick", "ready_on", "findings", "reported",

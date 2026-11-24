@@ -53,11 +53,13 @@ from . import (
     lending,
     missions,
     onboarding,
+    products,
     providers,
     sales,
     scorecards,
     scoreproduct,
     solvency,
+    support,
 )
 from .bridge import deliver
 from .checkpoints import take_checkpoint
@@ -216,6 +218,8 @@ def run_tick(game_id: int, tick: int) -> bool:
             onboarding.morning(  # P3.9: each department's part in taking on a subscriber
                 game, cal.tick_start(tick).date(), tick, cal.tick_start(tick), feed.add
             )
+            support.morning(game, cal.tick_start(tick).date(), tick, cal, feed.add)  # P3.10
+            products.morning(game, cal.tick_start(tick).date(), feed.add)  # P3.10
             solvency.morning(
                 game, cal.tick_start(tick).date(), cal.tick_start(tick), tick, feed.add
             )

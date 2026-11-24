@@ -8,6 +8,7 @@ from . import (
     finance_api,
     health_api,
     learning_api,
+    managed_api,
     onboarding_api,
     ui_api,
 )
@@ -58,6 +59,8 @@ urlpatterns = [
     path("games/<int:game_id>/staff/", departments_api.staff, name="staff"),
     path("games/<int:game_id>/sales/", departments_api.sales_view, name="sales"),
     path("games/<int:game_id>/onboarding/", onboarding_api.onboarding_view, name="onboarding"),
+    path("games/<int:game_id>/support/", managed_api.support_view, name="support"),
+    path("games/<int:game_id>/products/", managed_api.products_view, name="products"),
     path("games/<int:game_id>/it/", departments_api.it_view, name="it"),
     path("games/<int:game_id>/health/", health_api.health_view, name="health"),
     path("games/<int:game_id>/missions/", learning_api.missions_view, name="missions"),
