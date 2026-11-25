@@ -30,7 +30,7 @@ from apps.finance.models import (
     StatementLine,
     SupplierBill,
 )
-from apps.simulation import controls, finance_dept, it, roles
+from apps.simulation import controls, finance_dept, it, roles, scenarios
 from apps.simulation.bridge import start_game
 from apps.simulation.compliance import add_working_days
 from apps.simulation.engine import ClockError, advance, calendar
@@ -94,7 +94,7 @@ def test_late_bills_cost_a_charge_and_the_hosting_company_holds_back(world: Worl
 
     # Left unapproved past its due date, the hosting bill stops the systems once it is
     # ten working days overdue.
-    hold_day = add_working_days(hosting.due_date, finance_dept.HOLD_AFTER_WORKING_DAYS)
+    hold_day = add_working_days(hosting.due_date, scenarios.parameters(game).supplier_patience_days)
     game = _until(game, hold_day)  # the morning of that day
     hold = it.active_incident(game, game.current_tick)
     assert hold is not None and hold.kind == finance_dept.HOLD

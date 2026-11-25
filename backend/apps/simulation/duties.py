@@ -105,6 +105,8 @@ def return_due(period: date) -> date:
 def month_start(game: Game, today: date, tick: int, at: datetime, add: Any) -> None:
     """At a month's start: last month's return is owed; at a quarter's, an access review."""
     period = previous_month_end(today)
+    if game.scenario == "STARTUP" and period < game.clock_start:
+        return  # a startup has no month or quarter behind it yet to report on (P3.13)
     if not RegulatoryReturn.objects.filter(organization=game.organization, period=period).exists():
         found = open_return(game.organization, period, return_due(period), at)
         add(

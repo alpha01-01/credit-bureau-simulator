@@ -8,6 +8,7 @@ GET      /api/v1/games/<id>/batches/    batch files (P3.11); ?reference= for one
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -18,7 +19,7 @@ from rest_framework.response import Response
 from apps.bureau.reports.batch import BATCH_ENQUIRY, result_file
 from apps.bureau.reports.models import BatchFile
 
-from . import controls, economy, products, roles, support
+from . import controls, economy, products, roles, scenarios, startup, support
 from .api import _error, _game
 from .engine import ClockError
 from .finance_dept import AGENT_MONTHLY
@@ -87,7 +88,7 @@ def support_view(request: Request, game_id: int) -> Response:
 def _offering(game: Any, o: products.Offering, today: Any) -> dict[str, Any]:
     project = ProductDevelopment.objects.filter(game=game, code=o.code).first()
     status = "AVAILABLE"
-    if project is not None and project.launched_on is not None:
+    if products.launched(game, o.code):
         status = "LAUNCHED"
     elif project is not None and project.started_on is not None:
         status = "IN_DEVELOPMENT"
@@ -95,7 +96,7 @@ def _offering(game: Any, o: products.Offering, today: Any) -> dict[str, Any]:
         "code": o.code,
         "name": o.name,
         "does": o.does,
-        "cost": o.cost,
+        "cost": scenarios.cost(game, o.cost),
         "working_days": o.working_days,
         "status": status,
         "started_on": project.started_on if project else None,
@@ -164,3 +165,42 @@ def economy_view(request: Request, game_id: int) -> Response:
     """The published economic indicators (P3.12), with the rule behind each."""
     game = _game(request, game_id)
     return Response(economy.indicators(game, controls.state(game).now.date()))
+
+
+def _rent_office(game: Any, data: Any) -> Any:
+    return controls.rent_office(game, str(data.get("office", "")))
+
+
+def _set_up_it(game: Any, data: Any) -> Any:
+    return controls.set_up_it(game, str(data.get("level", "")))
+
+
+def _onboard_provider(game: Any, data: Any) -> Any:
+    return controls.onboard_provider(game, str(data.get("provider", "")))
+
+
+STARTUP_ACTIONS: dict[str, tuple[str, Callable[[Any, Any], Any]]] = {
+    "rent_office": ("RENT_OFFICE", _rent_office),
+    "set_up_it": ("SET_UP_IT", _set_up_it),
+    "onboard_provider": ("ONBOARD_PROVIDER", _onboard_provider),
+}
+
+
+@api_view(["GET", "POST"])
+def startup_view(request: Request, game_id: int) -> Response:
+    """A startup's way to a working bureau (P3.13): its checklist and set-up decisions."""
+    game = _game(request, game_id)
+    if request.method == "POST":
+        found = STARTUP_ACTIONS.get(str(request.data.get("action", "")))
+        if found is None:
+            return _error(ClockError("Unknown action"))
+        action, run = found
+        try:
+            roles.require(game, action)
+            run(game, request.data)
+        except (ClockError, ValueError, TypeError) as exc:
+            return _error(exc)
+        game.refresh_from_db()
+    return Response(
+        {**startup.view(game, controls.state(game).now.date()), **scenarios.describe(game)}
+    )

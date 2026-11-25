@@ -83,12 +83,22 @@ def candidates_for(game: Game, period: date) -> list[Candidate]:
                 ).quantize(Decimal("100")),
             )
         )
-    return Candidate.objects.bulk_create(made)
+    # The month start and a screen may make them at the same moment: both make the same
+    # candidates, and whichever is second keeps the first's.
+    Candidate.objects.bulk_create(made, ignore_conflicts=True)
+    return list(Candidate.objects.filter(game=game, period=period).order_by("number"))
 
 
 def hire(game: Game, candidate: Candidate, on: date) -> Employee:
+    from .startup import OFFICES, desks_free
+
     if candidate.hired:
         raise HRError(f"{candidate} has already been hired")
+    office = game.organization.office
+    if not office:
+        raise HRError("Staff need desks: rent an office first")
+    if desks_free(game) <= 0:
+        raise HRError(f"Every desk in the office is taken ({OFFICES[office].desks})")
     candidate.hired = True
     candidate.save(update_fields=["hired"])
     number = game.organization.allocate("last_employee_seq")

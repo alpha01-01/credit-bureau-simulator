@@ -84,6 +84,17 @@ def open_books(organization: Organization, on: date, at: datetime) -> None:
     )  # fmt: skip
 
 
+def open_startup_books(
+    organization: Organization, capital: Decimal, on: date, at: datetime
+) -> None:
+    """Chart of accounts and a new company's only asset: its shareholders' capital (P3.13)."""
+    create_chart(organization)
+    post(
+        organization, on, "Shareholders subscribe the founding capital",
+        [dr(BANK, capital, "Capital paid in"), cr(SHARE_CAPITAL, capital)], "OPENING", at,
+    )  # fmt: skip
+
+
 def balance(organization: Organization, code: str, as_of: date | None = None) -> Decimal:
     """Debit-positive balance of one account from posted lines."""
     lines = JournalLine.objects.filter(entry__organization=organization, account__code=code)
@@ -105,6 +116,8 @@ def month_start_costs(
     arrive as suppliers' bills from P3.8 (``apps.finance.payables``), recorded when
     received and paid on their terms.
     """
+    if rent <= 0:  # a startup without an office yet (P3.13)
+        return
     post(
         organization, month_first, f"Office rent for {month_first:%B %Y}",
         [dr(RENT, rent), cr(PREPAID_RENT, rent)], "RENT", at,
@@ -416,6 +429,14 @@ def overdraft_interest(organization: Organization, amount: Decimal, on: date, at
     post(
         organization, on, f"Overdraft interest for {on:%B %Y}",
         [dr(code, amount), cr(BANK, amount)], "OVERDRAFT_INTEREST", at,
+    )  # fmt: skip
+
+
+def dividend_paid(organization: Organization, amount: Decimal, on: date, at: datetime) -> None:
+    """A dividend paid to the shareholders from retained earnings (P3.13: Expert's cash)."""
+    post(
+        organization, on, "Dividend paid to shareholders",
+        [dr(RETAINED, amount), cr(BANK, amount)], "DIVIDEND", at,
     )  # fmt: skip
 
 

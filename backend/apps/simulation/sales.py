@@ -309,6 +309,8 @@ def morning(game: Game, day: date, add: Any) -> None:
 
 def propose(game: Game, lender_code: str, terms: Terms, tick: int, at: datetime) -> Proposal:
     terms = terms.check()
+    if not Product.objects.filter(organization=game.organization, product_code=PRODUCT).exists():
+        raise SalesError("There is no report to sell yet: develop the consumer credit report first")
     if lender_code not in {lender.code for lender in prospects(game)}:
         raise SalesError(f"{lender_code} is not a lender we could sign")
     proposals = Proposal.objects.filter(game=game, lender_code=lender_code)

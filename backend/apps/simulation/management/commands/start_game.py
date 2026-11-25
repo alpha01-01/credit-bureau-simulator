@@ -2,6 +2,10 @@
 
 python manage.py start_game --world 1
 python manage.py start_game --world 1 --history-months 0   # a bureau with no past
+python manage.py start_game --world 1 --scenario STARTUP --difficulty EXPERT
+
+The world is used as it is: its economy is the one it was made with, whatever the
+difficulty (the new-game screen finds or builds a world with the difficulty's economy).
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from apps.bureau.core.models import AccountObservation, CreditAccount, Customer
 from apps.simulation.bridge import start_game
 from apps.simulation.history import DEFAULT_HISTORY_MONTHS
+from apps.simulation.scenarios import DIFFICULTIES, ESTABLISHED, INTERMEDIATE, SCENARIOS
 from apps.workitems.models import ResolvedBy, WorkItem
 from apps.world.models import World
 
@@ -24,13 +29,20 @@ class Command(BaseCommand):
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--world", type=int, required=True)
         parser.add_argument("--history-months", type=int, default=DEFAULT_HISTORY_MONTHS)
+        parser.add_argument("--scenario", choices=sorted(SCENARIOS), default=ESTABLISHED)
+        parser.add_argument("--difficulty", choices=sorted(DIFFICULTIES), default=INTERMEDIATE)
 
     def handle(self, *args: Any, **options: Any) -> None:
         world = World.objects.filter(pk=options["world"]).first()
         if world is None:
             raise CommandError(f"No world with id {options['world']}")
         started = time.perf_counter()
-        game = start_game(world, history_months=options["history_months"])
+        game = start_game(
+            world,
+            history_months=options["history_months"],
+            scenario=options["scenario"],
+            difficulty=options["difficulty"],
+        )
         org = game.organization
         past = WorkItem.objects.filter(organization=org, resolved_by=ResolvedBy.HISTORIC)
         self.stdout.write(

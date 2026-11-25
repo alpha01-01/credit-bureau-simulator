@@ -94,8 +94,10 @@ def start_outage(game: Game, tick: int, detail: str, add: Any) -> Incident:
 
 def morning(game: Game, tick: int, day: date, add: Any) -> None:
     """At the start of a working day: does something break?"""
-    if active_incident(game, tick) is not None:
-        return
+    from .startup import systems_ready
+
+    if not systems_ready(game, day) or active_incident(game, tick) is not None:
+        return  # a startup's systems are not running yet (P3.13)
     chance = DAILY_OUTAGE_CHANCE[game.organization.it_capacity]
     backlog = waiting(game) > 0  # files left from last night
     if backlog:
@@ -143,6 +145,8 @@ def restored(game: Game, tick: int, add: Any) -> None:
 
 
 def set_capacity(game: Game, level: str) -> None:
+    if not game.organization.has_systems:
+        raise ITError("The bureau has no systems yet: set them up first")
     if level not in CAPACITY:
         raise ITError(f"{level} is not a capacity level")
     org = game.organization

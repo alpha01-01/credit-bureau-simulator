@@ -28,7 +28,7 @@ from apps.finance.events import balance, capital_injection, overdraft_interest
 from apps.finance.ledger import BANK
 
 from .failure import INSOLVENT, PATHS, end_game
-from .health import OVERDRAFT_LIMIT, monthly_costs
+from .health import monthly_costs, overdraft_limit
 from .models import BoardReview, FundingRequest, Game, Severity, SolvencyState
 
 INTEREST_PER_MONTH = Decimal("0.025")
@@ -52,8 +52,8 @@ def state(game: Game) -> SolvencyState:
     return record
 
 
-def _stage_for(bank: Decimal, costs: Decimal) -> str:
-    if bank < -OVERDRAFT_LIMIT:
+def _stage_for(bank: Decimal, costs: Decimal, limit: Decimal) -> str:
+    if bank < -limit:
         return "CREDITORS"
     if bank < 0:
         return "OVERDRAFT"
@@ -67,7 +67,8 @@ def morning(game: Game, today: date, at: datetime, tick: int, add: Any) -> None:
     record = state(game)
     bank = balance(game.organization, BANK, today)
     costs = monthly_costs(game, today)
-    stage = _stage_for(bank, costs)
+    limit = overdraft_limit(game)
+    stage = _stage_for(bank, costs, limit)
     if (
         record.stage == "CREDITORS"
         and stage == "CREDITORS"
@@ -77,7 +78,7 @@ def morning(game: Game, today: date, at: datetime, tick: int, add: Any) -> None:
         end_game(
             game, INSOLVENT, tick,
             f"The bank is overdrawn by {money(-bank)}, beyond the agreed "
-            f"{money(OVERDRAFT_LIMIT)}, and the creditors' deadline of "
+            f"{money(limit)}, and the creditors' deadline of "
             f"{record.creditors_deadline:%d %B %Y} has passed.",
             add,
         )  # fmt: skip
@@ -93,7 +94,7 @@ def morning(game: Game, today: date, at: datetime, tick: int, add: Any) -> None:
         add(
             "CREDITORS_NOTICE", Severity.CRITICAL,
             "Creditors have served notice: the overdraft limit is exceeded",
-            f"The bank is overdrawn by {money(-bank)}; the limit is {money(OVERDRAFT_LIMIT)}. "
+            f"The bank is overdrawn by {money(-bank)}; the limit is {money(limit)}. "
             f"Come back within it by {record.creditors_deadline:%d %B} or the bureau is "
             f"insolvent. {PATHS[INSOLVENT]['path_back']}",
             {"screen": "health", "params": {}},
@@ -102,7 +103,7 @@ def morning(game: Game, today: date, at: datetime, tick: int, add: Any) -> None:
         add(
             "OVERDRAFT_USED", Severity.CRITICAL,
             "The bureau is using its overdraft",
-            f"The bank is overdrawn by {money(-bank)} of the {money(OVERDRAFT_LIMIT)} agreed; "
+            f"The bank is overdrawn by {money(-bank)} of the {money(limit)} agreed; "
             f"interest is {INTEREST_PER_MONTH:.1%} a month. Beyond the limit, creditors will "
             "serve notice.",
             drill,
@@ -112,7 +113,7 @@ def morning(game: Game, today: date, at: datetime, tick: int, add: Any) -> None:
             "CASH_LOW", Severity.CRITICAL,
             "Cash is below one month's costs",
             f"The bank holds {money(bank)}; a month costs {money(costs)}. Next comes the "
-            f"overdraft ({money(OVERDRAFT_LIMIT)} agreed).",
+            f"overdraft ({money(limit)} agreed).",
             drill,
         )  # fmt: skip
     else:  # recovering

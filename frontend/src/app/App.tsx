@@ -22,6 +22,7 @@ import { StaffPage } from '../pages/StaffPage'
 import { OnboardingPage } from '../pages/OnboardingPage'
 import { ReportPage } from '../pages/ReportPage'
 import { EconomyPage } from '../pages/EconomyPage'
+import { StartupPage } from '../pages/StartupPage'
 import { ProductsPage } from '../pages/ProductsPage'
 import { SalesPage } from '../pages/SalesPage'
 import { SupportPage } from '../pages/SupportPage'
@@ -143,6 +144,7 @@ const routes = [
               { path: 'enquiries/:reference', element: <ReportPage /> },
               { path: 'batches', element: <BatchesPage /> },
               { path: 'economy', element: <EconomyPage /> },
+              { path: 'startup', element: <StartupPage /> },
               {
                 path: 'finance',
                 element: <FinanceLayout />,

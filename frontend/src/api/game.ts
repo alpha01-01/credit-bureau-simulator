@@ -207,12 +207,52 @@ export type GameSummary = {
   id: number
   bureau: string
   world: number
+  scenario: 'ESTABLISHED' | 'STARTUP' | 'SANDBOX'
+  difficulty: 'BEGINNER' | 'INTERMEDIATE' | 'EXPERT'
   setup_status: 'READY' | 'PREPARING' | 'FAILED'
   setup_message: string
   clock: Clock | null
 }
 
-export type World = { id: number; seed: number; scale: string; history_end: string }
+export type World = {
+  id: number
+  seed: number
+  scale: string
+  history_end: string
+  economy: string
+}
+
+/** What a new game may be (P3.13): scenarios, difficulties and economies, each explained. */
+export type Catalogue = {
+  scenarios: { code: GameSummary['scenario']; name: string; does: string }[]
+  difficulties: {
+    code: GameSummary['difficulty']
+    name: string
+    does: string
+    parameters: Parameters
+  }[]
+  economies: { code: string; does: string }[]
+  scales: string[]
+  startup_capital: string
+  max_provider_quality: number
+}
+
+export type Parameters = {
+  cash_adjustment: string
+  cost_factor: string
+  supplier_patience_days: number
+  work_item_days: number
+  overdraft_limit: string
+  board_patience: number
+  economy: string
+  provider_quality: number
+  starting_cash: string | null
+  scale: string | null
+}
+
+export function useCatalogue() {
+  return useQuery({ queryKey: ['scenarios'], queryFn: () => apiGet<Catalogue>('/scenarios/') })
+}
 
 export type Drill = { screen: string; params: Record<string, string> }
 

@@ -39,24 +39,36 @@ def start_game(
     owner: Any = None,
     bureau_name: str = "SimB Credit Bureau",
     history_months: int = 0,
+    scenario: str = "ESTABLISHED",
+    difficulty: str = "INTERMEDIATE",
+    settings: dict[str, Any] | None = None,
 ) -> Game:
     """Create a bureau for a world, onboard the reporting providers, and set the clock.
 
     Play starts on the first day of the month after the world's history.
     ``history_months`` gives the bureau that many months of past provider files,
     so it starts established (the Established scenario uses 12). That history is
-    built once per world and copied into each game (``templates``).
+    built once per world and copied into each game (``templates``). A Startup bureau
+    starts with capital only; ``difficulty`` and a Sandbox's ``settings`` give the
+    parameters (P3.13).
     """
-    game = new_game(world, owner, bureau_name)
-    if history_months:
-        install_history(game, history_months)
-    else:
-        set_up_bureau(game)
+    game = new_game(world, owner, bureau_name, scenario, difficulty, settings)
+    set_up(game, history_months)
     return game
 
 
-def new_game(world: World, owner: Any = None, bureau_name: str = "SimB Credit Bureau") -> Game:
+def new_game(
+    world: World,
+    owner: Any = None,
+    bureau_name: str = "SimB Credit Bureau",
+    scenario: str = "ESTABLISHED",
+    difficulty: str = "INTERMEDIATE",
+    settings: dict[str, Any] | None = None,
+) -> Game:
     """A game with its clock and an empty bureau."""
+    from .scenarios import ESTABLISHED, resolve
+
+    params = resolve(scenario, difficulty, settings)
     organization = Organization.objects.create(
         name=bureau_name, organization_code=f"BUREAU-{uuid.uuid4().hex[:10].upper()}"
     )
@@ -65,7 +77,26 @@ def new_game(world: World, owner: Any = None, bureau_name: str = "SimB Credit Bu
         organization=organization,
         owner=owner,
         clock_start=play_start(world).replace(day=1),
+        scenario=scenario,
+        difficulty=difficulty,
+        parameters=params.as_json(),
+        campaign=scenario == ESTABLISHED,  # the missions are written for an established bureau
     )
+
+
+def set_up(
+    game: Game, history_months: int = 0, progress: Callable[[str], None] | None = None
+) -> None:
+    """Set up the bureau the scenario starts with, then apply the difficulty's parameters."""
+    from . import scenarios, startup
+
+    if game.scenario == scenarios.STARTUP:
+        startup.set_up(game)
+    elif history_months:
+        install_history(game, history_months, progress)
+    else:
+        set_up_bureau(game)
+    scenarios.apply(game)
 
 
 def set_up_bureau(game: Game) -> None:

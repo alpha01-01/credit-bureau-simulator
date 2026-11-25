@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 
 import { useBriefing, useGame, useMissions } from '../api/game'
+import { useStartup } from '../api/managed'
 import { useGameId } from '../app/useGameId'
 import { Badge, Card, Empty, Failed, Loading, Page } from '../components/ui'
 import { drillPath } from '../lib/drill'
@@ -41,6 +42,42 @@ function NextMission({ gameId }: { gameId: number }) {
   )
 }
 
+/** A startup's next step to a working bureau (P3.13), until it has been paid for a report. */
+function NextStartupStep({ gameId }: { gameId: number }) {
+  const scenario = useGame(gameId).data?.scenario
+  if (scenario !== 'STARTUP') return null
+  return <StartupStep gameId={gameId} />
+}
+
+function StartupStep({ gameId }: { gameId: number }) {
+  const startup = useStartup(gameId)
+  const steps = startup.data?.steps ?? []
+  const next = steps.find((s) => !s.done)
+  if (!next) return null
+  const done = steps.filter((s) => s.done).length
+  return (
+    <section
+      aria-labelledby="next-step"
+      className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm"
+    >
+      <h2 id="next-step" className="font-semibold">
+        {done === 0
+          ? 'A new bureau: start with an office'
+          : `Next step: ${next.title.toLowerCase()}`}
+      </h2>
+      <p className="mt-1">
+        {done} of {steps.length} steps to the first paid report are done. {next.detail}
+      </p>
+      <Link
+        to={`/games/${gameId}/startup`}
+        className="mt-2 inline-block font-medium text-brand hover:underline"
+      >
+        Getting started
+      </Link>
+    </section>
+  )
+}
+
 export function BriefingPage() {
   const gameId = useGameId()
   const briefing = useBriefing(gameId)
@@ -53,6 +90,7 @@ export function BriefingPage() {
       subtitle={`What happened on ${day(b.yesterday)}, and what needs you today.`}
     >
       <NextMission gameId={gameId} />
+      <NextStartupStep gameId={gameId} />
       <div className="grid gap-4 md:grid-cols-4">
         <Card title="Files received">
           <p className="text-2xl font-semibold">{count(b.files_received.length)}</p>

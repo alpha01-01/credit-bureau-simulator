@@ -32,7 +32,6 @@ from apps.finance.events import (
     IT_CAPACITY_COST,
     MATCHING_TOOLING_COST,
     MONTHLY_IT,
-    MONTHLY_RENT,
     balance,
 )
 from apps.finance.ledger import BANK
@@ -62,20 +61,29 @@ def rating(score: float | None) -> str:
     return "good" if score >= GOOD else "watch" if score >= WATCH else "poor"
 
 
+def overdraft_limit(game: Game) -> Decimal:
+    """The overdraft the bank has agreed, by the game's difficulty (P3.13)."""
+    from .scenarios import parameters
+
+    return parameters(game).overdraft_limit
+
+
 def monthly_costs(game: Game, on: date) -> Decimal:
     """What a month costs now: pay with employer SSNIT, rent, IT and software."""
+    from .finance_dept import monthly_rent
+    from .scenarios import cost
+
     org = game.organization
     pay = Employee.objects.filter(organization=org, is_active=True).aggregate(
         t=Sum("monthly_salary")
     )["t"] or Decimal("0")
     ssnit = TAX_RULES.at(on).ssnit_employer
-    return (
-        pay * (1 + ssnit)
-        + MONTHLY_RENT
-        + MONTHLY_IT
-        + IT_CAPACITY_COST[org.it_capacity]
-        + MATCHING_TOOLING_COST[org.matching_tooling]
-    ).quantize(Decimal("0.01"))
+    systems = (
+        cost(game, MONTHLY_IT + IT_CAPACITY_COST[org.it_capacity]
+             + MATCHING_TOOLING_COST[org.matching_tooling])
+        if org.has_systems else Decimal("0")
+    )  # fmt: skip
+    return (pay * (1 + ssnit) + monthly_rent(game) + systems).quantize(Decimal("0.01"))
 
 
 def financial(game: Game, today: date) -> dict[str, Any]:
@@ -95,7 +103,7 @@ def financial(game: Game, today: date) -> dict[str, Any]:
         "monthly_costs": str(costs),
         "runway_months": round(runway, 1),
         "result_3_months": str(result),
-        "overdraft_limit": str(OVERDRAFT_LIMIT),
+        "overdraft_limit": str(overdraft_limit(game)),
         "overdraft_used": str(max(-bank, Decimal("0"))),
         "stage": stage.stage if stage else "OK",
         "creditors_deadline": stage.creditors_deadline if stage else None,
