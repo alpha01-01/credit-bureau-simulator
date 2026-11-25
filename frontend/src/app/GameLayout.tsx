@@ -11,6 +11,7 @@ import { useLiveClock } from './useLiveClock'
 
 const NAV = [
   ['', 'Briefing'],
+  ['startup', 'Getting started'],
   ['office', 'Office'],
   ['missions', 'Missions'],
   ['events', 'Events'],
@@ -72,9 +73,7 @@ export function GameLayout() {
         {data.setup_status === 'FAILED' ? (
           <p className="mt-2 text-sm text-red-700">Setup failed: {data.setup_message}</p>
         ) : (
-          <p className="mt-2 text-sm text-slate-600">
-            Preparing the bureau's history… {data.setup_message}
-          </p>
+          <p className="mt-2 text-sm text-slate-600">Preparing the bureau… {data.setup_message}</p>
         )}
       </div>
     )
@@ -91,7 +90,11 @@ export function GameLayout() {
           <RoleSwitcher gameId={gameId} role={data.clock.role} />
         </div>
         <nav aria-label="Game" className="mt-3 flex flex-wrap gap-1">
-          {NAV.filter(([path]) => data.clock?.role.screens.includes(path)).map(([path, label]) => (
+          {NAV.filter(
+            ([path]) =>
+              data.clock?.role.screens.includes(path) &&
+              (path !== 'startup' || data.scenario === 'STARTUP'),
+          ).map(([path, label]) => (
             <NavLink
               key={path}
               to={path ? `/games/${gameId}/${path}` : `/games/${gameId}`}

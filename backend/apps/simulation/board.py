@@ -17,6 +17,8 @@ from typing import Any
 from .failure import PATHS, REMOVED_BY_BOARD, end_game
 from .health import health
 from .models import BoardReview, Game, Severity
+from .scenarios import STARTUP, parameters
+from .startup import STARTUP_GRACE_MONTHS
 
 CONFIDENT_FROM, CONCERNED_FROM = 65.0, 55.0
 
@@ -39,6 +41,21 @@ def _quarter_start(today: date) -> date:
     return date(year, month, 1)
 
 
+def _months_after(day: date, months: int) -> date:
+    year, month = divmod(day.month - 1 + months, 12)
+    return date(day.year + year, month + 1, 1)
+
+
+def _streak(reviews: list[BoardReview]) -> list[BoardReview]:
+    """The most recent reviews with no confidence, newest first, up to the first that had."""
+    streak = []
+    for review in reviews:
+        if review.verdict != "NO_CONFIDENCE":
+            break
+        streak.append(review)
+    return streak
+
+
 def quarterly_review(
     game: Game, today: date, at: datetime, tick: int, add: Any
 ) -> BoardReview | None:
@@ -47,6 +64,8 @@ def quarterly_review(
     start = _quarter_start(today)
     if game.clock_start > start:
         return None  # the management has not had a full quarter yet
+    if game.scenario == STARTUP and start < _months_after(game.clock_start, STARTUP_GRACE_MONTHS):
+        return None  # a startup is given its first year (A-084)
     period = date(today.year, today.month, 1) - timedelta(days=1)  # the quarter's last day
     if BoardReview.objects.filter(game=game, period=period).exists():
         return None
@@ -57,18 +76,17 @@ def quarterly_review(
         (name for name, score in parts.items() if score is not None and score < CONFIDENT_FROM),
         key=lambda name: parts[name] or 0.0,
     )
-    previous = BoardReview.objects.filter(game=game).order_by("-period").first()
+    patience = parameters(game).board_patience  # reviews in a row with no confidence (A-083)
+    previous = list(BoardReview.objects.filter(game=game).order_by("-period")[: patience - 1])
     if confidence >= CONFIDENT_FROM:
         verdict = "CONFIDENT"
     elif confidence >= CONCERNED_FROM:
         verdict = "CONCERNED"
     else:
         verdict = "NO_CONFIDENCE"
-    removed = (
-        verdict == "NO_CONFIDENCE"
-        and previous is not None
-        and (previous.verdict == "NO_CONFIDENCE")
-    )
+    streak = 1 + len(_streak(previous))  # this review's run of no confidence
+    removed = verdict == "NO_CONFIDENCE" and streak >= patience
+    left = patience - streak  # further reviews with no confidence before removal
     worry = (
         "The board is worried about " + ", ".join(NAMES[n] for n in weakest[:3]) + "."
         if weakest
@@ -83,16 +101,21 @@ def quarterly_review(
     if removed:
         end_game(
             game, REMOVED_BY_BOARD, tick,
-            f"Confidence {confidence:.0f} at the {quarter} review, after no confidence at the "
-            f"last one. {worry}",
+            f"Confidence {confidence:.0f} at the {quarter} review"
+            + (f", after no confidence at the last {patience - 1}." if patience > 1 else ".")
+            + f" {worry}",
             add,
         )  # fmt: skip
     elif verdict == "NO_CONFIDENCE":
         add(
             "BOARD_NO_CONFIDENCE", Severity.CRITICAL,
             f"The board has no confidence in the management ({confidence:.0f})",
-            f"{quarter} review. {worry} If the next review is below {CONCERNED_FROM:.0f} too, you will be "
-            f"removed. {PATHS[REMOVED_BY_BOARD]['path_back']}",
+            f"{quarter} review. {worry} "
+            + (f"If the next review is below {CONCERNED_FROM:.0f} too, you will be removed. "
+               if left <= 1 else
+               f"{left} more reviews in a row below {CONCERNED_FROM:.0f} and you will be "
+               "removed. ")
+            + PATHS[REMOVED_BY_BOARD]["path_back"],
             drill,
         )  # fmt: skip
     elif verdict == "CONCERNED":

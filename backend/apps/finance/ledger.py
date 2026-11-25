@@ -46,6 +46,7 @@ LATER_ACCOUNTS: dict[str, tuple[str, str]] = {
     "5700": ("Late payment charges", AccountType.EXPENSE),
     "5800": ("Bank charges", AccountType.EXPENSE),
     "5900": ("Product development", AccountType.EXPENSE),
+    "5950": ("Set-up costs", AccountType.EXPENSE),
 }
 
 BANK, RECEIVABLES, PREPAID_RENT = "1010", "1100", "1300"

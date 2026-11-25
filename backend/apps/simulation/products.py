@@ -8,6 +8,9 @@ reports and batch enquiries (P3.11) are sold once developed.
 ASSUMPTION A-080 (until real development costs): the work is contracted to a software
 house, billed in full when it starts (30 days to pay); the costs and times are below.
 Games begun before P3.10 sold the score without developing it, so it stays launched.
+
+A startup (P3.13) develops the consumer credit report too; every other bureau has sold
+it from the start, so it counts as launched wherever the bureau has it.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from typing import Any
 from apps.commercial.models import Product
 from apps.finance import payables
 
-from . import finance_dept
+from . import finance_dept, scenarios
 from .compliance import add_working_days
 from .models import Game, ProductDevelopment
 
@@ -31,6 +34,7 @@ SOLD = {
     "BATCH_ENQUIRY": ("Batch enquiry, per record", Decimal("13.50")),
 }
 ACCOUNT = "5900"
+CONSUMER_REPORT = "CONSUMER_REPORT"
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,13 @@ class Offering:
 MENU = {
     o.code: o
     for o in (
+        Offering(
+            CONSUMER_REPORT, "Consumer credit report",
+            "The bureau's core product: a person's accounts and their history from every "
+            "provider, found by matching the applicant's identity. Lenders check it before "
+            "they lend.",
+            Decimal("90000.00"), 20,
+        ),
         Offering(
             "CREDIT_SCORE", "Credit score",
             "A score, its band and reason codes on each report, sold as a separate line. "
@@ -84,6 +95,8 @@ def sale_item(game: Game, code: str) -> Product:
 
 def launched(game: Game, code: str) -> bool:
     """Whether the product may be sold."""
+    if code == CONSUMER_REPORT:
+        return Product.objects.filter(organization=game.organization, product_code=code).exists()
     return ProductDevelopment.objects.filter(
         game=game, code=code, launched_on__isnull=False
     ).exists()
@@ -95,18 +108,18 @@ def develop(game: Game, code: str, tick: int, today: date, at: datetime, add: An
     if offering is None:
         raise ProductError(f"There is no product {code!r} to develop")
     found = ProductDevelopment.objects.filter(game=game, code=code).first()
-    if found is not None and found.launched_on is not None:
+    if launched(game, code):
         raise ProductError(f"The {offering.name.lower()} is already on sale")
     if found is not None and found.started_on is not None:
         raise ProductError(f"The {offering.name.lower()} is already being developed")
     project = found or ProductDevelopment(game=game, code=code)
     project.started_on, project.started_tick = today, tick
     project.ready_on = add_working_days(today, offering.working_days)
-    project.cost = offering.cost
+    project.cost = scenarios.cost(game, offering.cost)  # at the difficulty's prices (P3.13)
     project.save()
     bill = payables.receive_bill(
         game.organization, DEVELOPER, f"DW-{code}", f"Developing the {offering.name.lower()}",
-        ACCOUNT, offering.cost, today, today + timedelta(days=30), at,
+        ACCOUNT, project.cost, today, today + timedelta(days=30), at,
     )  # fmt: skip
     finance_dept._announce(bill, add)
     if project.ready_on <= today:
@@ -125,6 +138,14 @@ def _launch(project: ProductDevelopment, day: date, add: Any) -> None:
     project.launched_on = day
     project.save(update_fields=["launched_on"])
     offering = MENU[project.code]
+    if project.code == CONSUMER_REPORT:  # a startup's report goes on its price list
+        from .demand import REFERENCE_PRICE
+
+        Product.objects.get_or_create(
+            organization=project.game.organization,
+            product_code=CONSUMER_REPORT,
+            defaults={"product_name": offering.name, "list_price": REFERENCE_PRICE},
+        )
     add(
         "PRODUCT_LAUNCHED", "INFO", f"The {offering.name.lower()} is ready to sell",
         offering.does, {"screen": "products", "params": {}},

@@ -59,6 +59,7 @@ from . import (
     scorecards,
     scoreproduct,
     solvency,
+    startup,
     support,
 )
 from .bridge import deliver
@@ -220,6 +221,7 @@ def run_tick(game_id: int, tick: int) -> bool:
             )
             support.morning(game, cal.tick_start(tick).date(), tick, cal, feed.add)  # P3.10
             products.morning(game, cal.tick_start(tick).date(), feed.add)  # P3.10
+            startup.morning(game, cal.tick_start(tick).date(), feed.add)  # P3.13
             solvency.morning(
                 game, cal.tick_start(tick).date(), cal.tick_start(tick), tick, feed.add
             )
@@ -425,6 +427,8 @@ def _overnight_batch(game: Game, tick: int, at: datetime, feed: Feed) -> int:
             f"Systems are down. {waiting.count()} files wait.", {"screen": "it", "params": {}},
         )  # fmt: skip
         return 0
+    if not startup.systems_ready(game, at.date()):
+        return 0  # a startup's systems are still being set up (P3.13)
     capacity = it.CAPACITY[game.organization.it_capacity]
     count = 0
     for submission in waiting.select_related("institution")[:capacity]:

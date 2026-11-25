@@ -86,6 +86,16 @@ class Game(models.Model):
     role_ready_tick = models.BigIntegerField(
         default=0, help_text="The tick from which the role's actions can be taken (changeover)"
     )
+    # Scenario and difficulty (P3.13): where the bureau starts, and the parameter set.
+    scenario = models.CharField(
+        max_length=12, default="ESTABLISHED", help_text="ESTABLISHED, STARTUP or SANDBOX"
+    )
+    difficulty = models.CharField(
+        max_length=12, default="INTERMEDIATE", help_text="BEGINNER, INTERMEDIATE or EXPERT"
+    )
+    parameters = models.JSONField(
+        default=dict, help_text="The difficulty's parameters as resolved at the start (A-083)"
+    )
     ended_tick = models.BigIntegerField(null=True, blank=True, help_text="Tick of a hard failure")
     ended_reason = models.CharField(
         max_length=20, blank=True, help_text="INSOLVENT, LICENCE_REVOKED or REMOVED_BY_BOARD"

@@ -164,6 +164,8 @@ def morning(game: Game, day: date, tick: int, at: datetime, add: Any) -> None:
     )
     if not onboardings:
         return
+    from .startup import systems_ready
+
     down = it.systems_down(game, tick)
     slots = CONNECTIONS_AT_ONCE.get(game.organization.it_capacity, 1)
     connecting = 0
@@ -183,6 +185,14 @@ def morning(game: Game, day: date, tick: int, at: datetime, add: Any) -> None:
                     step.save(update_fields=["held"])
                     continue
                 connecting += 1
+            if step.code == "CONNECTION" and not systems_ready(game, day):
+                step.held = "The bureau's systems are not set up yet"
+                step.save(update_fields=["held"])
+                continue
+            if step.code == "WELCOME" and game.organization.support_staff == 0:
+                step.held = "There are no contact-centre agents to welcome it"
+                step.save(update_fields=["held"])
+                continue
             if down:
                 step.held = "The systems are down"
                 step.save(update_fields=["held"])

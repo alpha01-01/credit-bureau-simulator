@@ -146,7 +146,8 @@ def _fingerprint(game: Game) -> _Hasher:
           bureau.rejection_policy, game.pause_severities, game.pause_on_deadlines,
           bureau.rule_overrides, bureau.matching_tooling, bureau.match_auto_link,
           bureau.match_review, game.role, bureau.retention_years, bureau.bill_approval_limit,
-          bureau.closed_through, bureau.support_staff)],
+          bureau.closed_through, bureau.support_staff, game.scenario, game.difficulty,
+          game.parameters, bureau.office, bureau.has_systems, bureau.it_ready_on)],
     )  # fmt: skip
     _section(
         h,

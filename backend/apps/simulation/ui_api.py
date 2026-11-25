@@ -51,10 +51,11 @@ from apps.standards.calendar import is_working_day
 from apps.standards.submission_template import CODE_LISTS, OPEN_STATUS_CODES
 from apps.workitems.models import ItemStatus, WorkItem
 from apps.world.models import World
+from apps.world.provider_files import play_start
 
-from . import controls
+from . import controls, scenarios
 from .api import _game, listed
-from .bridge import install_history, new_game, start_game
+from .bridge import new_game, set_up
 from .clock import previous_month_end
 from .history import DEFAULT_HISTORY_MONTHS
 from .models import Game
@@ -71,10 +72,17 @@ def worlds(request: Request) -> Response:
                 "seed": w.seed,
                 "scale": w.scale,
                 "history_end": w.config.get("history_end"),
+                "economy": scenarios.economy_name(w),
             }
             for w in World.objects.order_by("pk")
         ]
     )
+
+
+@api_view(["GET"])
+def scenario_catalogue(request: Request) -> Response:
+    """The scenarios, difficulties and economies a new game may have (P3.13)."""
+    return Response(scenarios.catalogue())
 
 
 SETUP_FAILED = (
@@ -89,6 +97,8 @@ def _game_summary(game: Game) -> dict[str, Any]:
         "id": game.pk,
         "bureau": game.organization.name,
         "world": game.world_id,
+        "scenario": game.scenario,
+        "difficulty": game.difficulty,
         "setup_status": game.setup_status,
         # A failure is always described the same way: games that failed before P2.13
         # stored the raw error, file paths included (P3.0).
@@ -103,36 +113,62 @@ def games(request: Request) -> Response:
         mine = Game.objects.filter(owner_id=request.user.pk).select_related("organization", "world")
         return Response([_game_summary(g) for g in mine.order_by("-pk")])
 
-    world = get_object_or_404(World, pk=request.data.get("world"))
+    chosen = get_object_or_404(World, pk=request.data.get("world"))
+    scenario = str(request.data.get("scenario") or scenarios.ESTABLISHED)
+    difficulty = str(request.data.get("difficulty") or scenarios.INTERMEDIATE)
+    settings_given = request.data.get("settings") or {}
     months = int(request.data.get("history_months", DEFAULT_HISTORY_MONTHS))
+    if scenario == scenarios.STARTUP:
+        months = 0
     if not 0 <= months <= 24:
         return Response({"detail": "history_months must be 0 to 24"}, status=400)
-    # A game with history starts empty; its bureau is installed in the background.
-    game = new_game(world, owner=request.user) if months else start_game(world, owner=request.user)
-    if months:
-        Game.objects.filter(pk=game.pk).update(
-            setup_status="PREPARING", setup_message="Waiting to load history"
-        )
+    try:
+        params = scenarios.resolve(scenario, difficulty, settings_given)
+    except (scenarios.ScenarioError, ValueError, TypeError, ArithmeticError) as exc:
+        return Response({"detail": str(exc)}, status=400)
+    # The economy belongs to the world: play in a world of the chosen seed and size
+    # made with the difficulty's economy, built first if there is none (P3.13).
+    scale = params.scale or chosen.scale
+    world = scenarios.find_world(chosen.seed, scale, params.economy)
+    if world is None and params.economy == scenarios.economy_name(chosen) and scale == chosen.scale:
+        world = chosen
+    game = new_game(
+        world or chosen, request.user, scenario=scenario, difficulty=difficulty,
+        settings=settings_given,
+    )  # fmt: skip
+    build = None if world is not None else (chosen.seed, scale, params.economy)
+    if build is None and not months:
+        set_up(game)
+    else:
+        message = "Waiting to build the world" if build else "Waiting to load history"
+        Game.objects.filter(pk=game.pk).update(setup_status="PREPARING", setup_message=message)
         if getattr(settings, "SIMB_SETUP_IN_BACKGROUND", True):
-            threading.Thread(target=_prepare, args=(game.pk, months), daemon=True).start()
+            threading.Thread(target=_prepare, args=(game.pk, months, build), daemon=True).start()
         else:
-            _prepare(game.pk, months)
+            _prepare(game.pk, months, build)
     game.refresh_from_db()
     return Response(_game_summary(game), status=status.HTTP_201_CREATED)
 
 
-def _prepare(game_id: int, months: int) -> None:
-    """Pre-load an established bureau's history (normally in a background thread)."""
+def _prepare(game_id: int, months: int, build: tuple[int, str, str] | None = None) -> None:
+    """Build the world if it is new, and pre-load an established bureau's history
+    (normally in a background thread)."""
     background = threading.current_thread() is not threading.main_thread()
     if background:
         close_old_connections()
     try:
-        game = Game.objects.select_related("world", "organization").get(pk=game_id)
 
         def progress(message: str) -> None:
             Game.objects.filter(pk=game_id).update(setup_message=message[:200])
 
-        install_history(game, months, progress)
+        if build is not None:
+            progress("Building the world for this economy (several minutes for a full size)")
+            world = scenarios.find_world(*build) or scenarios.make_world(*build)
+            Game.objects.filter(pk=game_id).update(
+                world=world, clock_start=play_start(world).replace(day=1)
+            )
+        game = Game.objects.select_related("world", "organization").get(pk=game_id)
+        set_up(game, months, progress)
         Game.objects.filter(pk=game_id).update(setup_status="READY", setup_message="")
     except Exception:  # the player sees that it failed and what to do; the log has why
         Game.objects.filter(pk=game_id).update(setup_status="FAILED", setup_message=SETUP_FAILED)

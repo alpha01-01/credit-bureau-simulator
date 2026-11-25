@@ -167,8 +167,8 @@ def _onboard(game: Game) -> None:
             controls.set_up_billing(game, step.onboarding.number)
 
 
-def play(world: World, strategy: str, months: int) -> Game:
-    game = controls.set_pause_rules(start_game(world), [], deadlines=False)
+def play(world: World, strategy: str, months: int, difficulty: str = "INTERMEDIATE") -> Game:
+    game = controls.set_pause_rules(start_game(world, difficulty=difficulty), [], deadlines=False)
     for month in range(months):
         game = STRATEGIES[strategy](game, month)
         current = controls.state(game).now.month
@@ -246,6 +246,6 @@ def _fell_behind(game: Game, as_of: date) -> float | None:
     return _share(behind, lent)
 
 
-def run(world: World, strategy: str, months: int) -> Run:
-    game = play(world, strategy, months)
+def run(world: World, strategy: str, months: int, difficulty: str = "INTERMEDIATE") -> Run:
+    game = play(world, strategy, months, difficulty)
     return Run(strategy, world.seed, months, outcomes(game))

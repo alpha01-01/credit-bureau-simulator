@@ -80,10 +80,14 @@ ROLES: dict[str, Role] = {
                 "support",
                 "products",
                 "batches",
+                "startup",
             ),
             frozenset(
                 {
                     "REQUEST_FUNDING",
+                    "RENT_OFFICE",
+                    "SET_UP_IT",
+                    "ONBOARD_PROVIDER",
                     "SET_SUPPORT_STAFF",
                     "DEVELOP_PRODUCT",
                     "SET_MATCHING_TOOLING",

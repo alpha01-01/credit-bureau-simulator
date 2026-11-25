@@ -26,6 +26,7 @@ export function drillPath(gameId: number, drill: Drill): string {
     products: `${base}/products`,
     batches: `${base}/batches`,
     economy: `${base}/economy`,
+    startup: `${base}/startup`,
   }
   if (drill.screen === 'finance') {
     return `${base}/finance/${drill.params.tab ?? ''}`

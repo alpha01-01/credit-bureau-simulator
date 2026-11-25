@@ -43,6 +43,7 @@ from . import (
     sales,
     scorecards,
     solvency,
+    startup,
     support,
 )
 from .checkpoints import checkpoint_now
@@ -502,6 +503,43 @@ def develop_product(game: Game, code: str) -> Any:
     return project
 
 
+# --- Startup (P3.13) -------------------------------------------------------------------------
+
+
+def _startup(game: Game, action: str, payload: dict[str, Any], do: Any) -> Any:
+    tick, at = _now(game)
+    with transaction.atomic():
+        feed = Feed(game, tick, at)
+        try:
+            result = do(tick, at, feed.add)
+        except (startup.StartupError, PostingError) as exc:
+            raise ClockError(str(exc)) from exc
+        record(game, action, payload)
+        feed.save()
+    return result
+
+
+def rent_office(game: Game, code: str) -> Any:
+    return _startup(
+        game, "RENT_OFFICE", {"office": code},
+        lambda tick, at, add: startup.rent_office(game, code, at.date(), at, add),
+    )  # fmt: skip
+
+
+def set_up_it(game: Game, level: str) -> Any:
+    return _startup(
+        game, "SET_UP_IT", {"level": level},
+        lambda tick, at, add: startup.set_up_it(game, level, at.date(), at, add),
+    )  # fmt: skip
+
+
+def onboard_provider(game: Game, code: str) -> Any:
+    return _startup(
+        game, "ONBOARD_PROVIDER", {"provider": code},
+        lambda tick, at, add: startup.onboard_provider(game, code, at.date()),
+    )  # fmt: skip
+
+
 def respond_to_outage(game: Game, response: str) -> Incident:
     tick, at = _now(game)
     with transaction.atomic():
@@ -900,6 +938,12 @@ def _apply(target: Game, action: PlayerAction) -> Game:
             )
         case "SET_SUPPORT_STAFF":
             set_support_staff(target, int(action.payload["agents"]))
+        case "RENT_OFFICE":
+            rent_office(target, str(action.payload["office"]))
+        case "SET_UP_IT":
+            set_up_it(target, str(action.payload["level"]))
+        case "ONBOARD_PROVIDER":
+            onboard_provider(target, str(action.payload["provider"]))
         case "DEVELOP_PRODUCT":
             develop_product(target, str(action.payload["code"]))
         case "RESEARCH_LENDER":

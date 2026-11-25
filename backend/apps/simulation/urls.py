@@ -15,6 +15,7 @@ from . import (
 
 urlpatterns = [
     path("worlds/", ui_api.worlds, name="worlds"),
+    path("scenarios/", ui_api.scenario_catalogue, name="scenarios"),
     path("games/", ui_api.games, name="games"),
     path("games/<int:game_id>/", ui_api.game_detail, name="game"),
     path("games/<int:game_id>/dashboard/", ui_api.dashboard, name="dashboard"),
@@ -63,6 +64,7 @@ urlpatterns = [
     path("games/<int:game_id>/products/", managed_api.products_view, name="products"),
     path("games/<int:game_id>/batches/", managed_api.batches_view, name="batches"),
     path("games/<int:game_id>/economy/", managed_api.economy_view, name="economy"),
+    path("games/<int:game_id>/startup/", managed_api.startup_view, name="startup"),
     path("games/<int:game_id>/it/", departments_api.it_view, name="it"),
     path("games/<int:game_id>/health/", health_api.health_view, name="health"),
     path("games/<int:game_id>/missions/", learning_api.missions_view, name="missions"),

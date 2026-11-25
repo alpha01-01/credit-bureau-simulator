@@ -35,7 +35,6 @@ from apps.finance.events import (
     IT_CAPACITY_COST,
     MATCHING_TOOLING_COST,
     MONTHLY_IT,
-    MONTHLY_RENT,
     balance,
 )
 from apps.finance.ledger import IT, PREPAID_RENT, UTILITIES
@@ -54,7 +53,7 @@ from apps.standards.calendar import is_working_day
 from apps.standards.rulebook import TAX_RULES
 from apps.world.generation.rng import stream
 
-from . import economy
+from . import economy, scenarios
 from .clock import Calendar, previous_month_end
 from .compliance import add_working_days
 from .models import Game, Incident, Severity
@@ -68,7 +67,6 @@ CONTACT_CENTRE = ("CALLPOINT", "CallPoint Contact Centre Ltd")
 AGENT_MONTHLY = Decimal("4500.00")  # a contact-centre agent a month (A-080)
 SUPPORT_ACCOUNT = "5250"
 DUPLICATE_CHANCE = 0.1
-HOLD_AFTER_WORKING_DAYS = 10
 HOLD = "SUPPLIER_HOLD"
 MONTHLY_FEE, TRANSFER_FEE = Decimal("150.00"), Decimal("10.00")
 BANK_ERROR_CHANCE = 0.25
@@ -106,14 +104,18 @@ def ensure_budget(game: Game, month_first: date) -> None:
         (e.monthly_salary for e in Employee.objects.filter(organization=org, is_active=True)),
         Decimal("0"),
     )
+    systems = (
+        MONTHLY_IT + IT_CAPACITY_COST[org.it_capacity] + MATCHING_TOOLING_COST[org.matching_tooling]
+    )
     plan = {
         "DATA_OPERATIONS": pay * (1 + rules.ssnit_employer),
-        "PREMISES": MONTHLY_RENT + UTILITIES_BUDGET,
-        "IT": MONTHLY_IT + IT_CAPACITY_COST[org.it_capacity]
-        + MATCHING_TOOLING_COST[org.matching_tooling],
+        # A startup has no office or systems yet (P3.13).
+        "PREMISES": monthly_rent(game) + (scenarios.cost(game, UTILITIES_BUDGET)
+                                           if org.office else Decimal("0")),
+        "IT": scenarios.cost(game, systems) if org.has_systems else Decimal("0"),
         "COMPLIANCE": Decimal("0"),
         "FINANCE": FINANCE_BUDGET,
-        "SUPPORT": AGENT_MONTHLY * org.support_staff,
+        "SUPPORT": scenarios.cost(game, AGENT_MONTHLY * org.support_staff),
         "PRODUCT": Decimal("0"),
     }  # fmt: skip
     for centre, amount in plan.items():
@@ -131,39 +133,58 @@ def month_start(game: Game, today: date, tick: int, at: datetime, add: Any) -> N
 
 
 def monthly_rent(game: Game) -> Decimal:
-    """A month of the rent prepaid at the last renewal (P3.12: renewals follow prices)."""
+    """A month of the rent prepaid at the last renewal (P3.12: renewals follow prices).
+
+    A startup pays none until it rents an office (P3.13)."""
+    from .startup import OFFICES
+
+    if not game.organization.office:
+        return Decimal("0.00")
     renewal = (
         SupplierBill.objects.filter(organization=game.organization, supplier_code=LANDLORD[0])
         .exclude(status=BillStatus.REJECTED)
         .order_by("-bill_date", "-number")
         .first()
     )
-    return (renewal.amount / 12).quantize(Decimal("0.01")) if renewal else MONTHLY_RENT
+    if renewal is not None:
+        return (renewal.amount / 12).quantize(Decimal("0.01"))
+    return OFFICES[game.organization.office].monthly_rent
 
 
 def _bills(game: Game, today: date, at: datetime, add: Any) -> None:
     org = game.organization
     seed = game.world.seed
     month = f"{today:%Y%m}"
-    due = [  # (supplier, reference, description, account, amount, days to pay)
-        (HOSTING, f"NC-{month}", f"Hosting for {today:%B %Y}", IT,
-         MONTHLY_IT + IT_CAPACITY_COST[org.it_capacity], 30),
-        (SOFTWARE, f"MS-{month}",
-         f"Matching software ({org.matching_tooling.lower()}) for {today:%B %Y}", IT,
-         MATCHING_TOOLING_COST[org.matching_tooling], 30),
-        (POWER, f"ECG-{month}", f"Electricity for {today:%B %Y}", UTILITIES,
-         Decimal(int(stream(seed, f"power:{month}").integers(2500, 4501))), 14),
-        (INTERNET, f"NL-{month}", f"Internet for {today:%B %Y}", UTILITIES, Decimal("1800.00"), 30),
+    from .startup import OFFICES
+
+    due = []  # (supplier, reference, description, account, amount, days to pay)
+    if org.has_systems:  # a startup's IT is billed once it is set up (P3.13)
+        due += [
+            (HOSTING, f"NC-{month}", f"Hosting for {today:%B %Y}", IT,
+             MONTHLY_IT + IT_CAPACITY_COST[org.it_capacity], 30),
+            (SOFTWARE, f"MS-{month}",
+             f"Matching software ({org.matching_tooling.lower()}) for {today:%B %Y}", IT,
+             MATCHING_TOOLING_COST[org.matching_tooling], 30),
+        ]  # fmt: skip
+    if org.office:
+        due += [
+            (POWER, f"ECG-{month}", f"Electricity for {today:%B %Y}", UTILITIES,
+             Decimal(int(stream(seed, f"power:{month}").integers(2500, 4501))), 14),
+            (INTERNET, f"NL-{month}", f"Internet for {today:%B %Y}", UTILITIES,
+             Decimal("1800.00"), 30),
+        ]  # fmt: skip
+    due.append(
         (CONTACT_CENTRE, f"CP-{month}",
          f"Customer support: {org.support_staff} agent(s) for {today:%B %Y}", SUPPORT_ACCOUNT,
-         AGENT_MONTHLY * org.support_staff, 30),
-    ]  # fmt: skip
-    if balance(org, PREPAID_RENT) < monthly_rent(game):
+         AGENT_MONTHLY * org.support_staff, 30)
+    )  # fmt: skip
+    if org.office and balance(org, PREPAID_RENT) < monthly_rent(game):
         due.insert(0, (LANDLORD, f"RP-{month}", "Office rent: the next 12 months in advance",
-                       PREPAID_RENT, MONTHLY_RENT * 12, 14))  # fmt: skip
+                       PREPAID_RENT, OFFICES[org.office].monthly_rent * 12, 14))  # fmt: skip
     prices = economy.price_factor(game, today)  # suppliers charge today's prices (P3.12)
     for supplier, reference, description, account, list_amount, days in due:
-        amount = economy.priced(list_amount, prices)
+        # ... at the difficulty's level (P3.13)
+        amount = economy.priced(scenarios.cost(game, list_amount), prices)
         if amount <= 0:
             continue
         bill = payables.receive_bill(
@@ -239,8 +260,9 @@ def morning(game: Game, today: date, tick: int, at: datetime, add: Any) -> None:
             "SUPPLIER_RESTORED", Severity.INFO, "The hosting company has restored service",
             "Its bill is paid.", {"screen": "it", "params": {}},
         )  # fmt: skip
-    elif hold is None and any(
-        add_working_days(b.due_date, HOLD_AFTER_WORKING_DAYS) <= today
+    patience = scenarios.parameters(game).supplier_patience_days  # P3.13
+    if hold is None and any(
+        add_working_days(b.due_date, patience) <= today
         for b in late.filter(supplier_code=HOSTING[0])
     ):
         number = (Incident.objects.filter(game=game).aggregate(n=Max("number"))["n"] or 0) + 1
@@ -250,7 +272,7 @@ def morning(game: Game, today: date, tick: int, at: datetime, add: Any) -> None:
         )  # fmt: skip
         add(
             "SUPPLIER_HOLD", Severity.CRITICAL, "The hosting company has suspended service",
-            f"Its bill is more than {HOLD_AFTER_WORKING_DAYS} working days overdue. Systems are "
+            f"Its bill is more than {patience} working days overdue. Systems are "
             "down until it is approved and paid.", _drill("bills"),
         )  # fmt: skip
 

@@ -75,6 +75,14 @@ class Organization(models.Model):
     support_staff = models.IntegerField(
         default=2, help_text="Contact-centre agents answering tickets (P3.10)"
     )
+    # A startup's premises and systems (P3.13); an established bureau has both.
+    office = models.CharField(
+        max_length=10, default="STANDARD", blank=True, help_text="SMALL, STANDARD or none yet"
+    )
+    has_systems = models.BooleanField(default=True, help_text="IT has been set up")
+    it_ready_on = models.DateField(
+        null=True, blank=True, help_text="The day the systems being set up are ready"
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     # Counters for the bureau's own reference numbers.
