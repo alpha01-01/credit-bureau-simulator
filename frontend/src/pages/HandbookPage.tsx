@@ -6,7 +6,7 @@ import { useGameId } from '../app/useGameId'
 import { Badge, Card, Failed, Loading, Page } from '../components/ui'
 
 /**
- * The Bureau Handbook (P2.11; Document 07, Section 11.4): each concept the player meets,
+ * The Bureau Handbook (v1 P2.11, v2 P3.14; Document 07, Section 11.4): each concept the player meets,
  * with how it works in the Ghanaian market and the law it rests on.
  */
 export function HandbookPage() {
@@ -42,8 +42,13 @@ export function HandbookPage() {
         <section key={e.key} id={e.key} className="scroll-mt-40">
           <Card title={e.title}>
             <div className="space-y-2 text-sm">
-              {e.regulatory && !e.reviewed && (
-                <Badge tone="warn">Regulatory content awaiting the owner's review</Badge>
+              {(e.added !== 'v1' || (e.regulatory && !e.reviewed)) && (
+                <div className="flex flex-wrap gap-2">
+                  {e.added !== 'v1' && <Badge tone="info">New in {e.added}</Badge>}
+                  {e.regulatory && !e.reviewed && (
+                    <Badge tone="warn">Regulatory content awaiting the owner's review</Badge>
+                  )}
+                </div>
               )}
               <p>{e.body}</p>
               <p>

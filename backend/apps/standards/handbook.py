@@ -1,4 +1,4 @@
-"""The Bureau Handbook v1 (P2.11; Document 07, Section 11.4).
+"""The Bureau Handbook (v1 P2.11, v2 P3.14; Document 07, Section 11.4).
 
 Each entry explains one concept the player meets, with an "In practice" note on
 the Ghanaian market. Regulatory statements cite the instrument by name; where
@@ -45,6 +45,7 @@ class Entry:
     citations: tuple[Citation, ...] = field(default_factory=tuple)
     regulatory: bool = False
     reviewed: bool = False
+    added: str = "v1"  # the Handbook version that added it (v2: P3.14)
 
 
 ENTRIES: tuple[Entry, ...] = (
@@ -294,4 +295,418 @@ ENTRIES: tuple[Entry, ...] = (
     ),
 )
 
+# --- Handbook v2 (P3.14): the concepts Phase 3 added ----------------------------------------
+
+V2 = "v2"
+
+ENTRIES_V2: tuple[Entry, ...] = (
+    # Disputes and the regulator (M7)
+    Entry(
+        "subject-rights",
+        "The subject's rights",
+        "The person or business a report is about is its subject. A subject may learn what "
+        "the bureau holds about them, ask for a copy of their report, and dispute anything in "
+        "it they believe is wrong. The bureau may not refuse to investigate.",
+        "Subjects usually find a problem when a lender turns them down and names the bureau. "
+        "Lenders must say which bureau's report they relied on.",
+        "disputes",
+        (
+            Citation(ACT_726, "on the rights of the data subject", "R6"),
+            Citation(LI_2394, "Regulations 23-26 (dispute resolution)", "R7"),
+            Citation(ACT_843, "on the data subject's rights of access and correction", "R10"),
+        ),
+        regulatory=True,
+        added=V2,
+    ),
+    Entry(
+        "correction",
+        "Correcting a record",
+        "When a dispute is upheld the bureau does not delete or overwrite: it writes a "
+        "correction record that supersedes the old fact, saying what changed, why, on whose "
+        "authority and from which dispute. A falsely merged account is moved to the customer "
+        "it belongs to; reports from then on show the corrected file.",
+        "The provider is told, so that its next file does not bring the error back. A "
+        "correction that the next month's file undoes is a common source of repeat disputes.",
+        "disputes",
+        (Citation(LI_2394, "Regulations 23-26 (dispute resolution)", "R7"),),
+        regulatory=True,
+        added=V2,
+    ),
+    Entry(
+        "regulator-ladder",
+        "Findings and the regulator's ladder",
+        "Each dispute left past its deadline, return filed late or compliance finding left "
+        "unremedied is a regulator finding. The regulator acts on the number of findings in "
+        "the last six months: a concern letter, a formal directive, a financial penalty, "
+        "suspension of the licence, revocation. As findings age out the bureau steps back down.",
+        "The thresholds and penalty in the game are assumptions; the supervisor's actual "
+        "practice is set out in its directives and notices.",
+        "health",
+        (
+            Citation("Bank of Ghana directives and notices", reference="R11"),
+            Citation(ACT_726, "on the supervisor's powers", "R6"),
+        ),
+        regulatory=True,
+        added=V2,
+    ),
+    # Staff and tooling (M8)
+    Entry(
+        "capacity-and-skill",
+        "Capacity and skill",
+        "Capacity is how many work items the team can decide in a day; skill is the chance "
+        "each decision is right. Each employee has a skill for each kind of item that grows "
+        "with experience and training. Morale falls when pay lags the market or the queue "
+        "overwhelms the team, and unhappy staff leave.",
+        "Experienced data officers are scarce and ask for more; graduates learn on the job.",
+        "staff",
+        added=V2,
+    ),
+    Entry(
+        "matching-tooling",
+        "Matching tooling",
+        "Software that decides automatically whether a record belongs to a customer the "
+        "bureau already holds. Basic tooling matches on identifiers only; better tooling adds "
+        "fuzzy matching on names, dates of birth and phone numbers. It links more records "
+        "without review, at a monthly cost, and its mistakes are made without anyone seeing them.",
+        "Without a universal identifier on every record, matching is the core skill of a "
+        "Ghanaian bureau; the Ghana Card makes it easier as coverage grows.",
+        "queue",
+        added=V2,
+    ),
+    Entry(
+        "cost-of-quality",
+        "The cost of quality",
+        "Every wrong decision costs something later: a dispute, a declined applicant, a "
+        "finding, a subscriber's lost trust. Staff, training and tooling cost money now. The "
+        "chief executive balances the two.",
+        "Bureaus report accuracy to their boards and to the regulator; subscribers judge it "
+        "by the disputes their customers raise.",
+        "health",
+        added=V2,
+    ),
+    # Analytics (W1)
+    Entry(
+        "vintage",
+        "Vintage",
+        "The loans disbursed in one period (here a quarter), followed as they age. Comparing "
+        "vintages at the same age shows whether lending is getting riskier.",
+        "Young vintages always look good: their loans have not yet had time to go bad.",
+        "analytics",
+        added=V2,
+    ),
+    Entry(
+        "default-definition",
+        "Default",
+        "In the game's analytics a loan has defaulted when it reaches 90 or more days past "
+        "due within 12 months of disbursement. A vintage is mature once all its loans are 12 "
+        "months old; before then its default rate is only 'so far'.",
+        "90 days past due is the usual definition in prudential rules and scorecard practice; "
+        "lenders may use their own.",
+        "analytics",
+        added=V2,
+    ),
+    Entry(
+        "roll-rate",
+        "Roll rates",
+        "The share of accounts that move from one arrears bucket to another between two "
+        "months: from current to 1-29 days, from 30-59 to 60-89, and so on. Roll rates show "
+        "where a portfolio is deteriorating before defaults rise.",
+        "Collections teams watch the roll from current to 1-29 days; risk teams watch the "
+        "roll into 90+.",
+        "analytics",
+        added=V2,
+    ),
+    Entry(
+        "sql-console",
+        "The SQL console",
+        "A read-only window onto the bureau's own tables, for the Head of Data Analytics: any "
+        "question the screens do not answer can be asked in SQL. It never shows the world's "
+        "truth, only what the bureau holds.",
+        "Analysts at bureaus spend much of their time on such ad hoc questions from lenders "
+        "and the regulator.",
+        "console",
+        added=V2,
+    ),
+    Entry(
+        "mobile-loan",
+        "Mobile loans",
+        "Small, short loans taken on a phone through a telecom's wallet, reported in the same "
+        "template as other consumer loans with the file marked as mobile. They are many, "
+        "short and often repeated, and borrowers may hold several at once from different "
+        "lenders.",
+        "Mobile lending reaches people with no other credit history; its data is what lets "
+        "a bureau score them at all.",
+        "submissions",
+        (Citation(DSC, "template CONC (file marked mobile)", "R1", "CONFIRMED"),),
+        added=V2,
+    ),
+    # Scorecards (W2)
+    Entry(
+        "scorecard",
+        "Scorecard",
+        "A model that turns a credit file into a score: each characteristic (worst arrears, "
+        "number of recent enquiries, utilisation) is grouped into bins, each bin carries "
+        "points, and the points add up. The game builds one for short-, mid- or long-term "
+        "credit, or a composite of the three.",
+        "Bureau scores in Ghana are sold alongside the report; lenders set their own cut-offs.",
+        "scorecards",
+        added=V2,
+    ),
+    Entry(
+        "gini",
+        "Gini, AUC and the holdout",
+        "A scorecard is judged on a holdout: customers it was not fitted on. The AUC is the "
+        "chance that a borrower who went bad scores lower than one who did not; Gini is "
+        "2 x AUC - 1, from 0 (no better than chance) to 1 (perfect ranking). KS is the widest "
+        "gap between the score distributions of goods and bads.",
+        "Lenders compare scorecards by Gini; a higher one ranks borrowers better, but only "
+        "on a population like the one it was built on.",
+        "scorecards",
+        added=V2,
+    ),
+    Entry(
+        "restricted-attribute",
+        "Restricted attributes",
+        "Some facts about a person may not be used to decide whether they get credit, however "
+        "well they predict: in the game, gender. The workbench flags a scorecard that uses "
+        "one, and Compliance raises a finding if it is deployed.",
+        "Which attributes are restricted, and on what authority, is to be confirmed.",
+        "scorecards",
+        (Citation("Owner's policy for the game (D14); anti-discrimination principles"),),
+        regulatory=True,
+        added=V2,
+    ),
+    Entry(
+        "credit-score",
+        "The credit score as a product",
+        "Once a scorecard is deployed, each report carries the subject's score and a subscriber "
+        "may buy the score on its own. The score is only as good as the data behind it: a "
+        "false merge moves it as surely as a missed payment.",
+        "A score shifts when the population does: the bureau watches the scores it sells "
+        "drift from those it was built on and rebuilds when they part.",
+        "products",
+        added=V2,
+    ),
+    # Compliance (W3)
+    Entry(
+        "consent-sampling",
+        "Consent sampling",
+        "The bureau answers an enquiry on the subscriber's word that the subject consented "
+        "and that the purpose is permitted. Compliance tests that word by asking a subscriber "
+        "for the forms behind a sample of its enquiries; any it cannot produce are a finding.",
+        "Consent is given on the lender's application form; it also covers reviewing an "
+        "existing account, employment and tenancy screening and collecting a debt.",
+        "compliance",
+        (
+            Citation(LI_2394, "on consent and permissible purpose", "R7"),
+            Citation(ACT_726, "on access to credit information", "R6"),
+        ),
+        regulatory=True,
+        added=V2,
+    ),
+    Entry(
+        "sanction",
+        "Sanctioning a subscriber",
+        "A subscriber that cannot show consent may be warned or suspended. A suspended "
+        "subscriber cannot enquire; a sanctioned one becomes more careful.",
+        "The bureau is answerable for who sees the data it holds: its contract with each "
+        "subscriber sets out the duty and the remedies.",
+        "compliance",
+        (Citation(LI_2394, "on the bureau's duties toward users of credit information", "R7"),),
+        regulatory=True,
+        added=V2,
+    ),
+    Entry(
+        "regulatory-return",
+        "The monthly return",
+        "Each month the bureau reports its activity to the Bank of Ghana: files received, "
+        "enquiries answered, disputes received and settled. In the game it is due by the 15th "
+        "of the next month; late or missing, it is a finding.",
+        "The content and timing of returns are set by the supervisor's directives.",
+        "compliance",
+        (Citation("Bank of Ghana directives to credit bureaus", reference="R11"),),
+        regulatory=True,
+        added=V2,
+    ),
+    Entry(
+        "retention",
+        "Retention",
+        "A closed account stays on reports for a fixed period after it closed, here 5 years, "
+        "and no longer. A bureau may keep it for less, not more: a report showing an account "
+        "past its period is a breach.",
+        "Retention balances the lender's need for history against the borrower's right to a "
+        "fresh start.",
+        "compliance",
+        (
+            Citation(LI_2394, "on retention of credit information", "R7"),
+            Citation(ACT_843, "on keeping personal data no longer than necessary", "R10"),
+        ),
+        regulatory=True,
+        added=V2,
+    ),
+    Entry(
+        "access-review",
+        "Access review",
+        "Each quarter Compliance reviews who can reach the bureau's data and removes the "
+        "access of anyone who no longer needs it, leavers first.",
+        "A leaver's account still open is a common audit finding in any data business.",
+        "compliance",
+        (Citation(ACT_843, "on security of personal data", "R10"),),
+        regulatory=True,
+        added=V2,
+    ),
+    # Finance (W4)
+    Entry(
+        "supplier-bill",
+        "Supplier bills and approval",
+        "Suppliers (hosting, software, the landlord, power) send bills. A bill under the "
+        "approval limit is paid on its due date; one above it waits for the Head of Finance. "
+        "A bill paid late carries a charge, and hosting left unpaid is suspended.",
+        "The expense is recorded when the bill arrives: what is owed sits in payables until "
+        "the money goes.",
+        "finance",
+        added=V2,
+    ),
+    Entry(
+        "bank-reconciliation",
+        "Bank reconciliation",
+        "At each month's start the bank's statement arrives. Reconciling matches each of its "
+        "lines to an entry in the books; a line with no entry is either a posting the books "
+        "are missing or a query for the bank.",
+        "Auditors ask first for the reconciliations: they prove the books describe the cash.",
+        "finance",
+        added=V2,
+    ),
+    Entry(
+        "budget",
+        "Budget",
+        "The year's plan for each cost, month by month. Reviewing actuals against it each "
+        "month shows overspending early, while it can still be cut.",
+        "Boards approve the budget and ask about every large variance.",
+        "finance",
+        added=V2,
+    ),
+    Entry(
+        "month-close",
+        "Closing the month",
+        "A month is closed once its usage is invoiced, salaries paid, bills decided, the bank "
+        "reconciled and the budget reviewed. After that its entries are final: a correction "
+        "goes into a later month.",
+        "A fast close leaves time to act on what the month's figures show.",
+        "finance",
+        added=V2,
+    ),
+    # Sales (W5)
+    Entry(
+        "lender-research",
+        "Researching a lender",
+        "Before a proposal, Sales learns what a lender needs: roughly how many applications it "
+        "takes a month and what it values most, price, service or coverage. A meeting then "
+        "tells what price it would sign at.",
+        "Banks buy on coverage and service; microfinance and digital lenders are more "
+        "sensitive to price.",
+        "sales",
+        added=V2,
+    ),
+    Entry(
+        "proposal",
+        "Proposals and contracts",
+        "A proposal offers a lender a price per report, a term, a service level (standard or "
+        "premium), and optionally a monthly minimum and a volume discount. The lender accepts, "
+        "counters or declines; accepted, it becomes a contract and the lender a subscriber "
+        "once it is set up to enquire.",
+        "Contracts in the market typically run a year and renew.",
+        "sales",
+        added=V2,
+    ),
+    Entry(
+        "pricing",
+        "Pricing",
+        "A lower price wins subscribers and volume, but every report earns less. A monthly "
+        "minimum smooths revenue; a discount above a volume rewards the lenders who enquire "
+        "most. The game's prices are placeholders: no bureau publishes its own.",
+        "Subscribers stay while reports are worth their price: hit rate, accuracy and disputes "
+        "answered on time are what they see.",
+        "sales",
+        added=V2,
+    ),
+    Entry(
+        "service-level",
+        "Service level",
+        "What the bureau promises a subscriber about its systems being up. Under a premium "
+        "service level the subscriber is owed a service credit for a month with long "
+        "downtime; the lender values that promise, and it costs the bureau when it fails.",
+        "Subscribers also judge the bureau by how quickly Customer Support answers their tickets.",
+        "sales",
+        added=V2,
+    ),
+    # Products and the startup
+    Entry(
+        "business-report",
+        "Business credit report",
+        "A report on a business: its facilities, their arrears, dishonoured cheques and "
+        "judgments against it, and its directors. Lenders to small businesses read it with "
+        "the directors' own reports.",
+        "Business data comes in the BUSC template, cheques in COND and judgments in CONJ.",
+        "products",
+        (Citation(DSC, "templates BUSC, COND, CONJ", "R1", "CONFIRMED"),),
+        added=V2,
+    ),
+    Entry(
+        "batch-enquiry",
+        "Batch enquiries",
+        "A subscriber sends a file of many people at once, for example the applicants for a "
+        "scheme, and receives a report on each. Each record is priced below a single report.",
+        "Batches are common for employer-linked lending and for reviewing a whole portfolio.",
+        "batches",
+        added=V2,
+    ),
+    Entry(
+        "provider-onboarding",
+        "Onboarding a data provider",
+        "A lender becomes a data provider once it has signed a data-sharing agreement and "
+        "connected to the bureau. Its first file brings its whole book; from then each month "
+        "brings the changes.",
+        "The regulations require lenders to report to every licensed bureau; the work of "
+        "connecting them still falls to the bureau.",
+        "onboarding",
+        (Citation(ACT_726, "on the duty of data providers to report", "R6"),),
+        regulatory=True,
+        added=V2,
+    ),
+    Entry(
+        "it-capacity",
+        "IT capacity and outages",
+        "The bureau's systems process so many files a night; more capacity costs more each "
+        "month. An outage stops enquiries until it is fixed, and subscribers notice.",
+        "Systems that are down cost twice: the enquiries lost and the subscribers' trust.",
+        "it",
+        added=V2,
+    ),
+    Entry(
+        "economy",
+        "The economy",
+        "Published indicators the bureau reads each month: inflation, the policy rate, wage "
+        "growth and growth in activity. Inflation raises suppliers' prices and staff's pay; a "
+        "higher policy rate means less lending and fewer enquiries; a shock brings more "
+        "arrears and defaults.",
+        "Ghana's inflation and policy rate have both moved widely in recent years; the "
+        "Bank of Ghana publishes them monthly.",
+        "economy",
+        (Citation("Bank of Ghana statistical releases", reference="R15", status="TO_CONFIRM"),),
+        added=V2,
+    ),
+    Entry(
+        "board",
+        "The board",
+        "The board reviews the chief executive each quarter on the bureau's health. Reviews "
+        "with no confidence in a row remove the chief executive; a startup is given a year "
+        "before its first review counts.",
+        "Investors in a bureau look for a path to profit within a few years.",
+        "health",
+        added=V2,
+    ),
+)
+
+ENTRIES = ENTRIES + ENTRIES_V2
 BY_KEY = {e.key: e for e in ENTRIES}

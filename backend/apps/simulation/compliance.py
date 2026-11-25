@@ -35,6 +35,7 @@ from .consequences import MIXED
 from .failure import LICENCE_REVOKED, end_game
 from .models import (
     Consequence,
+    EnquiryJudgement,
     EventType,
     Game,
     RegulatorFinding,
@@ -119,6 +120,72 @@ def maybe_dispute(
             "subject": subject_name,
             "claim": claim,
             "accounts": accounts,
+        },
+    )
+    return True
+
+
+def mission_dispute(game: Game, tick: int) -> bool:
+    """Mission M7 (P3.14): a subject of one of the bureau's reports disputes it.
+
+    The subject is the first, by enquiry reference, whose report wrongly showed
+    someone else's accounts (a dispute to uphold); failing that, the first whose report
+    showed arrears of their own (one to reject). Filed the next working day. A-085.
+    """
+    disputed = set(
+        Dispute.objects.filter(organization=game.organization).values_list("enquiry_id", flat=True)
+    )
+    judged = (
+        EnquiryJudgement.objects.filter(game=game, hit=True)
+        .exclude(enquiry_id__in=disputed)
+        .select_related("enquiry", "application__person", "application__business")
+        .order_by("enquiry__enquiry_reference")
+    )
+    chosen: tuple[EnquiryJudgement, str, list[list[str]]] | None = None
+    for judgement in judged.filter(correct_person=False):
+        keys = {
+            (c.provider, c.provider_customer)
+            for c in Consequence.objects.filter(game=game, enquiry=judgement.enquiry, effect=MIXED)
+        }
+        customer = judgement.enquiry.customer_id
+        accounts = _accounts_of(customer, keys) if keys and customer else []
+        if accounts:
+            chosen = (judgement, "These accounts are not mine; I have never borrowed from "
+                      "these lenders.", accounts)  # fmt: skip
+            break
+    if chosen is None:
+        for judgement in judged.filter(correct_person=True):
+            customer = judgement.enquiry.customer_id
+            accounts = _arrears_accounts(customer) if customer else []
+            if accounts:
+                chosen = (judgement, "I do not recognise these arrears; they must be "
+                          "someone else's.", accounts)  # fmt: skip
+                break
+    if chosen is None:
+        return False
+    judgement, claim, accounts = chosen
+    app = judgement.application
+    subject = (
+        f"{app.person.first_name} {app.person.last_name}"
+        if app.person is not None
+        else app.business.registered_name
+        if app.business is not None
+        else "A subject"
+    )
+    ScheduledEvent.objects.create(
+        game=game,
+        event_type=EventType.DISPUTE_FILED,
+        due_tick=tick + TICKS_PER_DAY,
+        sequence=_next_sequence(game),
+        payload={
+            "enquiry": judgement.enquiry.enquiry_reference,
+            "customer": Customer.objects.get(
+                pk=judgement.enquiry.customer_id or 0
+            ).customer_reference,
+            "subject": subject,
+            "claim": claim,
+            "accounts": accounts,
+            "mission": "M7",
         },
     )
     return True

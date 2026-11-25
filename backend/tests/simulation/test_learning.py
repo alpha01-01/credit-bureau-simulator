@@ -21,7 +21,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from apps.bureau.quality.models import CaseType
+from apps.bureau.quality.models import CaseType, Dispute
 from apps.simulation import controls
 from apps.simulation.bridge import start_game
 from apps.simulation.clock import TICKS_PER_DAY
@@ -69,7 +69,9 @@ class Player:
 
     def mission(self) -> dict[str, Any] | None:
         rows = self.get("/missions/")["missions"]
-        return next((m for m in rows if m["status"] == "CURRENT"), None)
+        return next(
+            (m for m in rows if m["status"] == "CURRENT" and m["track"] == "CAMPAIGN"), None
+        )
 
     def answer(self, code: str, value: Any) -> bool:
         response = self.post("/missions/", {"action": "answer", "code": code, "value": str(value)})
@@ -108,10 +110,11 @@ def _solve(player: Player, mission: dict[str, Any]) -> None:
     """Do what the current mission asks, as far as the game allows now."""
     code = mission["code"]
     question = mission.get("question")
-    if code in ("M2", "M3"):  # Data Operations' work: take over that department first (P3.1)
+    needs = {"M2": "DATA_OPERATIONS", "M3": "DATA_OPERATIONS", "M7": "COMPLIANCE", "M8": "CEO"}
+    if code in needs:  # a department's work: take over that department first (P3.1)
         role = player.get("/role/")["current"]
-        if role["code"] != "DATA_OPERATIONS":
-            switched = player.post("/role/", {"role": "DATA_OPERATIONS"})
+        if role["code"] != needs[code]:
+            switched = player.post("/role/", {"role": needs[code]})
             assert switched.status_code == 200, switched.content
             return
         if not role["ready"]:
@@ -132,6 +135,13 @@ def _solve(player: Player, mission: dict[str, Any]) -> None:
             assert relaxed.status_code == 200, relaxed.content
     elif code == "M3":
         player.decide(CaseType.MATCH_REVIEW, 5)
+    elif code == "M7":  # the dispute waits in the queue for the head of compliance
+        player.decide(CaseType.DISPUTE, 1)
+    elif code == "M8" and not mission["objectives"][0]["done"]:
+        staff = player.get("/staff/")
+        candidate = next(c for c in staff["candidates"] if not c["hired"])
+        hired = player.post("/staff/", {"action": "hire", "candidate": candidate["number"]})
+        assert hired.status_code == 200, hired.content
     if not question or not question["ready"] or question["answered"]:
         return
     if code == "M1":
@@ -150,6 +160,12 @@ def _solve(player: Player, mission: dict[str, Any]) -> None:
     elif code == "M6":
         income = player.get("/finance/")["income_last_month"]["net_profit"]
         assert player.answer(code, f"GHS {income}")
+    elif code == "M7":
+        assert player.answer(code, player.get("/disputes/")["statutory_working_days"])
+    elif code == "M8":
+        options = player.get("/matching-policy/")["options"]
+        dearest = max(Decimal(o["monthly_cost"]) for o in options)
+        assert player.answer(code, f"GHS {dearest * 12}")
 
 
 @pytest.mark.django_db(transaction=True)
@@ -186,12 +202,14 @@ def test_a_player_completes_the_campaign_from_what_the_screens_show(world: World
             f"The campaign did not finish; stuck at {order[-1]}: {by_type}, tick {game.current_tick}"
         )
 
-    assert order == ["M1", "M2", "M3", "M4", "M5", "M6"]
+    assert order == ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"]
     states = {s.code: s for s in MissionState.objects.filter(game=game)}
     for code in order:
         debrief = states[code].debrief
         assert debrief["headline"] and debrief["figures"] and debrief["lessons"], code
-    assert Notice.objects.filter(game=game, kind="MISSION_COMPLETE").count() == 6
+    assert Notice.objects.filter(game=game, kind="MISSION_COMPLETE").count() == 8
+    # M7's dispute came from one of the bureau's own reports.
+    assert Dispute.objects.filter(organization=game.organization).exists()
     days = game.current_tick / TICKS_PER_DAY
     print(f"campaign: {days:.1f} working days of game time")  # noqa: T201
     for code in order:

@@ -1071,6 +1071,8 @@ export type MissionRow = {
   code: string
   title: string
   concept: string
+  track: 'CAMPAIGN' | 'WORKSPACE'
+  role: string
   handbook: string[]
   status: 'DONE' | 'CURRENT' | 'LATER'
   debrief: {
@@ -1124,6 +1126,7 @@ export type HandbookEntry = {
   citations: { instrument: string; provision: string; reference: string; status: string }[]
   regulatory: boolean
   reviewed: boolean
+  added: string
 }
 
 export function useHandbook(id: number) {
