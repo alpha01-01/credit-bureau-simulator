@@ -96,7 +96,9 @@ def maybe_dispute(
         claim = "These accounts are not mine; I have never borrowed from these lenders."
     else:
         in_arrears = [
-            a for a in enquiry.report.get("accounts", []) if (a.get("days_past_due") or 0) > 0
+            a
+            for a in enquiry.report.get("accounts") or enquiry.report.get("facilities") or []
+            if (a.get("days_past_due") or 0) > 0
         ]
         if not in_arrears or rng.random() >= DISPUTE_OWN_ARREARS:
             return False

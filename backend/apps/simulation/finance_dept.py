@@ -54,6 +54,7 @@ from apps.standards.calendar import is_working_day
 from apps.standards.rulebook import TAX_RULES
 from apps.world.generation.rng import stream
 
+from . import economy
 from .clock import Calendar, previous_month_end
 from .compliance import add_working_days
 from .models import Game, Incident, Severity
@@ -129,6 +130,17 @@ def month_start(game: Game, today: date, tick: int, at: datetime, add: Any) -> N
     _statement(game, today, at, add)
 
 
+def monthly_rent(game: Game) -> Decimal:
+    """A month of the rent prepaid at the last renewal (P3.12: renewals follow prices)."""
+    renewal = (
+        SupplierBill.objects.filter(organization=game.organization, supplier_code=LANDLORD[0])
+        .exclude(status=BillStatus.REJECTED)
+        .order_by("-bill_date", "-number")
+        .first()
+    )
+    return (renewal.amount / 12).quantize(Decimal("0.01")) if renewal else MONTHLY_RENT
+
+
 def _bills(game: Game, today: date, at: datetime, add: Any) -> None:
     org = game.organization
     seed = game.world.seed
@@ -146,10 +158,12 @@ def _bills(game: Game, today: date, at: datetime, add: Any) -> None:
          f"Customer support: {org.support_staff} agent(s) for {today:%B %Y}", SUPPORT_ACCOUNT,
          AGENT_MONTHLY * org.support_staff, 30),
     ]  # fmt: skip
-    if balance(org, PREPAID_RENT) < MONTHLY_RENT:
+    if balance(org, PREPAID_RENT) < monthly_rent(game):
         due.insert(0, (LANDLORD, f"RP-{month}", "Office rent: the next 12 months in advance",
                        PREPAID_RENT, MONTHLY_RENT * 12, 14))  # fmt: skip
-    for supplier, reference, description, account, amount, days in due:
+    prices = economy.price_factor(game, today)  # suppliers charge today's prices (P3.12)
+    for supplier, reference, description, account, list_amount, days in due:
+        amount = economy.priced(list_amount, prices)
         if amount <= 0:
             continue
         bill = payables.receive_bill(

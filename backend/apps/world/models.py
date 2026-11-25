@@ -34,6 +34,14 @@ class EconomyMonth(models.Model):
     world = models.ForeignKey(World, on_delete=models.CASCADE, related_name="economy")
     period = models.DateField(help_text="Month-end date")
     stress_index = models.FloatField(help_text="National economic stress; positive = harder times")
+    # The rest of the economy (P3.12): the world's truth, of which only some is published.
+    stage = models.CharField(max_length=15, db_default="HISTORY")
+    inflation = models.FloatField(db_default=0.0, help_text="Annual rate")
+    price_index = models.FloatField(db_default=1.0, help_text="1.0 until inflation begins")
+    wage_index = models.FloatField(db_default=1.0, help_text="1.0 until wage pressure begins")
+    policy_rate = models.FloatField(null=True, blank=True, help_text="Annual rate")
+    growth = models.FloatField(null=True, blank=True, help_text="Annual growth in activity")
+    events = models.JSONField(db_default=[], help_text="SHOCK, INTERMEDIATE, ADVANCED")
 
     class Meta:
         constraints = [

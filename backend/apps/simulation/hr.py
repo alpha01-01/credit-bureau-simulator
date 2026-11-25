@@ -26,6 +26,7 @@ from apps.workitems.models import ItemStatus, WorkItem
 from apps.world.generation.identity import COMMON_FIRST_NAMES, FIRST_NAMES, SURNAMES
 from apps.world.generation.rng import stream
 
+from . import economy
 from .clock import TICKS_PER_DAY
 from .models import Candidate, Game
 
@@ -48,9 +49,10 @@ class HRError(Exception):
     pass
 
 
-def market_salary(job_title: str) -> Decimal:
+def market_salary(job_title: str, wages: Decimal = Decimal("1")) -> Decimal:
+    """The going rate for the role; ``wages`` is the wage index since play began (P3.12)."""
     low, high = ROLES.get(job_title, ROLES["Data Officer"])[1]
-    return Decimal((low + high) // 2)
+    return (Decimal((low + high) // 2) * wages).quantize(Decimal("1"))
 
 
 def candidates_for(game: Game, period: date) -> list[Candidate]:
@@ -59,6 +61,7 @@ def candidates_for(game: Game, period: date) -> list[Candidate]:
     if existing:
         return existing
     rng = stream(game.world.seed, f"candidates:{period:%Y%m}")
+    wages = economy.wage_factor(game, period)  # candidates ask the going rate (P3.12)
     groups = list(SURNAMES)
     made = []
     for n, title in enumerate(ROLES, start=1):
@@ -75,7 +78,9 @@ def candidates_for(game: Game, period: date) -> list[Candidate]:
                 last_name=SURNAMES[group][int(rng.integers(len(SURNAMES[group])))],
                 job_title=title,
                 skills={str(t): round(float(rng.uniform(s_low, s_high)), 3) for t in WORK_TYPES},
-                asking_salary=Decimal(int(rng.integers(p_low, p_high + 1) // 100 * 100)),
+                asking_salary=(
+                    Decimal(int(rng.integers(p_low, p_high + 1) // 100 * 100)) * wages
+                ).quantize(Decimal("100")),
             )
         )
     return Candidate.objects.bulk_create(made)
@@ -140,8 +145,9 @@ def month_update(game: Game, today: date, add: Any) -> None:
     heavy = queue / len(staff) > HEAVY_QUEUE_PER_PERSON
     rng = stream(game.world.seed, f"morale:{today:%Y%m}")
     recent = game.current_tick - MONTH_TICKS
+    wages = economy.wage_factor(game, today)
     for person in staff:
-        pay = float(person.monthly_salary / market_salary(person.job_title)) - 1
+        pay = float(person.monthly_salary / market_salary(person.job_title, wages)) - 1
         trained = person.away_until_tick > max(recent, 0)
         target = NEUTRAL_MORALE + 0.5 * pay - (0.25 if heavy else 0.0) + (0.05 if trained else 0.0)
         moved = person.morale + MORALE_SPEED * (target - person.morale)

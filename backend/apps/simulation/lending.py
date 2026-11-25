@@ -53,7 +53,8 @@ def serious_arrears(report: dict[str, Any]) -> bool:
     An account in arrears now (30 or more days past due), or one that has been 90 or
     more days past due in the last year or written off.
     """
-    for account in report.get("accounts", []):
+    # A business report lists the same as "facilities" (P3.11).
+    for account in report.get("accounts") or report.get("facilities") or []:
         if (account.get("days_past_due") or 0) >= CURRENT_ARREARS_DAYS:
             return True
         if account.get("status") in WRITTEN_OFF_STATUS_CODES:

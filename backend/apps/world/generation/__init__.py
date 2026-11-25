@@ -11,7 +11,7 @@ from datetime import date
 
 from django.db import transaction
 
-from .config import SCALES, WorldConfig
+from .config import SCALES, EconomyModel, WorldConfig
 from .engine import SimulationResult, simulate
 from .mobile import generate as generate_mobile
 from .persist import write_world
@@ -42,17 +42,21 @@ def build_world(
     history_end: date | None = None,
     extra_months: int = 0,
     mobile_loans: bool = True,
+    economy: EconomyModel | None = None,
 ) -> GeneratedWorld:
     """Generate a world in memory. Pure: no database access.
 
     ``extra_months`` simulates that many months beyond ``history_end`` (used to
     advance a stored world during play); everything up to ``history_end`` is
     identical to a world generated without them. ``mobile_loans`` adds the mobile
-    loan stream (P3.3); worlds made before it carry on without one.
+    loan stream (P3.3); worlds made before it carry on without one. ``economy`` sets the
+    economy's model (P3.12: its stages and shock); the default has stages.
     """
     if scale not in SCALES:
         raise ValueError(f"Unknown scale {scale!r}; choose from {', '.join(SCALES)}")
     config = WorldConfig(seed=seed, scale=SCALES[scale], extra_months=extra_months)
+    if economy is not None:
+        config = replace(config, economy=economy)
     if history_end is not None:
         config = replace(config, history_end=history_end)
     people = generate_people(config)

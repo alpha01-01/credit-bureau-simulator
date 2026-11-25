@@ -28,6 +28,7 @@ from .models import Game, ScoreModel, Severity
 
 WINDOWS = (3, 6, 12)  # months; 12 is the default definition (D13)
 DRIFT_PSI = 0.25  # population stability above this: the population has shifted
+SHIFT_PSI = 0.10  # above this, a moderate shift worth watching (the usual 0.1 / 0.25 rule)
 PSI_EDGES = [float(f) for _, f, _ in sorted(sm.BANDS, key=lambda b: b[1])][1:]  # band floors
 
 
@@ -102,6 +103,20 @@ def _check_dates(game: Game, observation: date, window: int) -> None:
             f"{observation:%d %B %Y} does not leave {window} months of outcomes on file: "
             "choose an earlier observation date or a shorter window"
         )
+
+
+def _deciles(scores: np.ndarray) -> dict[str, list[Any]]:
+    """Score deciles, their edges fixed: finer than the five bands, so a shift within a band
+    shows (P3.12)."""
+    edges = sorted({float(e) for e in np.quantile(scores, np.linspace(0.1, 0.9, 9))})
+    return {"edges": edges, "counts": _counts(scores, edges)}
+
+
+def _counts(scores: np.ndarray, edges: list[float]) -> list[int]:
+    counts: np.ndarray = np.bincount(
+        np.searchsorted(np.array(edges), scores, side="right"), minlength=len(edges) + 1
+    )
+    return [int(c) for c in counts]
 
 
 def _histogram(scores: np.ndarray) -> list[int]:
@@ -249,7 +264,14 @@ def deploy(game: Game, number: int, tick: int, at: datetime) -> ScoreModel:
     _settle_findings(game, list(replaced.values_list("number", flat=True)), tick)
     replaced.update(status=ScoreModel.Status.RETIRED)
     model.status, model.deployed_tick = ScoreModel.Status.DEPLOYED, tick
-    model.save(update_fields=["status", "deployed_tick"])
+    baseline = _population(game, model, None)
+    if baseline is not None:  # the population it went live on, to watch for change (P3.12)
+        as_of, scores = baseline
+        model.results = {
+            **model.results,
+            "deployed": {"as_of": as_of.isoformat(), **_deciles(scores)},
+        }
+    model.save(update_fields=["status", "deployed_tick", "results"])
     restricted = model.results.get("fairness", {}).get("restricted_used", [])
     if restricted:
         detail = (
@@ -314,20 +336,43 @@ def debrief(
     }
 
 
-def monitor(game: Game, model: ScoreModel) -> dict[str, Any] | None:
-    """Population stability of a model's scores in the latest month against its development."""
-    latest = latest_reporting_date(game.organization_id)
+def _population(
+    game: Game, model: ScoreModel, as_of: date | None
+) -> tuple[date, np.ndarray] | None:
+    """The model's scores for everyone on file at a reporting date (the latest by default)."""
+    latest = as_of or latest_reporting_date(game.organization_id)
     if latest is None or latest <= model.observation_date:
         return None
     term = sd.ALL if model.term == sd.COMPOSITE else model.term
     data = sd.dataset(game.organization_id, term, latest, 0)
     if len(data.customers) == 0:
         return None
-    now = _histogram(scores_for(model, data))
+    return latest, scores_for(model, data)
+
+
+def _shift(psi: float) -> str:
+    return "major" if psi > DRIFT_PSI else "moderate" if psi > SHIFT_PSI else "stable"
+
+
+def monitor(game: Game, model: ScoreModel, as_of: date | None = None) -> dict[str, Any] | None:
+    """Population stability of a model's scores at a reporting date (the latest by default):
+    against its development, by band, and against the population it was deployed on, by
+    decile (P3.12), which shows a change since it went live, such as an economic shock."""
+    found = _population(game, model, as_of)
+    if found is None:
+        return None
+    latest, scores = found
+    now = _histogram(scores)
     psi = _psi(model.results["development"], now)
+    since = None
+    deployed = model.results.get("deployed")
+    if deployed and latest > date.fromisoformat(deployed["as_of"]):
+        moved = _psi(deployed["counts"], _counts(scores, deployed["edges"]))
+        since = {"from": deployed["as_of"], "psi": round(moved, 4), "shift": _shift(moved)}
     return {
-        "as_of": latest.isoformat(), "customers": len(data.customers), "psi": round(psi, 4),
-        "drift": psi > DRIFT_PSI, "development": model.results["development"], "now": now,
+        "as_of": latest.isoformat(), "customers": len(scores), "psi": round(psi, 4),
+        "drift": psi > DRIFT_PSI, "shift": _shift(psi), "development": model.results["development"],
+        "now": now, "since_deployment": since,
     }  # fmt: skip
 
 

@@ -21,6 +21,7 @@ import { SubscribersPage } from '../pages/SubscribersPage'
 import { StaffPage } from '../pages/StaffPage'
 import { OnboardingPage } from '../pages/OnboardingPage'
 import { ReportPage } from '../pages/ReportPage'
+import { EconomyPage } from '../pages/EconomyPage'
 import { ProductsPage } from '../pages/ProductsPage'
 import { SalesPage } from '../pages/SalesPage'
 import { SupportPage } from '../pages/SupportPage'
@@ -141,6 +142,7 @@ const routes = [
               { path: 'enquiries', element: <EnquiriesPage /> },
               { path: 'enquiries/:reference', element: <ReportPage /> },
               { path: 'batches', element: <BatchesPage /> },
+              { path: 'economy', element: <EconomyPage /> },
               {
                 path: 'finance',
                 element: <FinanceLayout />,

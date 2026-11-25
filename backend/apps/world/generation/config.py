@@ -266,13 +266,41 @@ class BehaviourModel:
 
 @dataclass(frozen=True)
 class EconomyModel:
-    """AR(1) national stress index; positive = harder times. Lending volume falls with stress."""
+    """AR(1) national stress index; positive = harder times. Lending volume falls with stress.
+
+    From P3.12 the economy moves through stages during play (``economy``, A-082). Worlds
+    made before it carry on without them (``stages`` False).
+    """
 
     stress_phi: float = 0.85
     stress_sigma: float = 0.10
     stress_mean: float = 0.0
     lending_stress_elasticity: float = 0.35
     annual_lending_growth: float = 0.06
+    # Stages (P3.12), counted in months of play.
+    stages: bool = True
+    intermediate_from: int = 6
+    advanced_from: int = 12
+    # Intermediate: inflation, the policy rate and wage pressure (annual rates).
+    inflation_range: tuple[float, float] = (0.08, 0.22)
+    inflation_phi: float = 0.9
+    inflation_sigma: float = 0.01
+    wage_premium_range: tuple[float, float] = (0.0, 0.04)
+    policy_rate_range: tuple[float, float] = (0.14, 0.24)
+    rate_response: float = 1.0  # policy rate points per point of inflation above its level
+    rate_elasticity: float = 1.5  # lending falls by e^-1.5 per unit of rate above neutral
+    # Advanced: a business cycle and a shock.
+    cycle_amplitude: float = 0.25
+    cycle_months: int = 36
+    shocks: bool = True
+    shock_month: int = 0  # 0: a month drawn from the seed, within a year of the stage
+    shock_size: float = 0.0  # 0: drawn from shock_range
+    shock_range: tuple[float, float] = (1.0, 1.6)
+    shock_inflation: float = 0.06
+    # The published growth figure.
+    growth_mean: float = 0.05
+    growth_per_stress: float = 0.04
+    growth_sigma: float = 0.005
 
 
 @dataclass(frozen=True)
