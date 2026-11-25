@@ -73,11 +73,11 @@ function Current({ gameId, mission }: { gameId: number; mission: MissionRow }) {
                 act.mutate({ action: 'answer', code: mission.code, value })
               }}
             >
-              <label htmlFor="mission-answer" className="sr-only">
-                Your answer
+              <label htmlFor={`mission-answer-${mission.code}`} className="sr-only">
+                Your answer to {mission.code}
               </label>
               <input
-                id="mission-answer"
+                id={`mission-answer-${mission.code}`}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 className="w-36 rounded border border-slate-300 px-1 py-0.5 text-right"
@@ -117,9 +117,50 @@ function Current({ gameId, mission }: { gameId: number; mission: MissionRow }) {
   )
 }
 
+const ROLE_NAME: Record<string, string> = {
+  CEO: 'Chief Executive',
+  DATA_OPERATIONS: 'Data Operations',
+  COMPLIANCE: 'Compliance',
+  SALES: 'Sales',
+  FINANCE: 'Finance',
+  DATA_ANALYTICS: 'Data Analytics',
+}
+
+function MissionCard({ gameId, mission }: { gameId: number; mission: MissionRow }) {
+  const workspace = mission.track === 'WORKSPACE'
+  const label =
+    mission.status === 'DONE'
+      ? 'done'
+      : mission.status === 'CURRENT'
+        ? workspace
+          ? 'open'
+          : 'now'
+        : 'later'
+  return (
+    <Card title={`${mission.code} · ${mission.title}`}>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Badge
+          tone={
+            mission.status === 'DONE' ? 'good' : mission.status === 'CURRENT' ? 'info' : 'neutral'
+          }
+        >
+          {label}
+        </Badge>
+        {mission.role && (
+          <span className="text-xs text-slate-500">{ROLE_NAME[mission.role] ?? mission.role}</span>
+        )}
+        <span className="text-slate-600">{mission.concept}</span>
+      </div>
+      {mission.status === 'CURRENT' && <Current gameId={gameId} mission={mission} />}
+      {mission.debrief && <Debrief debrief={mission.debrief} />}
+    </Card>
+  )
+}
+
 /**
- * The learning campaign (P2.11; Document 07, Section 11): missions M1-M6 in order, each
- * ending in a debrief that reveals what really happened, and the assistance toggles.
+ * The learning campaign (P2.11, P3.14; Document 07, Section 11): missions M1-M8 in order,
+ * and the workspace missions, one per department, open together. Each ends in a debrief
+ * that reveals what really happened. Then the assistance toggles.
  */
 export function MissionsPage() {
   const gameId = useGameId()
@@ -146,26 +187,25 @@ export function MissionsPage() {
         </button>
       }
     >
-      {m.missions.map((mission) => (
-        <Card key={mission.code} title={`${mission.code} · ${mission.title}`}>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge
-              tone={
-                mission.status === 'DONE'
-                  ? 'good'
-                  : mission.status === 'CURRENT'
-                    ? 'info'
-                    : 'neutral'
-              }
-            >
-              {mission.status === 'DONE' ? 'done' : mission.status === 'CURRENT' ? 'now' : 'later'}
-            </Badge>
-            <span className="text-slate-600">{mission.concept}</span>
-          </div>
-          {mission.status === 'CURRENT' && <Current gameId={gameId} mission={mission} />}
-          {mission.debrief && <Debrief debrief={mission.debrief} />}
-        </Card>
-      ))}
+      <h2 className="text-lg font-semibold">The campaign</h2>
+      <p className="-mt-2 text-sm text-slate-600">
+        In order: each opens when the one before is done.
+      </p>
+      {m.missions
+        .filter((mission) => mission.track === 'CAMPAIGN')
+        .map((mission) => (
+          <MissionCard key={mission.code} gameId={gameId} mission={mission} />
+        ))}
+      <h2 className="text-lg font-semibold">The workspaces</h2>
+      <p className="-mt-2 text-sm text-slate-600">
+        One short mission for each department's workspace, in any order. Switch role to the
+        department first.
+      </p>
+      {m.missions
+        .filter((mission) => mission.track === 'WORKSPACE')
+        .map((mission) => (
+          <MissionCard key={mission.code} gameId={gameId} mission={mission} />
+        ))}
       <Card title="Assistance">
         <p className="mb-2 text-sm text-slate-600">
           Help that does not change the economics. Turn it off as you grow confident.

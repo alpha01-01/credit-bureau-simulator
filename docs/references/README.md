@@ -9,6 +9,8 @@ SimB mirrors real-world credit bureau practice (Document 07, D11). This folder h
 3. **Record provenance.** Add each item to the index below with its source, version or date, and whether it is public or owner-written.
 4. Public legal texts can be committed. Anything uncertain stays out of Git (put it in `docs/references/private/`, which is ignored).
 
+The regulatory citations awaiting the owner's review are listed in `regulatory-review.md` (D14).
+
 ## What is needed, by priority
 
 ### Priority 1 — needed for the first playable slice
