@@ -3,8 +3,8 @@
 ## DOCUMENT 10 — PHASE 4 PLAN: THE OFFICE
 
 **Document ID:** CBS-P4P-001
-**Version:** 0.1
-**Status:** Draft for owner review
+**Version:** 0.2
+**Status:** Approved by owner (26 November 2026), with the decisions in Section 7
 **Date:** 26 November 2026
 **Working title:** SimB
 **Depends on:**
@@ -332,6 +332,8 @@ The first floor comes before the others because the trial already started it and
 
 # 7. Decisions for the Owner
 
+**Decided 26 November 2026:** the plan is approved with every recommendation below (items 1–7 and 9). For item 6, no machine was named, so the stated profile stands, with the dev laptop throttled to match. Item 8 is still open.
+
 1. **Approve the plan,** or reorder it.
 2. **Month speed target.** Recommendation: the 3-minute allowance (8a in Document 09) for a full-size month with mobile loans, as now, in P4.0. The 2-minute target for worlds without mobile loans stays.
 3. **Balance findings 9 and 10.** Recommendations:
@@ -368,7 +370,7 @@ The first floor comes before the others because the trial already started it and
 | Field | Value |
 | --- | --- |
 | Document ID | CBS-P4P-001 |
-| Version | 0.1 |
-| Status | Draft for owner review |
-| Change history | 0.1 first draft after Phase 3 |
-| Next step | Owner's review and decisions (Section 7); then P4.0 |
+| Version | 0.2 |
+| Status | Approved |
+| Change history | 0.1 first draft after Phase 3; 0.2 approved with the recommendations in Section 7 |
+| Next step | P4.0 |
