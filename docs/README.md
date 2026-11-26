@@ -10,6 +10,8 @@
 | 06 | [Development Roadmap](06-development-roadmap.md) | CBS-DRTP-001 v0.2 | Approved |
 | 07 | [Core Gameplay and Learning Design](07-core-gameplay-design.md) | CBS-CGD-001 v0.2 | Approved |
 | 08 | [Phase 2 Plan](08-phase-2-plan.md) | CBS-P2P-001 v0.2 | Approved |
+| 09 | [Phase 3 Plan](09-phase-3-plan.md) | CBS-P3P-001 v0.2 | Approved; Phase 3 complete ([exit criteria](exit-criteria-v1.md)) |
+| 10 | [Phase 4 Plan](10-phase-4-plan.md) | CBS-P4P-001 v0.1 | Draft for owner review |
 
 Where documents conflict, **07 takes precedence** until the earlier documents are revised. Its decisions log (Section 14) lists every amendment.
 
