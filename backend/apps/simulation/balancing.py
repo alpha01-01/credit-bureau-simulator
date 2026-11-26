@@ -18,6 +18,23 @@ Strategies (Document 08, P2.12):
 All three sell the same way: a proposal to the two largest lenders that do not
 subscribe, at the list price, in the first month. Differences in outcomes come
 from how they run the data.
+
+P3.15 widens the runs to the levers Phase 3 added. Each pair changes one lever on
+top of ``steady`` (the starting policies, the same sale), so a difference within a
+pair comes from that lever alone:
+
+* score quality: ``score_careful`` (a scorecard per term on its recommended features,
+  then the composite) against ``score_careless`` (one long-term scorecard on a single
+  weak feature); both develop the score product first, and need history on file;
+* compliance effort: ``compliance_diligent`` (a consent sample from every subscriber
+  each month, a warning for every one found short and the access review as soon as
+  each is due, the legal retention) against ``compliance_lax`` (retention beyond the law, nothing
+  else);
+* pricing: ``price_high`` and ``price_low`` (the sale at 130% and 75% of list).
+
+Scenario and difficulty are arguments of ``play``: any strategy runs in an
+established bureau, a startup (``_found`` builds it first) or a sandbox, at any
+difficulty.
 """
 
 from __future__ import annotations
@@ -29,24 +46,28 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
-from django.db.models import Sum
+from django.db.models import Count, Sum
 
+from apps.bureau.analytics import scoredata as sd
 from apps.bureau.quality.models import Dispute
 from apps.bureau.quality.rules import CORE, RELAXABLE, STANDARD
 from apps.bureau.submissions.models import Submission
-from apps.commercial.models import Subscriber, UsageRecord
+from apps.commercial.models import Contract, Subscriber, UsageRecord
 from apps.finance.events import balance
 from apps.finance.ledger import BANK
+from apps.finance.models import BillStatus, SupplierBill
 from apps.finance.statements import income_statement
 from apps.org.models import Employee
 from apps.world.models import World
 
-from . import controls, hr, lending
+from . import controls, hr, lending, scenarios, startup
 from .bridge import start_game
 from .engine import ClockError
 from .health import health
 from .models import (
     BoardReview,
+    ComplianceFinding,
+    ConsentCheck,
     EnquiryJudgement,
     Game,
     GameStatus,
@@ -56,15 +77,24 @@ from .models import (
     RegulatorFinding,
 )
 from .sales import prospects
+from .scorecards import WINDOWS, observation_dates
+from .scoreproduct import SCORE, scoring_model
 
 Strategy = Callable[[Game, int], Game]  # (game, month number from 0) -> game
 
 
-def _sell(game: Game) -> Game:
-    """A proposal at list price to the two largest lenders that do not subscribe.
+LIST_PRICE = Decimal("15.00")
+# Per game: a sale the strategy decided on but could not make yet (a startup has no
+# report on sale at first), retried after each step for as long as the run lasts.
+_PENDING: dict[int, Decimal] = {}
+
+
+def _sell(game: Game, price: Decimal = LIST_PRICE) -> Game:
+    """A proposal at ``price`` to the two largest lenders that do not subscribe.
 
     Size is the lender's loans disbursed before play began: the same in every game,
-    however far the world has been lived through since.
+    however far the world has been lived through since. Until there is a report to
+    sell, the sale waits.
     """
     from apps.world.models import Loan
 
@@ -74,8 +104,13 @@ def _sell(game: Game) -> Game:
         ).count()
         for lender in prospects(game)
     }
-    for code in sorted(sizes, key=lambda c: (-sizes[c], c))[:2]:
-        controls.send_proposal(game, code, Decimal("15.00"))
+    try:
+        for code in sorted(sizes, key=lambda c: (-sizes[c], c))[:2]:
+            controls.send_proposal(game, code, price)
+    except ClockError:
+        _PENDING[game.pk] = price
+    else:
+        _PENDING.pop(game.pk, None)
     return game
 
 
@@ -84,12 +119,11 @@ def strict_quality(game: Game, month: int) -> Game:
         game = controls.set_rejection_policy(game, STANDARD)
         game = controls.set_matching_tooling(game, "ADVANCED")
         game = controls.set_matching_thresholds(game, 0.97, 0.75)
-        senior = next(
-            c
-            for c in hr.candidates_for(game, controls.this_month(game))
-            if c.job_title == "Senior Data Officer"
-        )
-        controls.hire_candidate(game, senior.number)
+        for senior in hr.candidates_for(game, controls.this_month(game)):
+            if senior.job_title == "Senior Data Officer":
+                with contextlib.suppress(ClockError):  # a startup's founder hired them already
+                    controls.hire_candidate(game, senior.number)
+                break
         game = _sell(game)
     for code in game.organization.institutions.filter(is_active=True).values_list(
         "institution_code", flat=True
@@ -122,10 +156,126 @@ def cheap_staffing(game: Game, month: int) -> Game:
     return game
 
 
+def steady(game: Game, month: int) -> Game:
+    """The starting policies and the standard sale: the base each lever is set against."""
+    return _sell(game) if month == 0 else game
+
+
+def _dates(game: Game) -> list[tuple[int, date]]:
+    """Every (window, observation date) the data allows: longest window, latest date first."""
+    return [
+        (window, date.fromisoformat(day))
+        for window in sorted(WINDOWS, reverse=True)
+        for day in reversed(observation_dates(game, window))
+    ]
+
+
+def _build(game: Game, term: str, features: list[str]) -> tuple[int, date] | None:
+    """Build and deploy a scorecard on the first window and date with enough data."""
+    for window, observation in _dates(game):
+        try:
+            model = controls.build_scorecard(game, term, observation, window, features)
+        except ClockError:
+            continue  # too little data there: an earlier date, or a shorter window
+        controls.deploy_scorecard(game, model.number)
+        return window, observation
+    return None
+
+
+def _score(game: Game, month: int, careful: bool) -> Game:
+    """Develop the score product, then build and deploy scorecards once the data allows.
+
+    Careful: a scorecard per term on its recommended features, then the composite.
+    Careless: one long-term scorecard on a single weak feature.
+    """
+    if month == 0:
+        game = _sell(game)
+        with contextlib.suppress(ClockError):
+            controls.develop_product(game, SCORE)
+    if scoring_model(game) is not None:
+        return game
+    if not careful:
+        _build(game, sd.LONG, ["facilities_ever"])
+        return game
+    built = [
+        _build(game, term, [f for f, (_, ts) in sd.FEATURES.items() if term in ts])
+        for term in sd.TERMS
+    ]
+    for window, observation in [b for b in built if b is not None][:1]:
+        with contextlib.suppress(ClockError):
+            model = controls.build_composite(game, observation, window)
+            controls.deploy_scorecard(game, model.number)
+    return game
+
+
+def score_careful(game: Game, month: int) -> Game:
+    return _score(game, month, careful=True)
+
+
+def score_careless(game: Game, month: int) -> Game:
+    return _score(game, month, careful=False)
+
+
+def compliance_diligent(game: Game, month: int) -> Game:
+    """Each month a consent sample from every subscriber; the findings dealt with as they
+    come (``_compliance_duties``, after every step)."""
+    if month == 0:
+        game = _sell(game)
+        game = controls.set_retention(game, 5)
+    last_month = controls.state(game).now.date().replace(day=1) - timedelta(days=1)
+    for code in (
+        Subscriber.objects.filter(organization=game.organization, is_active=True)
+        .order_by("subscriber_code")
+        .values_list("subscriber_code", flat=True)
+    ):
+        with contextlib.suppress(ClockError):
+            controls.sample_consent(game, code, last_month, 50)
+    _compliance_duties(game)
+    return game
+
+
+def _compliance_duties(game: Game) -> None:
+    """A warning for each subscriber found short; the access review once it is due."""
+    open_findings = ComplianceFinding.objects.filter(game=game, resolved_tick__isnull=True)
+    for code in sorted(
+        {r.split("-CHECK-")[0] for r in open_findings.filter(kind="CONSENT_MISSING")
+         .values_list("reference", flat=True)}
+    ):  # fmt: skip
+        with contextlib.suppress(ClockError):
+            controls.sanction_subscriber(game, code, "WARNING")
+    if open_findings.filter(kind="ACCESS_REVIEW_DUE").exists():
+        controls.review_access(game)
+
+
+def compliance_lax(game: Game, month: int) -> Game:
+    if month == 0:
+        game = _sell(game)
+        game = controls.set_retention(game, 7)
+    return game
+
+
+def price_high(game: Game, month: int) -> Game:
+    return _sell(game, LIST_PRICE * Decimal("1.30")) if month == 0 else game
+
+
+def price_low(game: Game, month: int) -> Game:
+    return _sell(game, LIST_PRICE * Decimal("0.75")) if month == 0 else game
+
+
+# What a strategy's heads of department do after every step, beyond ``_tend``.
+DUTIES: dict[str, Callable[[Game], None]] = {"compliance_diligent": _compliance_duties}
+
 STRATEGIES: dict[str, Strategy] = {
     "strict_quality": strict_quality,
     "fast_coverage": fast_coverage,
     "cheap_staffing": cheap_staffing,
+    "steady": steady,
+    "score_careful": score_careful,
+    "score_careless": score_careless,
+    "compliance_diligent": compliance_diligent,
+    "compliance_lax": compliance_lax,
+    "price_high": price_high,
+    "price_low": price_low,
 }
 
 
@@ -167,16 +317,70 @@ def _onboard(game: Game) -> None:
             controls.set_up_billing(game, step.onboarding.number)
 
 
-def play(world: World, strategy: str, months: int, difficulty: str = "INTERMEDIATE") -> Game:
-    game = controls.set_pause_rules(start_game(world, difficulty=difficulty), [], deadlines=False)
-    for month in range(months):
-        game = STRATEGIES[strategy](game, month)
-        current = controls.state(game).now.month
-        while controls.state(game).now.month == current and game.status != GameStatus.ENDED:
-            game = controls.advance_by(game, "next_event")
-            _onboard(game)
-        if game.status == GameStatus.ENDED:
-            break
+def _found(game: Game) -> Game:
+    """A founder's first hour (P3.13): office, IT, the report, agents, then the team."""
+    controls.rent_office(game, "SMALL")
+    controls.set_up_it(game, "STANDARD")
+    controls.develop_product(game, "CONSUMER_REPORT")
+    controls.set_support_staff(game, 1)
+    _approve_bills(game)
+    game = controls.advance_by(game, "hour")  # the month starts: this month's candidates
+    for candidate in hr.candidates_for(game, controls.this_month(game)):
+        controls.hire_candidate(game, candidate.number)
+    return game
+
+
+def _approve_bills(game: Game) -> None:
+    """The Head of Finance approves every bill left waiting for them."""
+    for number in SupplierBill.objects.filter(
+        organization=game.organization, status=BillStatus.RECEIVED
+    ).values_list("number", flat=True):
+        with contextlib.suppress(ClockError):
+            controls.approve_bill(game, number)
+
+
+def _tend(game: Game, strategy: str) -> None:
+    """What the heads of department do between the strategy's monthly decisions."""
+    _onboard(game)
+    if strategy in DUTIES:
+        DUTIES[strategy](game)
+    if game.scenario == scenarios.STARTUP:
+        _approve_bills(game)
+        if startup.systems_ready(game, controls.state(game).now.date()):
+            for lender in startup.provider_prospects(game):
+                with contextlib.suppress(ClockError):
+                    controls.onboard_provider(game, lender.code)
+    if game.pk in _PENDING:
+        _sell(game, _PENDING[game.pk])
+
+
+def play(
+    world: World,
+    strategy: str,
+    months: int,
+    difficulty: str = "INTERMEDIATE",
+    scenario: str = "ESTABLISHED",
+    history_months: int = 0,
+    settings: dict[str, Any] | None = None,
+) -> Game:
+    game = controls.set_pause_rules(
+        start_game(world, difficulty=difficulty, scenario=scenario,
+                   history_months=history_months, settings=settings),
+        [], deadlines=False,
+    )  # fmt: skip
+    if scenario == scenarios.STARTUP:
+        game = _found(game)
+    try:
+        for month in range(months):
+            game = STRATEGIES[strategy](game, month)
+            current = controls.state(game).now.month
+            while controls.state(game).now.month == current and game.status != GameStatus.ENDED:
+                game = controls.advance_by(game, "next_event")
+                _tend(game, strategy)
+            if game.status == GameStatus.ENDED:
+                break
+    finally:
+        _PENDING.pop(game.pk, None)
     return game
 
 
@@ -199,7 +403,13 @@ def outcomes(game: Game) -> dict[str, Any]:
     decided = LendingDecision.objects.filter(game=game)
     summary = health(game, now)
     reviews = list(BoardReview.objects.filter(game=game).order_by("period"))
+    model = scoring_model(game)
+    contracts = Contract.objects.filter(
+        subscriber__organization=org, product__product_code="CONSUMER_REPORT"
+    )
     return {
+        "scenario": game.scenario,
+        "difficulty": game.difficulty,
         "ended": game.ended_reason or None,
         "months": round(game.current_tick / (36 * 21.7), 1),
         # Money
@@ -209,6 +419,17 @@ def outcomes(game: Game) -> dict[str, Any]:
         "bank": float(balance(org, BANK, now.date())),
         "reports_sold": UsageRecord.objects.filter(
             organization=org, product__product_code="CONSUMER_REPORT"
+        ).aggregate(n=Sum("quantity"))["n"]
+        or 0,
+        "report_price": (
+            round(sum(float(c.unit_price) for c in contracts) / len(contracts), 2)
+            if contracts
+            else None
+        ),
+        # The score (P3.5, P3.6)
+        "score_auc": (model.results.get("truth") or {}).get("auc_against_truth") if model else None,
+        "scores_sold": UsageRecord.objects.filter(
+            organization=org, product__product_code=SCORE
         ).aggregate(n=Sum("quantity"))["n"]
         or 0,
         # Data
@@ -227,6 +448,10 @@ def outcomes(game: Game) -> dict[str, Any]:
         # Compliance
         "disputes": Dispute.objects.filter(organization=org).count(),
         "findings": RegulatorFinding.objects.filter(game=game).count(),
+        "findings_by_kind": _by_kind(RegulatorFinding.objects.filter(game=game)),
+        "compliance_findings": _by_kind(ComplianceFinding.objects.filter(game=game)),
+        "consent_checks": ConsentCheck.objects.filter(game=game).count(),
+        "improper_enquiry_rate": _share(judged.filter(grounds_held=False).count(), judged.count()),
         # People
         "staff": Employee.objects.filter(organization=org, is_active=True).count(),
         "morale": summary["parts"]["team"]["average_morale"],
@@ -235,6 +460,10 @@ def outcomes(game: Game) -> dict[str, Any]:
         "health_parts": {k: v["score"] for k, v in summary["parts"].items()},
         "board": [round(r.confidence, 1) for r in reviews],
     }
+
+
+def _by_kind(rows: Any) -> dict[str, int]:
+    return {k: n for k, n in rows.values_list("kind").annotate(n=Count("pk")).order_by("kind")}
 
 
 def _fell_behind(game: Game, as_of: date) -> float | None:
@@ -246,6 +475,7 @@ def _fell_behind(game: Game, as_of: date) -> float | None:
     return _share(behind, lent)
 
 
-def run(world: World, strategy: str, months: int, difficulty: str = "INTERMEDIATE") -> Run:
-    game = play(world, strategy, months, difficulty)
+def run(world: World, strategy: str, months: int, difficulty: str = "INTERMEDIATE",
+        scenario: str = "ESTABLISHED", history_months: int = 0) -> Run:  # fmt: skip
+    game = play(world, strategy, months, difficulty, scenario, history_months)
     return Run(strategy, world.seed, months, outcomes(game))
