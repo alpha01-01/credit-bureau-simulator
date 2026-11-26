@@ -10,7 +10,8 @@ past due within 12 months of disbursement (D13).
 
 from __future__ import annotations
 
-from collections import defaultdict
+import copy
+from collections import OrderedDict, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -18,9 +19,11 @@ from decimal import Decimal
 from typing import Any
 
 from django.db import connection
+from django.db.models import Exists, Max, Min, OuterRef
 
 from apps.bureau.core.models import AccountObservation, CreditAccount
 from apps.bureau.providers.models import Institution, InstitutionBranch
+from apps.bureau.submissions.models import Submission
 from apps.standards.submission_template import CODE_LISTS, OPEN_STATUS_CODES
 
 DEFAULT_DPD = 90  # D13: 90+ days past due ...
@@ -56,15 +59,6 @@ LEFT JOIN {_t(InstitutionBranch)} b ON b.id = ca.branch_id
 WHERE ca.organization_id = %(org)s
 """
 
-_LENDER_LATEST = f"""
-SELECT i.institution_code, MAX(o.reporting_date)
-FROM {_t(AccountObservation)} o
-JOIN {_t(CreditAccount)} ca ON ca.id = o.credit_account_id
-JOIN {_t(Institution)} i ON i.id = ca.institution_id
-WHERE ca.organization_id = %(org)s AND o.is_current AND o.reporting_date <= %(as_of)s
-GROUP BY i.institution_code
-"""
-
 _AT_DATES = f"""
 SELECT o.credit_account_id, o.reporting_date, o.outstanding_balance, o.days_past_due,
        o.facility_status
@@ -73,18 +67,15 @@ JOIN {_t(CreditAccount)} ca ON ca.id = o.credit_account_id
 WHERE ca.organization_id = %(org)s AND o.is_current AND o.reporting_date = ANY(%(dates)s)
 """
 
+# Accounts reported by the reporting date: one index probe per account (P3.15: a scan of
+# every observation took seconds at full size).
 _REPORTED = f"""
-SELECT DISTINCT o.credit_account_id
-FROM {_t(AccountObservation)} o
-JOIN {_t(CreditAccount)} ca ON ca.id = o.credit_account_id
-WHERE ca.organization_id = %(org)s AND o.is_current AND o.reporting_date <= %(as_of)s
-"""
-
-_RECORDS_START = f"""
-SELECT MIN(o.reporting_date)
-FROM {_t(AccountObservation)} o
-JOIN {_t(CreditAccount)} ca ON ca.id = o.credit_account_id
-WHERE ca.organization_id = %(org)s AND o.is_current
+SELECT ca.id
+FROM {_t(CreditAccount)} ca
+WHERE ca.organization_id = %(org)s AND EXISTS (
+    SELECT 1 FROM {_t(AccountObservation)} o
+    WHERE o.credit_account_id = ca.id AND o.is_current AND o.reporting_date <= %(as_of)s
+)
 """
 
 # The first month-end each account was reported 90+ days past due.
@@ -106,16 +97,38 @@ class Account:
     disbursed: date | None
 
 
+def _loaded(organization_id: int, as_of: date | None = None) -> Any:
+    """The bureau's submissions with records on file.
+
+    An observation's reporting date is its submission's reporting month (the pipeline
+    sets it so), so the dates the bureau holds are these submissions' periods: found
+    from a few hundred submissions rather than every observation (P3.15).
+    """
+    current = AccountObservation.objects.filter(source_submission=OuterRef("pk"), is_current=True)
+    loaded = Submission.objects.filter(organization_id=organization_id).filter(Exists(current))
+    return loaded if as_of is None else loaded.filter(reporting_period__lte=as_of)
+
+
+def reporting_bounds(organization_id: int) -> tuple[date | None, date | None]:
+    """The first and the latest reporting dates on file."""
+    found = _loaded(organization_id).aggregate(
+        first=Min("reporting_period"), last=Max("reporting_period")
+    )
+    return found["first"], found["last"]
+
+
 def latest_reporting_date(organization_id: int) -> date | None:
-    with connection.cursor() as cursor:
-        cursor.execute(
-            f"SELECT MAX(o.reporting_date) FROM {_t(AccountObservation)} o "
-            f"JOIN {_t(CreditAccount)} ca ON ca.id = o.credit_account_id "
-            "WHERE ca.organization_id = %s AND o.is_current",
-            [organization_id],
-        )
-        row = cursor.fetchone()
-    return row[0] if row else None
+    return reporting_bounds(organization_id)[1]
+
+
+def lender_latest(organization_id: int, as_of: date) -> dict[str, date]:
+    """Each lender's latest reporting date on file, up to ``as_of``."""
+    return dict(
+        _loaded(organization_id, as_of)
+        .values_list("institution__institution_code")
+        .annotate(latest=Max("reporting_period"))
+        .values_list("institution__institution_code", "latest")
+    )
 
 
 def _month_end_before(day: date) -> date:
@@ -136,11 +149,41 @@ def _empty() -> dict[str, Any]:
     return {"as_of": None, "groups": {}, "roll_rates": None, "vintages": [], "age_at_default": []}
 
 
+# Analytics computed, by (organisation, reporting date, data version): the figures change
+# only when observations or accounts are added, and at full size they take seconds to
+# compute (P3.15). Observations are never changed in place or made not current, and an
+# account changes only in a processing run, which adds observations; ids only grow. So
+# the newest observation and account ids name the data, and a hit is exactly what a new
+# computation would give.
+_CACHE: OrderedDict[tuple[int, date, int, int], dict[str, Any]] = OrderedDict()
+_CACHE_SIZE = 32
+
+
+def _version() -> tuple[int, int]:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT (SELECT MAX(id) FROM {_t(AccountObservation)}), "
+            f"(SELECT MAX(id) FROM {_t(CreditAccount)})"
+        )
+        observation, account = cursor.fetchone()
+    return observation or 0, account or 0
+
+
 def portfolio(organization_id: int, as_of: date | None = None) -> dict[str, Any]:
     """The bureau's portfolio analytics at a reporting date (by default, the latest)."""
     as_of = as_of or latest_reporting_date(organization_id)
     if as_of is None:
         return _empty()
+    key = (organization_id, as_of, *_version())
+    if key not in _CACHE:
+        _CACHE[key] = _portfolio(organization_id, as_of)
+        while len(_CACHE) > _CACHE_SIZE:
+            _CACHE.popitem(last=False)
+    _CACHE.move_to_end(key)
+    return copy.deepcopy(_CACHE[key])
+
+
+def _portfolio(organization_id: int, as_of: date) -> dict[str, Any]:
     params: dict[str, Any] = {"org": organization_id, "as_of": as_of}
     with connection.cursor() as cursor:
         cursor.execute(_ACCOUNTS, params)
@@ -150,14 +193,13 @@ def portfolio(organization_id: int, as_of: date | None = None) -> dict[str, Any]
         }
         # Each lender's latest file: lenders report at different times, so the newest month
         # across the bureau would show only the lenders that have sent it so far.
-        cursor.execute(_LENDER_LATEST, params)
-        lender_latest: dict[str, date] = dict(cursor.fetchall())
-        if not lender_latest:
+        latest = lender_latest(organization_id, as_of)
+        if not latest:
             return _empty()
-        lender_before = {code: _month_end_before(day) for code, day in lender_latest.items()}
+        lender_before = {code: _month_end_before(day) for code, day in latest.items()}
         cursor.execute(
             _AT_DATES,
-            {**params, "dates": sorted({*lender_latest.values(), *lender_before.values()})},
+            {**params, "dates": sorted({*latest.values(), *lender_before.values()})},
         )
         state: dict[tuple[int, date], tuple[Decimal, int, str]] = {
             (pk, day): (Decimal(bal), int(dpd), status)
@@ -167,14 +209,15 @@ def portfolio(organization_id: int, as_of: date | None = None) -> dict[str, Any]
         reported = {pk for (pk,) in cursor.fetchall()}
         cursor.execute(_FIRST_DEFAULT, params)
         first_default = dict(cursor.fetchall())
-        cursor.execute(_RECORDS_START, params)
-        first_report = cursor.fetchone()[0]
+    first_report = reporting_bounds(organization_id)[0]
+    if first_report is None:  # cannot be, with a lender's file on record; for the types
+        return _empty()
     records_start = first_report.replace(day=1)
 
     # The live book: accounts open in their lender's latest file.
     live: dict[int, tuple[date, Decimal, int, str]] = {}
     for pk, account in accounts.items():
-        day = lender_latest.get(account.institution)
+        day = latest.get(account.institution)
         now = state.get((pk, day)) if day else None
         if day and now and now[2] in OPEN_STATUS_CODES:
             live[pk] = (day, *now)
@@ -219,10 +262,10 @@ def portfolio(organization_id: int, as_of: date | None = None) -> dict[str, Any]
     # Roll rates: last month's arrears bucket against this month's, for accounts open then.
     matrix: dict[str, dict[str, int]] = {b: dict.fromkeys((*BUCKETS, CLOSED), 0) for b in BUCKETS}
     for pk, account in accounts.items():
-        if account.institution not in lender_latest:
+        if account.institution not in latest:
             continue
         then = state.get((pk, lender_before[account.institution]))
-        now = state.get((pk, lender_latest[account.institution]))
+        now = state.get((pk, latest[account.institution]))
         if then is None or now is None or then[2] not in OPEN_STATUS_CODES:
             continue
         to = bucket(now[1]) if now[2] in OPEN_STATUS_CODES else CLOSED
@@ -252,8 +295,8 @@ def portfolio(organization_id: int, as_of: date | None = None) -> dict[str, Any]
             band = next(b for b in AGE_BANDS if b[0] <= age <= b[1])
             ages[band] += 1
     return {
-        "as_of": max(lender_latest.values()).isoformat(),
-        "lenders_as_of": {code: day.isoformat() for code, day in sorted(lender_latest.items())},
+        "as_of": max(latest.values()).isoformat(),
+        "lenders_as_of": {code: day.isoformat() for code, day in sorted(latest.items())},
         "records_start": records_start.isoformat(),
         "default_definition": f"{DEFAULT_DPD}+ days past due within {DEFAULT_WINDOW_MONTHS} months of disbursement",
         "live_accounts": len(live),

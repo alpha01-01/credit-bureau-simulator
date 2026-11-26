@@ -18,7 +18,7 @@ from django.db.models import Max
 
 from apps.bureau.analytics import scoredata as sd
 from apps.bureau.analytics import scoremath as sm
-from apps.bureau.analytics.portfolio import latest_reporting_date
+from apps.bureau.analytics.portfolio import latest_reporting_date, reporting_bounds
 from apps.world.models import Loan
 
 from . import duties
@@ -40,23 +40,11 @@ def _seed(game: Game, number: int) -> int:
     return int(game.world.seed) * 10_000 + number
 
 
-def _first_reported(organization_id: int) -> date | None:
-    from apps.bureau.core.models import AccountObservation
-
-    first = (
-        AccountObservation.objects.filter(
-            credit_account__organization_id=organization_id, is_current=True
-        )
-        .order_by("reporting_date")
-        .values_list("reporting_date", flat=True)
-        .first()
-    )
-    return first
-
-
-def observation_dates(game: Game, window: int) -> list[str]:
+def observation_dates(
+    game: Game, window: int, bounds: tuple[date | None, date | None] | None = None
+) -> list[str]:
     """Month-ends that leave ``window`` months of outcome on file, after one month of history."""
-    first, last = _first_reported(game.organization_id), latest_reporting_date(game.organization_id)
+    first, last = bounds or reporting_bounds(game.organization_id)
     if first is None or last is None:
         return []
     days = []
@@ -68,6 +56,7 @@ def observation_dates(game: Game, window: int) -> list[str]:
 
 
 def options(game: Game) -> dict[str, Any]:
+    bounds = reporting_bounds(game.organization_id)
     return {
         "terms": [
             {"code": sd.SHORT, "label": "Short term: up to 3 months (mostly mobile loans)"},
@@ -85,7 +74,7 @@ def options(game: Game) -> dict[str, Any]:
             for n, (d, t) in sd.FEATURES.items()
         ],
         "windows": [
-            {"months": w, "observation_dates": observation_dates(game, w)} for w in WINDOWS
+            {"months": w, "observation_dates": observation_dates(game, w, bounds)} for w in WINDOWS
         ],
         "default_window": 12,
     }

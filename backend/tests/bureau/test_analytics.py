@@ -15,6 +15,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
+from apps.bureau.analytics import portfolio as pf
 from apps.bureau.analytics.portfolio import AGE_BANDS, bucket, portfolio
 from apps.bureau.core.models import AccountObservation, CreditAccount
 from apps.simulation.bridge import start_game
@@ -141,6 +142,22 @@ def test_portfolio_analytics_agree_with_the_records(game: Game) -> None:
         assert v["defaulted"] <= v["accounts"]
         if v["mature"]:
             assert v["default_rate"] == v["mature_defaulted"] / v["mature"]
+
+    # P3.15: a second look comes from the cache, and is exactly a new computation; a copy,
+    # so a caller cannot change what the next one sees. New data is a new version.
+    as_of = date.fromisoformat(result["as_of"])
+    again = portfolio(game.organization_id)
+    assert again == result == pf._portfolio(game.organization_id, as_of)
+    again["groups"].clear()
+    assert portfolio(game.organization_id) == result
+    before = pf._version()
+    account = CreditAccount.objects.filter(organization_id=game.organization_id).first()
+    assert account is not None
+    seen = AccountObservation.objects.filter(credit_account=account).first()
+    assert seen is not None
+    seen.pk, seen.is_current = None, False  # one current observation a month per account
+    seen.save()
+    assert pf._version() != before
 
 
 def test_the_analytics_screen(game: Game) -> None:
