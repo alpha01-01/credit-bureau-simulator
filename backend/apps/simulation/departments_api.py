@@ -18,7 +18,6 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from django.db.models import Count
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -26,7 +25,6 @@ from rest_framework.response import Response
 from apps.commercial.models import Contract, Subscriber
 from apps.finance.events import IT_CAPACITY_COST
 from apps.org.models import Employee
-from apps.workitems.models import ItemStatus, WorkItem
 
 from . import controls, economy, hr, it, roles, sales
 from .api import _error, _game
@@ -266,60 +264,5 @@ def it_view(request: Request, game_id: int) -> Response:
             "down": any(i["active"] for i in incidents),
             "vendor_cost": str(it.VENDOR_COST),
             "incidents": incidents,
-        }
-    )
-
-
-@api_view(["GET"])
-def office_view(request: Request, game_id: int) -> Response:
-    """What the office floor shows (P3.2, the 3D trial): who is at which desk doing what,
-    the queue on the desks, and whether the systems are down. Read only, for any role."""
-    game = _game(request, game_id)
-    org = game.organization
-    tick = game.current_tick + 1  # the tick under way, as the IT page counts it
-    working = {
-        w.assignee_id: w
-        for w in WorkItem.objects.filter(organization=org, status=ItemStatus.IN_PROGRESS)
-    }
-    staff = []
-    for e in Employee.objects.filter(organization=org).order_by("employee_number"):
-        item = working.get(e.pk)
-        if not e.is_active:
-            state = "GONE"
-        elif e.away_until_tick >= tick:
-            state = "AWAY"
-        elif item is not None:
-            state = "WORKING"
-        else:
-            state = "IDLE"
-        staff.append(
-            {
-                "number": e.employee_number,
-                "name": f"{e.first_name} {e.last_name}",
-                "job_title": e.job_title,
-                "state": state,
-                "item": item.item_number if item is not None else None,
-                "morale": e.morale,
-            }
-        )
-    open_items = WorkItem.objects.filter(organization=org, status=ItemStatus.OPEN)
-    incident = it.active_incident(game, tick)
-    return Response(
-        {
-            "staff": staff,
-            "queue": {
-                "open": open_items.count(),
-                "in_progress": len(working),
-                "by_type": {
-                    row["item_type"]: row["n"]
-                    for row in open_items.values("item_type").annotate(n=Count("pk"))
-                },
-            },
-            "systems": {
-                "down": incident is not None,
-                "detail": incident.detail if incident is not None else "",
-                "files_waiting": it.waiting(game),
-                "capacity": org.it_capacity,
-            },
         }
     )

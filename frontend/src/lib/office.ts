@@ -1,29 +1,169 @@
 /**
- * The office floor (P3.2, the 3D trial), worked out from the game's state alone.
+ * The office's floors (P4.1, from the P3.2 trial), worked out from the game's state alone.
  *
- * Pure: the 3D page only draws what this returns, so what the floor shows is
- * tested here without WebGL. Positions are in metres on the floor plan, with x to
- * the right and z towards the viewer; the camera looks from the front right.
+ * Pure: the 3D page only draws what this returns, so what each floor shows is tested
+ * here without WebGL. The server says which rooms a floor has and what is in them; the
+ * plans below say where each room stands. Positions are in metres, centred on the
+ * floor, with x to the right and z towards the viewer at the first quarter turn.
  */
 
-export type StaffState = 'WORKING' | 'IDLE' | 'AWAY' | 'GONE'
+export type StaffState = 'WORKING' | 'IDLE' | 'AWAY'
+export type RoomKind = 'DEPARTMENT' | 'FACILITY' | 'MEETING' | 'SERVERS' | 'OFFICE'
+export type PlanCode = 'GROUND' | 'FIRST' | 'SECOND' | 'SMALL' | 'STANDARD'
 
-export type OfficeData = {
+export type BuildingData = {
+  name: string
+  no_office: boolean
+  floors: {
+    code: string
+    name: string
+    level: number
+    plan: PlanCode
+    rooms: { code: string; name: string; kind: RoomKind }[]
+  }[]
+}
+
+export type FloorData = {
+  code: string
+  name: string
+  level: number
+  plan: PlanCode
+  rooms: {
+    code: string
+    name: string
+    kind: RoomKind
+    screen: string
+    summary: string
+    desks: number
+  }[]
   staff: {
     number: string
     name: string
     job_title: string
+    room: string
     state: StaffState
     item: number | null
     morale: number
   }[]
-  queue: { open: number; in_progress: number; by_type: Record<string, number> }
-  systems: { down: boolean; detail: string; files_waiting: number; capacity: string }
+  queue?: { open: number; in_progress: number; by_type: Record<string, number> }
+  systems?: {
+    installed: boolean
+    down: boolean
+    detail: string
+    files_waiting: number
+    capacity: string
+  }
+}
+
+type Point = [number, number, number]
+/** A room on the plan: its corner and size, in metres from the plan's back left corner. */
+type Rect = { x: number; z: number; w: number; d: number }
+type Plan = { size: [number, number]; rooms: Record<string, Rect> }
+
+/**
+ * Where each room stands (A-090). The established building is 24 by 16 metres a floor;
+ * the serviced office 14 by 10; the Ridge office floor 30 by 18, for its 45 desks.
+ */
+export const PLANS: Record<PlanCode, Plan> = {
+  GROUND: {
+    size: [24, 16],
+    rooms: {
+      SUPPORT: { x: 0, z: 0, w: 6, d: 10 },
+      SALES: { x: 6, z: 0, w: 6, d: 10 },
+      FINANCE: { x: 12, z: 0, w: 6, d: 10 },
+      HR: { x: 18, z: 0, w: 6, d: 10 },
+      RECEPTION: { x: 0, z: 10, w: 8, d: 6 },
+      WAITING: { x: 8, z: 10, w: 6, d: 6 },
+      CAFETERIA: { x: 14, z: 10, w: 10, d: 6 },
+    },
+  },
+  FIRST: {
+    size: [24, 16],
+    rooms: {
+      DATA_OPERATIONS: { x: 0, z: 0, w: 12, d: 16 },
+      DATA_ANALYTICS: { x: 12, z: 0, w: 6, d: 6 },
+      PRODUCT: { x: 18, z: 0, w: 6, d: 6 },
+      IT: { x: 12, z: 6, w: 12, d: 5 },
+      SERVER_ROOM: { x: 12, z: 11, w: 5, d: 5 },
+      TECH_MEETING: { x: 17, z: 11, w: 7, d: 5 },
+    },
+  },
+  SECOND: {
+    size: [24, 16],
+    rooms: {
+      CEO_OFFICE: { x: 0, z: 0, w: 8, d: 8 },
+      BOARDROOM: { x: 8, z: 0, w: 10, d: 8 },
+      EXEC_MEETING: { x: 18, z: 0, w: 6, d: 8 },
+      EXECUTIVE: { x: 0, z: 8, w: 12, d: 8 },
+      COMPLIANCE: { x: 12, z: 8, w: 12, d: 8 },
+    },
+  },
+  SMALL: {
+    size: [14, 10],
+    rooms: {
+      OPEN_PLAN: { x: 0, z: 0, w: 10, d: 10 },
+      MEETING: { x: 10, z: 0, w: 4, d: 5 },
+      SERVER_ROOM: { x: 10, z: 5, w: 4, d: 2.5 },
+      KITCHEN: { x: 10, z: 7.5, w: 4, d: 2.5 },
+    },
+  },
+  STANDARD: {
+    size: [30, 18],
+    rooms: {
+      OPEN_PLAN: { x: 0, z: 0, w: 21, d: 13 },
+      MEETING: { x: 21, z: 0, w: 9, d: 6 },
+      CEO_OFFICE: { x: 21, z: 6, w: 9, d: 6 },
+      SERVER_ROOM: { x: 21, z: 12, w: 9, d: 6 },
+      RECEPTION: { x: 0, z: 13, w: 9, d: 5 },
+      KITCHEN: { x: 9, z: 13, w: 6, d: 5 },
+    },
+  },
+}
+
+/** Low-poly palette: flat colours, the brand teal for people at work. */
+export const COLOURS = {
+  floor: '#e2e8f0',
+  wall: '#cbd5e1',
+  desk: '#a16207',
+  deskTop: '#ca8a04',
+  paper: '#f8fafc',
+  rack: '#334155',
+  rackOk: '#22c55e',
+  rackDown: '#ef4444',
+  rackOff: '#475569',
+  glass: '#bae6fd',
+  table: '#78716c',
+  working: '#0f766e',
+  idle: '#64748b',
+  skin: '#8d5524',
+  seat: '#475569',
+  screen: '#1e293b',
+} as const
+
+/** Each kind of room has its own floor tint, so the plan reads at a glance. */
+export const ROOM_TINT: Record<RoomKind, string> = {
+  DEPARTMENT: '#e2e8f0',
+  FACILITY: '#f1f5f9',
+  MEETING: '#e0f2fe',
+  SERVERS: '#cbd5e1',
+  OFFICE: '#fef3c7',
+}
+
+const DESK_SPACING_X = 2.2
+const DESK_SPACING_Z = 2.4
+/** Most sheets drawn on one desk: beyond it the pile stops growing. */
+export const MAX_PILE = 12
+
+const STATE_WORDS: Record<StaffState, string> = {
+  WORKING: 'working on an item',
+  IDLE: 'at their desk, nothing to do',
+  AWAY: 'away on a training course',
 }
 
 export type Desk = {
   key: string
-  position: [number, number, number]
+  room: string
+  position: Point
   person: {
     number: string
     name: string
@@ -38,108 +178,254 @@ export type Desk = {
   to: string
 }
 
+/** Furniture that stands for what a room is: clicking it opens the room's screen. */
+export type Fixture = {
+  key: string
+  room: string
+  kind: 'workstation' | 'table' | 'counter' | 'sofa' | 'bigdesk' | 'rack'
+  position: Point
+  label: string
+  to: string
+}
+
+export type LaidRoom = {
+  code: string
+  name: string
+  kind: RoomKind
+  /** Number shown in the keyboard help: press it to zoom to the room. */
+  index: number
+  centre: Point
+  size: [number, number]
+  tint: string
+  summary: string
+  label: string
+  to: string
+}
+
 export type Floor = {
+  code: string
+  name: string
+  size: [number, number]
+  rooms: LaidRoom[]
   desks: Desk[]
-  rack: { position: [number, number, number]; down: boolean; label: string; to: string }
-  meeting: { position: [number, number, number]; label: string; to: string }
+  fixtures: Fixture[]
+  /** The server room's lights: off before IT is set up, red while the systems are down. */
+  lights: 'ok' | 'down' | 'off'
   summary: string
 }
 
-/** Low-poly palette: flat colours, the brand teal for people at work. */
-export const COLOURS = {
-  floor: '#e2e8f0',
-  wall: '#cbd5e1',
-  desk: '#a16207',
-  deskTop: '#ca8a04',
-  paper: '#f8fafc',
-  rack: '#334155',
-  rackOk: '#22c55e',
-  rackDown: '#ef4444',
-  glass: '#bae6fd',
-  table: '#78716c',
-  working: '#0f766e',
-  idle: '#64748b',
-  skin: '#8d5524',
-} as const
-
-const DESKS_PER_ROW = 4
-const DESK_SPACING_X = 2.2
-const DESK_SPACING_Z = 2.4
-/** At least this many desks, so an empty seat shows room to hire. */
-const MIN_DESKS = 6
-/** Most sheets drawn on one desk: beyond it the pile stops growing. */
-export const MAX_PILE = 12
-
-const STATE_WORDS: Record<StaffState, string> = {
-  WORKING: 'working on an item',
-  IDLE: 'at their desk, nothing to do',
-  AWAY: 'away on a training course',
-  GONE: 'has left the bureau',
+/** Positions for ``count`` desks in rows inside a room, front to back, with a margin. */
+function deskGrid(rect: Rect, count: number): [number, number][] {
+  const cols = Math.max(1, Math.floor((rect.w - 0.8) / DESK_SPACING_X))
+  const rows = Math.max(1, Math.ceil(count / cols))
+  // Squeeze the rows together if the room is too shallow for them.
+  const dz = Math.min(DESK_SPACING_Z, (rect.d - 1.6) / rows)
+  const used = Math.min(cols, count)
+  return Array.from({ length: count }, (_, i) => {
+    const row = Math.floor(i / cols)
+    const col = i % cols
+    return [
+      rect.x + rect.w / 2 + (col - (used - 1) / 2) * DESK_SPACING_X,
+      rect.z + 1.0 + row * dz + dz / 2 - 0.4,
+    ]
+  })
 }
 
-export function layOut(data: OfficeData, gameId: number): Floor {
-  const present = data.staff.filter((s) => s.state !== 'GONE')
-  const deskCount = Math.max(MIN_DESKS, present.length)
-  const inUse = present.filter((s) => s.state !== 'AWAY').length
-  const perDesk = inUse ? Math.ceil(data.queue.open / inUse) : 0
+/** What stands in a room that has no desks of its own, by its kind. */
+const FURNITURE: Record<RoomKind, Fixture['kind'][]> = {
+  DEPARTMENT: ['workstation', 'workstation'],
+  FACILITY: ['table'],
+  MEETING: ['table'],
+  SERVERS: ['rack', 'rack'],
+  OFFICE: ['bigdesk'],
+}
+const FACILITY_FURNITURE: Record<string, Fixture['kind'][]> = {
+  RECEPTION: ['counter'],
+  WAITING: ['sofa', 'sofa'],
+  CAFETERIA: ['table', 'table', 'table'],
+  KITCHEN: ['table'],
+}
 
-  const desks: Desk[] = Array.from({ length: deskCount }, (_, i) => {
-    const row = Math.floor(i / DESKS_PER_ROW)
-    const col = i % DESKS_PER_ROW
-    const position: [number, number, number] = [
-      (col - (DESKS_PER_ROW - 1) / 2) * DESK_SPACING_X,
-      0,
-      row * DESK_SPACING_Z,
-    ]
-    const s = present[i]
-    if (!s) {
+export function layOut(data: FloorData, gameId: number): Floor {
+  const plan = PLANS[data.plan]
+  const [width, depth] = plan.size
+  const centred = (x: number, z: number): Point => [x - width / 2, 0, z - depth / 2]
+  const screen = (s: string) => `/games/${gameId}/${s}`
+
+  const rooms: LaidRoom[] = data.rooms
+    .filter((r) => plan.rooms[r.code])
+    .map((r, i) => {
+      const rect = plan.rooms[r.code]
       return {
-        key: `empty-${i}`,
-        position,
-        person: null,
-        pile: 0,
-        label: 'An empty desk: room to hire (Staff)',
-        to: `/games/${gameId}/staff`,
+        code: r.code,
+        name: r.name,
+        kind: r.kind,
+        index: i + 1,
+        centre: centred(rect.x + rect.w / 2, rect.z + rect.d / 2),
+        size: [rect.w, rect.d],
+        tint: ROOM_TINT[r.kind],
+        summary: r.summary,
+        label: `${r.name}: ${r.summary}`,
+        to: screen(r.screen),
       }
-    }
-    const seated = s.state === 'WORKING' || s.state === 'IDLE'
-    return {
-      key: s.number,
-      position,
-      person: {
-        number: s.number,
-        name: s.name,
-        jobTitle: s.job_title,
-        state: s.state,
-        seated,
-        colour: s.state === 'WORKING' ? COLOURS.working : COLOURS.idle,
-      },
-      pile: seated ? Math.min(MAX_PILE, perDesk) : 0,
-      label: `${s.name}, ${s.job_title}: ${STATE_WORDS[s.state]}`,
-      to: s.item ? `/games/${gameId}/queue/${s.item}` : `/games/${gameId}/staff`,
-    }
-  })
+    })
 
-  const away = present.filter((s) => s.state === 'AWAY').length
-  const working = present.filter((s) => s.state === 'WORKING').length
-  return {
-    desks,
-    rack: {
-      position: [5.6, 0, -1.2],
-      down: data.systems.down,
-      label: data.systems.down
-        ? `Systems down: ${data.systems.detail} (IT)`
-        : `Systems up; ${data.systems.files_waiting} file(s) waiting to process (IT)`,
-      to: `/games/${gameId}/it`,
-    },
-    meeting: {
-      position: [-6.2, 0, 1.2],
-      label: 'Meeting room: the monthly Data Quality Reviews',
-      to: `/games/${gameId}/reviews`,
-    },
-    summary:
-      `${present.length} staff: ${working} working, ${present.length - working - away} free, ` +
-      `${away} away. ${data.queue.open} item(s) waiting in the queue. ` +
-      (data.systems.down ? 'The systems are down.' : 'The systems are up.'),
+  // The queue is shared across the desks in use, as in the trial.
+  const inUse = data.staff.filter((s) => s.state !== 'AWAY').length
+  const perDesk = inUse && data.queue ? Math.ceil(data.queue.open / inUse) : 0
+
+  const desks: Desk[] = []
+  const fixtures: Fixture[] = []
+  for (const r of data.rooms) {
+    const rect = plan.rooms[r.code]
+    if (!rect) continue
+    if (r.desks > 0) {
+      const here = data.staff.filter((s) => s.room === r.code)
+      deskGrid(rect, Math.max(r.desks, here.length)).forEach(([x, z], i) => {
+        const position = centred(x, z)
+        const s = here[i]
+        if (!s) {
+          desks.push({
+            key: `${r.code}-empty-${i}`,
+            room: r.code,
+            position,
+            person: null,
+            pile: 0,
+            label: `An empty desk in ${r.name}: room to hire (Staff)`,
+            to: screen('staff'),
+          })
+          return
+        }
+        const seated = s.state !== 'AWAY'
+        desks.push({
+          key: s.number,
+          room: r.code,
+          position,
+          person: {
+            number: s.number,
+            name: s.name,
+            jobTitle: s.job_title,
+            state: s.state,
+            seated,
+            colour: s.state === 'WORKING' ? COLOURS.working : COLOURS.idle,
+          },
+          pile: seated ? Math.min(MAX_PILE, perDesk) : 0,
+          label: `${s.name}, ${s.job_title}: ${STATE_WORDS[s.state]}`,
+          to: s.item ? screen(`queue/${s.item}`) : screen('staff'),
+        })
+      })
+      continue
+    }
+    const kinds = FACILITY_FURNITURE[r.code] ?? FURNITURE[r.kind]
+    const spread = rect.w / (kinds.length + 1)
+    kinds.forEach((kind, i) => {
+      fixtures.push({
+        key: `${r.code}-${i}`,
+        room: r.code,
+        kind,
+        position: centred(rect.x + spread * (i + 1), rect.z + rect.d / 2),
+        label: `${r.name}: ${r.summary}`,
+        to: screen(r.screen),
+      })
+    })
   }
+
+  const lights = !data.systems
+    ? 'ok'
+    : !data.systems.installed
+      ? 'off'
+      : data.systems.down
+        ? 'down'
+        : 'ok'
+  const working = data.staff.filter((s) => s.state === 'WORKING').length
+  const away = data.staff.filter((s) => s.state === 'AWAY').length
+  const parts = [`${data.name}: ${rooms.length} rooms.`]
+  if (data.staff.length)
+    parts.push(
+      `${data.staff.length} staff here: ${working} working, ${data.staff.length - working - away} free, ${away} away.`,
+    )
+  if (data.queue) parts.push(`${data.queue.open} item(s) waiting in the queue.`)
+  if (data.systems)
+    parts.push(
+      !data.systems.installed
+        ? 'No systems yet.'
+        : data.systems.down
+          ? 'The systems are down.'
+          : 'The systems are up.',
+    )
+  return {
+    code: data.code,
+    name: data.name,
+    size: plan.size,
+    rooms,
+    desks,
+    fixtures,
+    lights,
+    summary: parts.join(' '),
+  }
+}
+
+// --- The view: which way it faces, and what it frames -----------------------------------
+
+/** Quarter turns: 0 looks from the front right, 1 from the back right, and so on. */
+export type Turn = 0 | 1 | 2 | 3
+
+export function turned(turn: Turn, by: 1 | -1): Turn {
+  return ((((turn + by) % 4) + 4) % 4) as Turn
+}
+
+/** The camera's bearing for a quarter turn: 0 looks from the front right. */
+export function azimuthOf(turn: Turn): number {
+  return Math.PI / 4 + (turn * Math.PI) / 2
+}
+
+/** Where the camera stands, looking at ``target`` from a bearing, at ``distance``. */
+export function cameraFrom(azimuth: number, target: Point, distance = 30): Point {
+  return [
+    target[0] + Math.sin(azimuth) * distance,
+    target[1] + distance * 0.85,
+    target[2] + Math.cos(azimuth) * distance,
+  ]
+}
+
+export function cameraAt(turn: Turn, target: Point, distance = 30): Point {
+  return cameraFrom(azimuthOf(turn), target, distance)
+}
+
+/**
+ * The orthographic zoom that fits an area of ``w`` by ``d`` metres into a canvas.
+ * From any quarter turn an isometric view of it spans about 0.71 (w + d) across and
+ * half that deep, plus the height of what stands on it and a margin around it.
+ */
+export function fitZoom(w: number, d: number, width: number, height: number): number {
+  const across = 0.71 * (w + d) * 1.08 + 4
+  const tall = 0.71 * (w + d) * 0.65 + 5
+  return Math.min(width / across, height / tall)
+}
+
+/** What the view frames: the whole floor, or one room zoomed to. */
+export function framing(
+  floor: Floor,
+  room: string | null,
+): { target: Point; size: [number, number] } {
+  const found = room ? floor.rooms.find((r) => r.code === room) : undefined
+  if (found) return { target: [found.centre[0], 0.5, found.centre[2]], size: found.size }
+  return { target: [0, 0.5, 0], size: floor.size }
+}
+
+/** The keys the office answers to, as the help line shows them. */
+export type Command =
+  | { type: 'floor'; by: 1 | -1 }
+  | { type: 'turn'; by: 1 | -1 }
+  | { type: 'room'; index: number }
+  | { type: 'whole' }
+
+export function command(key: string): Command | null {
+  if (key === 'PageUp') return { type: 'floor', by: 1 }
+  if (key === 'PageDown') return { type: 'floor', by: -1 }
+  if (key === 'ArrowLeft' || key === 'q' || key === 'Q') return { type: 'turn', by: -1 }
+  if (key === 'ArrowRight' || key === 'e' || key === 'E') return { type: 'turn', by: 1 }
+  if (key === 'Escape' || key === '0') return { type: 'whole' }
+  if (/^[1-9]$/.test(key)) return { type: 'room', index: Number(key) }
+  return null
 }

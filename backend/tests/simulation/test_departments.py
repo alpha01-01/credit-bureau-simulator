@@ -258,34 +258,3 @@ def test_department_screens(world: World) -> None:
     )
     raised = client.post(f"{base}/it/", {"action": "capacity", "level": "HIGH"}, format="json")
     assert raised.status_code == 200 and raised.json()["capacity"] == "HIGH"
-
-
-@pytest.mark.django_db(transaction=True)
-def test_the_office_shows_who_is_where_the_queue_and_the_systems(world: World) -> None:
-    """P3.2: the 3D office is drawn from this, so it must follow the game."""
-    owner = User.objects.create_user("player")
-    game = controls.set_pause_rules(start_game(world, owner=owner), [], deadlines=False)
-    client = APIClient()
-    client.force_authenticate(owner)
-    url = f"/api/v1/games/{game.pk}/office/"
-
-    calm = client.get(url).json()
-    assert [s["state"] for s in calm["staff"]] == ["IDLE"] * 3
-    assert calm["systems"]["down"] is False and calm["queue"]["open"] == 0
-
-    officer = Employee.objects.filter(organization=game.organization).order_by("pk")[1]
-    controls.train_employee(game, officer.employee_number, "MATCH_REVIEW")
-    it.start_outage(game, game.current_tick + 1, "Test outage.", lambda *a: None)
-    busy = client.get(url).json()
-    states = {s["number"]: s["state"] for s in busy["staff"]}
-    assert states[officer.employee_number] == "AWAY"
-    assert busy["systems"]["down"] is True and busy["systems"]["detail"] == "Test outage."
-
-    # Once files are processed, the queue on the desks is the work items' own count.
-    while controls.state(game).now.day < 7:
-        game = controls.advance_by(game, "next_event")
-    shown = client.get(url).json()
-    items = WorkItem.objects.filter(organization=game.organization)
-    assert shown["queue"]["open"] == items.filter(status=ItemStatus.OPEN).count()
-    assert shown["queue"]["in_progress"] == sum(s["state"] == "WORKING" for s in shown["staff"])
-    assert sum(shown["queue"]["by_type"].values()) == shown["queue"]["open"]
