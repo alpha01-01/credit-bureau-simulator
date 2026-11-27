@@ -5,7 +5,7 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import type { OfficeData } from '../lib/office'
+import type { BuildingData, FloorData } from '../lib/office'
 import { apiGet, apiPost } from './client'
 
 export type Clock = {
@@ -1157,13 +1157,23 @@ export function useAccounts(id: number, status: string | undefined) {
   })
 }
 
-// --- The office (P3.2, the 3D trial) --------------------------------------------------
+// --- The office (P4.1: the building, then the floor in view) ---------------------------
 
-/** What the office floor shows; refreshed every two seconds while the page is open. */
-export function useOffice(id: number) {
+/** The building's floors and rooms: small, and changes only when a Startup rents an office. */
+export function useBuilding(id: number) {
   return useQuery({
     queryKey: [id, 'office'],
-    queryFn: () => apiGet<OfficeData>(`${game(id)}/office/`),
+    queryFn: () => apiGet<BuildingData>(`${game(id)}/office/`),
+    refetchInterval: 15000,
+  })
+}
+
+/** What the floor in view draws; refreshed every two seconds while the page is open. */
+export function useOfficeFloor(id: number, floor: string | null) {
+  return useQuery({
+    queryKey: [id, 'office', floor],
+    queryFn: () => apiGet<FloorData>(`${game(id)}/office/${floor}/`),
+    enabled: floor !== null,
     refetchInterval: 2000,
   })
 }
