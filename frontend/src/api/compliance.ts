@@ -25,9 +25,17 @@ export type ComplianceData = {
     month: string
     size: number
     answered: boolean
+    reviewed: boolean
+    review_days_left: number
     missing: string[]
     answer_tick: number
   }[]
+  officer: {
+    busy_today: boolean
+    busy_with: string | null
+    forms_per_day: number
+    days_queued: number
+  }
   sanctions: {
     number: number
     subscriber: string
@@ -37,7 +45,7 @@ export type ComplianceData = {
     active: boolean
   }[]
   retention: { years: number; legal_years: number; choices: number[] }
-  access: { staff: number; leavers_with_access: string[] }
+  access: { review_requested: boolean; staff: number; leavers_with_access: string[] }
   findings: {
     number: number
     kind: string

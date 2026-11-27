@@ -48,7 +48,7 @@ from apps.finance.events import outstanding
 from apps.finance.ledger import BANK, REVENUE
 from apps.finance.models import Invoice, JournalEntry
 from apps.standards.calendar import is_working_day
-from apps.standards.submission_template import CODE_LISTS, OPEN_STATUS_CODES
+from apps.standards.submission_template import CODE_LISTS, OPEN_STATUS_ON_FILE
 from apps.workitems.models import ItemStatus, WorkItem
 from apps.world.models import World
 from apps.world.provider_files import play_start
@@ -285,7 +285,7 @@ def dashboard(request: Request, game_id: int) -> Response:
                     "accounts",
                     "Open accounts",
                     CreditAccount.objects.filter(
-                        organization=org, account_status__in=OPEN_STATUS_CODES
+                        organization=org, account_status__in=OPEN_STATUS_ON_FILE
                     ).count(),
                     "accounts",
                     "accounts",
@@ -567,7 +567,7 @@ def accounts(request: Request, game_id: int) -> Response:
     game = _game(request, game_id)
     rows = CreditAccount.objects.filter(organization=game.organization)
     if request.query_params.get("status") == "open":
-        rows = rows.filter(account_status__in=OPEN_STATUS_CODES)
+        rows = rows.filter(account_status__in=OPEN_STATUS_ON_FILE)
     return listed(
         [
             {

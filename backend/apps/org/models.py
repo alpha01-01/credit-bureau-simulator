@@ -75,6 +75,14 @@ class Organization(models.Model):
     support_staff = models.IntegerField(
         default=2, help_text="Contact-centre agents answering tickets (P3.10)"
     )
+    # Compliance's working day (P4.0, finding 9): one officer, one task a day.
+    access_review_requested = models.BooleanField(
+        default=False, help_text="Compliance reviews staff access on its next working day"
+    )
+    compliance_busy_on = models.DateField(
+        null=True, blank=True, help_text="The last day Compliance spent on a review"
+    )
+    compliance_busy_with = models.CharField(max_length=200, blank=True)
     # A startup's premises and systems (P3.13); an established bureau has both.
     office = models.CharField(
         max_length=10, default="STANDARD", blank=True, help_text="SMALL, STANDARD or none yet"

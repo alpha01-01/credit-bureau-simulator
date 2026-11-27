@@ -803,6 +803,9 @@ class ConsentCheck(models.Model):
     missing = models.JSONField(
         default=list, help_text="Enquiries the lender could not show consent for"
     )
+    # Compliance reads the forms that came in, a working day for each 25 (P4.0).
+    review_days_left = models.IntegerField(default=0)
+    reviewed = models.BooleanField(default=False)
 
     class Meta:
         constraints = [

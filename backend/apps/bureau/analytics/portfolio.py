@@ -24,7 +24,7 @@ from django.db.models import Exists, Max, Min, OuterRef
 from apps.bureau.core.models import AccountObservation, CreditAccount
 from apps.bureau.providers.models import Institution, InstitutionBranch
 from apps.bureau.submissions.models import Submission
-from apps.standards.submission_template import CODE_LISTS, OPEN_STATUS_CODES
+from apps.standards.submission_template import CODE_LISTS, OPEN_STATUS_ON_FILE
 
 DEFAULT_DPD = 90  # D13: 90+ days past due ...
 DEFAULT_WINDOW_MONTHS = 12  # ... within 12 months of disbursement
@@ -219,7 +219,7 @@ def _portfolio(organization_id: int, as_of: date) -> dict[str, Any]:
     for pk, account in accounts.items():
         day = latest.get(account.institution)
         now = state.get((pk, day)) if day else None
-        if day and now and now[2] in OPEN_STATUS_CODES:
+        if day and now and now[2] in OPEN_STATUS_ON_FILE:
             live[pk] = (day, *now)
     dimensions: dict[str, Callable[[Account], str]] = {
         "lender": lambda a: a.institution,
@@ -266,9 +266,9 @@ def _portfolio(organization_id: int, as_of: date) -> dict[str, Any]:
             continue
         then = state.get((pk, lender_before[account.institution]))
         now = state.get((pk, latest[account.institution]))
-        if then is None or now is None or then[2] not in OPEN_STATUS_CODES:
+        if then is None or now is None or then[2] not in OPEN_STATUS_ON_FILE:
             continue
-        to = bucket(now[1]) if now[2] in OPEN_STATUS_CODES else CLOSED
+        to = bucket(now[1]) if now[2] in OPEN_STATUS_ON_FILE else CLOSED
         matrix[bucket(then[1])][to] += 1
 
     # Vintages: the share of each quarter's accounts in default within 12 months (D13). Only

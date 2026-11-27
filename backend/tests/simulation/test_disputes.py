@@ -20,7 +20,7 @@ from apps.bureau.submissions.pipeline import process_submission
 from apps.commercial.models import Subscriber
 from apps.finance.models import JournalEntry
 from apps.org.models import Employee
-from apps.simulation import compliance, controls
+from apps.simulation import compliance, controls, duties
 from apps.simulation.bridge import deliver, start_game
 from apps.simulation.consequences import trace
 from apps.simulation.engine import advance
@@ -85,7 +85,7 @@ def _queue(world: World) -> Game:
         organization=game.organization, item_type=CaseType.REGULATORY_RETURN
     ):
         controls.resolve_item(game, item.item_number, Decision.FILE_RETURN)
-    controls.review_access(game)
+    duties.review_access(game, game.current_tick)  # done at once, not on Compliance's next day
     return game
 
 

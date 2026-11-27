@@ -33,7 +33,7 @@ from apps.bureau.core.models import (
     Enquiry,
     IndividualProfile,
 )
-from apps.standards.submission_template import OPEN_STATUS_CODES
+from apps.standards.submission_template import OPEN_STATUS_ON_FILE
 
 from . import scoremath as sm
 
@@ -231,7 +231,7 @@ def dataset(
         later[a.customer].append(a)
 
     def open_now(a: _Account) -> bool:
-        return a.last_seen == t and a.status in OPEN_STATUS_CODES
+        return a.last_seen == t and a.status in OPEN_STATUS_ON_FILE
 
     # Customers already in default at T are left out (they are not a prediction), as the
     # world's "first default" also counts only new defaults (P3.5).
@@ -270,7 +270,7 @@ def dataset(
         short = [a for a in accts if a.term == SHORT]
         opened = [a for a in accts if open_now(a)]
         closed_short = [
-            a for a in short if a.status is not None and a.status not in OPEN_STATUS_CODES
+            a for a in short if a.status is not None and a.status not in OPEN_STATUS_ON_FILE
         ]
         recent = [a.amount for a in short if a.disbursed > months_back(t, 3)]
         earlier = [a.amount for a in short if a.disbursed <= months_back(t, 3)]

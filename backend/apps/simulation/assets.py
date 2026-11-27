@@ -35,7 +35,7 @@ from apps.bureau.core.models import (
 )
 from apps.bureau.providers.models import Institution
 from apps.bureau.submissions.models import Submission
-from apps.standards.submission_template import OPEN_STATUS_CODES
+from apps.standards.submission_template import OPEN_STATUS_ON_FILE
 from apps.world.generation.persist import loan_month_partition
 from apps.world.generation.rng import stream
 from apps.world.models import Lender as WorldLender
@@ -262,7 +262,7 @@ def depth_and_freshness(game: Game, today: date) -> dict[str, Any]:
     with connection.cursor() as cursor:
         cursor.execute(
             sql,
-            {"org": game.organization_id, "today": today, "open": sorted(OPEN_STATUS_CODES)},
+            {"org": game.organization_id, "today": today, "open": sorted(OPEN_STATUS_ON_FILE)},
         )
         accounts, depth, freshness, open_accounts = cursor.fetchone()
     return {

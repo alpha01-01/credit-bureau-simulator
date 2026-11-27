@@ -13,6 +13,8 @@ from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 from typing import Any
 
+from django.db.models import Q
+
 from apps.bureau.core.models import Enquiry, IdentifierType
 from apps.bureau.providers.models import Institution
 from apps.bureau.reports.enquiries import BUSINESS_REPORT, enquire
@@ -106,6 +108,47 @@ def schedule_applications(
     return sequence
 
 
+VIEWS, APPLICATIONS, WRITES = "subscriber-views", "applications", "tick-writes"
+
+
+def prefetch_applications(
+    game: Game, payloads: list[dict[str, object]], memo: dict[Any, Any]
+) -> None:
+    """Load the tick's applications in one query (P4.0: a query each was most of a month)."""
+    keys = {
+        (str(p["lender"]), date.fromisoformat(str(p["period"])), int(str(p["seq"])))
+        for p in payloads
+    }
+    if not keys:
+        return
+    match = Q()
+    for code, period, seq in keys:
+        match |= Q(lender__code=code, period=period, seq=seq)
+    found = memo.setdefault(APPLICATIONS, {})
+    for application in (
+        LoanApplication.objects.filter(world=game.world)
+        .filter(match)
+        .select_related("lender", "person", "business")
+    ):
+        found[(application.lender.code, application.period, application.seq)] = application
+
+
+def save_views(memo: dict[Any, Any]) -> None:
+    """Save what the tick's applications wrote (P4.0: once a tick): the usage billed and
+    the judgements, which nothing reads until the tick's events are done, and the
+    subscribers' views they changed."""
+    writes: dict[type, list[Any]] = memo.pop(WRITES, {})
+    for model in (UsageRecord, EnquiryJudgement):
+        if writes.get(model):
+            model.objects.bulk_create(writes[model], batch_size=1000)
+    views = memo.pop(VIEWS, {})
+    if views:
+        SubscriberView.objects.bulk_update(
+            [views[code] for code in sorted(views)],
+            ["perceived_value", "opportunities", "enquiries", "hits", "wrong_person", "at_risk"],
+        )
+
+
 def handle_application(
     game: Game,
     payload: dict[str, object],
@@ -116,16 +159,30 @@ def handle_application(
     """One loan application: the lender may check the bureau, and judges what it gets back.
 
     ``memo`` holds lookups shared by the applications of one tick, which cannot change
-    while the tick runs.
+    while the tick runs, and the subscribers' views, which the caller saves with
+    ``save_views`` once the tick's applications are done. Without a ``memo``, the view
+    is saved here.
     """
-    memo = {} if memo is None else memo
+    if memo is None:
+        memo = {}
+        try:
+            return handle_application(game, payload, at, memo, feed)
+        finally:
+            save_views(memo)
     code = str(payload["lender"])
     period = date.fromisoformat(str(payload["period"]))
     seq = int(str(payload["seq"]))
-    application = LoanApplication.objects.select_related("person", "business").get(
-        world=game.world, lender__code=code, period=period, seq=seq
-    )
-    view = SubscriberView.objects.select_for_update().get(game=game, subscriber_code=code)
+    application = memo.get(APPLICATIONS, {}).get((code, period, seq))
+    if application is None:
+        application = LoanApplication.objects.select_related("person", "business").get(
+            world=game.world, lender__code=code, period=period, seq=seq
+        )
+    views = memo.setdefault(VIEWS, {})
+    if code not in views:
+        views[code] = SubscriberView.objects.select_for_update().get(
+            game=game, subscriber_code=code
+        )
+    view = views[code]
     key = ("subscriber", code, at.date())
     if key not in memo:
         subscriber = Subscriber.objects.get(organization=game.organization, subscriber_code=code)
@@ -150,16 +207,16 @@ def handle_application(
     blocked = ("subscriber-suspended", code, tick)
     if blocked not in memo:
         memo[blocked] = duties.subscriber_suspended(game, code, tick)
-    if compliance.suspended(game) or it.systems_down(game, tick, memo) or memo[blocked]:
+    if ("bureau-suspended", tick) not in memo:
+        memo[("bureau-suspended", tick)] = compliance.suspended(game)
+    if memo[("bureau-suspended", tick)] or it.systems_down(game, tick, memo) or memo[blocked]:
         # A suspended bureau may not serve enquiries (P2.7); nor can one whose systems
         # are down (P2.9); nor a subscriber the bureau has suspended (P3.7). The lender
         # lends without a report.
-        view.save()
         lending.decide(game, application, code, None, tick)
         return None
     rng = stream(game.world.seed, f"enquire:{code}:{period:%Y%m}:{seq}")
     if rng.random() >= p_enquire(view.perceived_value, price):
-        view.save()
         lending.decide(game, application, code, None, tick)  # lent without checking
         return None
 
@@ -188,31 +245,35 @@ def handle_application(
         name,
         at,
         include_score=with_score,
+        memo=memo,
     )
-    record_usage(enquiry, product, contract)
+    writes = memo.setdefault(WRITES, {})
+    writes.setdefault(UsageRecord, []).append(record_usage(enquiry, product, contract, save=False))
     if with_score and (enquiry.report.get("score") or {}).get("score") is not None:
         # The score is billed only when one is delivered (P3.6).
         item = scoreproduct.product(game, scoreproduct.SCORE)
         terms = scoreproduct.contract(subscriber, item, at.date())
-        UsageRecord.objects.create(
+        writes[UsageRecord].append(UsageRecord(
             organization=game.organization, subscriber=subscriber, contract=terms, enquiry=enquiry,
             product=item, quantity=1, unit_price=terms.unit_price, usage_at=at,
-        )  # fmt: skip
+        ))  # fmt: skip
 
     hit = enquiry.customer_id is not None
     correct = (
         (customer_borrower(game, enquiry.customer_id) == borrower) if enquiry.customer_id else None
     )
     outcome = "NO_HIT" if not hit else ("CORRECT_HIT" if correct else "WRONG_PERSON")
-    EnquiryJudgement.objects.create(
-        game=game,
-        enquiry=enquiry,
-        application=application,
-        should_hit=_has_reported_credit(game, borrower, period, memo),
-        hit=hit,
-        correct_person=correct,
-        outcome=outcome,
-        grounds_held=duties.grounds_held(game, code, period, seq, memo),
+    writes.setdefault(EnquiryJudgement, []).append(
+        EnquiryJudgement(
+            game=game,
+            enquiry=enquiry,
+            application=application,
+            should_hit=_has_reported_credit(game, borrower, period, memo),
+            hit=hit,
+            correct_person=correct,
+            outcome=outcome,
+            grounds_held=duties.grounds_held(game, code, period, seq, memo),
+        )
     )
     duties.retention_breach(game, enquiry, at, feed.add if feed is not None else duties.quietly)
     view.enquiries += 1
@@ -232,7 +293,6 @@ def handle_application(
         elif view.at_risk and view.perceived_value > RECOVERED:
             view.at_risk = False
             feed.subscriber_mood(subscriber.subscriber_name, at_risk=False)
-    view.save()
     return enquiry
 
 

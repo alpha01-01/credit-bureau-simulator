@@ -454,6 +454,20 @@ CLOSED_STATUS_CODES = frozenset({"C", "T", "P"})
 # Statuses of a live facility: everything not closed, written off, charged off or undrawn.
 OPEN_STATUS_CODES = frozenset({"A", "D", "E", "L", "N", "R"})
 WRITTEN_OFF_STATUS_CODES = frozenset({"W", "G"})
+
+# Phase 1's account statuses (before P2.0a), still on file in games loaded then, such as
+# games 15 and 16 (P4.0). What the bureau reads from its records counts each with the
+# status it became; validation knows only today's codes, above.
+PHASE_1_STATUS_CODES = {"AC": "A", "PD": "C", "ES": "T", "WO": "W"}
+
+
+def _on_file(codes: frozenset[str]) -> frozenset[str]:
+    return codes | {old for old, new in PHASE_1_STATUS_CODES.items() if new in codes}
+
+
+OPEN_STATUS_ON_FILE = _on_file(OPEN_STATUS_CODES)
+CLOSED_STATUS_ON_FILE = _on_file(CLOSED_STATUS_CODES)
+WRITTEN_OFF_STATUS_ON_FILE = _on_file(WRITTEN_OFF_STATUS_CODES)
 OVERDRAFT = "121"
 
 

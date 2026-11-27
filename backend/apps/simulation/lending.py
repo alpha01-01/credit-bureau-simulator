@@ -30,7 +30,7 @@ from typing import Any
 from django.db import connection, models
 
 from apps.commercial.models import Contract, Subscriber
-from apps.standards.submission_template import WRITTEN_OFF_STATUS_CODES
+from apps.standards.submission_template import WRITTEN_OFF_STATUS_ON_FILE
 from apps.world.generation.persist import loan_month_partition
 from apps.world.models import LoanApplication
 
@@ -57,7 +57,7 @@ def serious_arrears(report: dict[str, Any]) -> bool:
     for account in report.get("accounts") or report.get("facilities") or []:
         if (account.get("days_past_due") or 0) >= CURRENT_ARREARS_DAYS:
             return True
-        if account.get("status") in WRITTEN_OFF_STATUS_CODES:
+        if account.get("status") in WRITTEN_OFF_STATUS_ON_FILE:
             return True
         if (account.get("worst_days_past_due_12m") or 0) >= SERIOUS_DAYS:
             return True
