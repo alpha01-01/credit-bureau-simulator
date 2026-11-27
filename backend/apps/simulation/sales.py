@@ -476,3 +476,16 @@ def sign(
             _next_sequence(game), codes=[lender.code], since=start,
         )  # fmt: skip
     return subscriber
+
+
+def meetings_on(game: Game, day: date) -> list[str]:
+    """The lenders Sales meets on ``day``, by name (P4.2: Sales is out at the prospect)."""
+    codes = list(
+        LenderResearch.objects.filter(game=game, meeting_on=day)
+        .order_by("lender_code")
+        .values_list("lender_code", flat=True)
+    )
+    names = dict(
+        Lender.objects.filter(world=game.world, code__in=codes).values_list("code", "name")
+    )
+    return [names.get(c, c) for c in codes]

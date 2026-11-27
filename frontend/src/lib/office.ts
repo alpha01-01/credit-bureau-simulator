@@ -7,7 +7,10 @@
  * floor, with x to the right and z towards the viewer at the first quarter turn.
  */
 
-export type StaffState = 'WORKING' | 'IDLE' | 'AWAY'
+/** Where a person is, from the game's state (P4.2, A-091). */
+export type Place = 'DESK' | 'MEETING_ROOM' | 'BOARDROOM' | 'CAFETERIA' | 'OUT'
+export type Activity =
+  'WORKING' | 'FREE' | 'BREAK' | 'DATA_QUALITY_REVIEW' | 'BOARD_REVIEW' | 'TRAINING' | 'AFTER_HOURS'
 export type RoomKind = 'DEPARTMENT' | 'FACILITY' | 'MEETING' | 'SERVERS' | 'OFFICE'
 export type PlanCode = 'GROUND' | 'FIRST' | 'SECOND' | 'SMALL' | 'STANDARD'
 
@@ -36,15 +39,20 @@ export type FloorData = {
     summary: string
     desks: number
   }[]
+  /** Those with a desk on this floor (`desk`), and those in one of its rooms now (`room`). */
   staff: {
     number: string
     name: string
     job_title: string
-    room: string
-    state: StaffState
+    desk: string | null
+    room: string | null
+    place: Place
+    activity: Activity
+    doing: string
     item: number | null
     morale: number
   }[]
+  after_hours?: boolean
   queue?: { open: number; in_progress: number; by_type: Record<string, number> }
   systems?: {
     installed: boolean
@@ -135,6 +143,8 @@ export const COLOURS = {
   table: '#78716c',
   working: '#0f766e',
   idle: '#64748b',
+  meeting: '#b45309',
+  break: '#7c3aed',
   skin: '#8d5524',
   seat: '#475569',
   screen: '#1e293b',
@@ -154,10 +164,12 @@ const DESK_SPACING_Z = 2.4
 /** Most sheets drawn on one desk: beyond it the pile stops growing. */
 export const MAX_PILE = 12
 
-const STATE_WORDS: Record<StaffState, string> = {
-  WORKING: 'working on an item',
-  IDLE: 'at their desk, nothing to do',
-  AWAY: 'away on a training course',
+/** A person's colour: at work, waiting, in a meeting or on a break. */
+function colourOf(activity: Activity): string {
+  if (activity === 'WORKING') return COLOURS.working
+  if (activity === 'DATA_QUALITY_REVIEW' || activity === 'BOARD_REVIEW') return COLOURS.meeting
+  if (activity === 'BREAK') return COLOURS.break
+  return COLOURS.idle
 }
 
 export type Desk = {
@@ -168,7 +180,7 @@ export type Desk = {
     number: string
     name: string
     jobTitle: string
-    state: StaffState
+    activity: Activity
     seated: boolean
     colour: string
   } | null
@@ -187,6 +199,19 @@ export type Fixture = {
   label: string
   to: string
 }
+
+/** Someone standing in a room that is not their desk's: a meeting, the boardroom, a break. */
+export type Visitor = {
+  key: string
+  room: string
+  position: Point
+  colour: string
+  label: string
+  to: string
+}
+
+/** One line per person on the floor, for the text list: wherever they are. */
+export type Listed = { key: string; label: string; to: string }
 
 export type LaidRoom = {
   code: string
@@ -208,6 +233,8 @@ export type Floor = {
   size: [number, number]
   rooms: LaidRoom[]
   desks: Desk[]
+  visitors: Visitor[]
+  people: Listed[]
   fixtures: Fixture[]
   /** The server room's lights: off before IT is set up, red while the systems are down. */
   lights: 'ok' | 'down' | 'off'
@@ -270,8 +297,12 @@ export function layOut(data: FloorData, gameId: number): Floor {
       }
     })
 
+  const seated = (s: FloorData['staff'][number]) => s.desk !== null && s.place === 'DESK'
+  const labelOf = (s: FloorData['staff'][number]) => `${s.name}, ${s.job_title}: ${s.doing}`
+  const toOf = (s: FloorData['staff'][number]) =>
+    s.item ? screen(`queue/${s.item}`) : screen('staff')
   // The queue is shared across the desks in use, as in the trial.
-  const inUse = data.staff.filter((s) => s.state !== 'AWAY').length
+  const inUse = data.staff.filter(seated).length
   const perDesk = inUse && data.queue ? Math.ceil(data.queue.open / inUse) : 0
 
   const desks: Desk[] = []
@@ -280,7 +311,7 @@ export function layOut(data: FloorData, gameId: number): Floor {
     const rect = plan.rooms[r.code]
     if (!rect) continue
     if (r.desks > 0) {
-      const here = data.staff.filter((s) => s.room === r.code)
+      const here = data.staff.filter((s) => s.desk === r.code)
       deskGrid(rect, Math.max(r.desks, here.length)).forEach(([x, z], i) => {
         const position = centred(x, z)
         const s = here[i]
@@ -296,7 +327,7 @@ export function layOut(data: FloorData, gameId: number): Floor {
           })
           return
         }
-        const seated = s.state !== 'AWAY'
+        const sitting = seated(s)
         desks.push({
           key: s.number,
           room: r.code,
@@ -305,13 +336,13 @@ export function layOut(data: FloorData, gameId: number): Floor {
             number: s.number,
             name: s.name,
             jobTitle: s.job_title,
-            state: s.state,
-            seated,
-            colour: s.state === 'WORKING' ? COLOURS.working : COLOURS.idle,
+            activity: s.activity,
+            seated: sitting,
+            colour: colourOf(s.activity),
           },
-          pile: seated ? Math.min(MAX_PILE, perDesk) : 0,
-          label: `${s.name}, ${s.job_title}: ${STATE_WORDS[s.state]}`,
-          to: s.item ? screen(`queue/${s.item}`) : screen('staff'),
+          pile: sitting ? Math.min(MAX_PILE, perDesk) : 0,
+          label: labelOf(s),
+          to: toOf(s),
         })
       })
       continue
@@ -330,6 +361,33 @@ export function layOut(data: FloorData, gameId: number): Floor {
     })
   }
 
+  // Those gathered in a room away from their desk stand round its middle.
+  const visitors: Visitor[] = []
+  for (const r of rooms) {
+    const here = data.staff.filter((s) => s.room === r.code && s.place !== 'DESK')
+    const radius = Math.min(r.size[0], r.size[1]) / 2 - 0.7
+    here.forEach((s, i) => {
+      const angle = (2 * Math.PI * i) / here.length
+      visitors.push({
+        key: `${s.number}-in-${r.code}`,
+        room: r.code,
+        position: [
+          r.centre[0] + Math.cos(angle) * radius,
+          0,
+          r.centre[2] + Math.sin(angle) * radius,
+        ],
+        colour: colourOf(s.activity),
+        label: labelOf(s),
+        to: toOf(s),
+      })
+    })
+  }
+  const people: Listed[] = data.staff.map((s) => ({
+    key: s.number,
+    label: labelOf(s),
+    to: toOf(s),
+  }))
+
   const lights = !data.systems
     ? 'ok'
     : !data.systems.installed
@@ -337,12 +395,14 @@ export function layOut(data: FloorData, gameId: number): Floor {
       : data.systems.down
         ? 'down'
         : 'ok'
-  const working = data.staff.filter((s) => s.state === 'WORKING').length
-  const away = data.staff.filter((s) => s.state === 'AWAY').length
+  const based = data.staff.filter((s) => s.desk !== null)
+  const working = based.filter((s) => s.activity === 'WORKING').length
+  const free = based.filter((s) => s.activity === 'FREE').length
   const parts = [`${data.name}: ${rooms.length} rooms.`]
-  if (data.staff.length)
+  if (data.after_hours) parts.push('After hours: everyone has gone home.')
+  else if (based.length)
     parts.push(
-      `${data.staff.length} staff here: ${working} working, ${data.staff.length - working - away} free, ${away} away.`,
+      `${based.length} staff work here: ${working} working, ${free} free, ${based.length - working - free} away from their desks.`,
     )
   if (data.queue) parts.push(`${data.queue.open} item(s) waiting in the queue.`)
   if (data.systems)
@@ -359,6 +419,8 @@ export function layOut(data: FloorData, gameId: number): Floor {
     size: plan.size,
     rooms,
     desks,
+    visitors,
+    people,
     fixtures,
     lights,
     summary: parts.join(' '),

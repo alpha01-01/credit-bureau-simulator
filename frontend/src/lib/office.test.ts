@@ -44,8 +44,11 @@ function first(overrides: Partial<FloorData> = {}): FloorData {
         number: 'E0001',
         name: 'Ama Mensah',
         job_title: 'Senior Data Officer',
+        desk: 'DATA_OPERATIONS',
         room: 'DATA_OPERATIONS',
-        state: 'WORKING',
+        place: 'DESK',
+        activity: 'WORKING',
+        doing: 'working on an item',
         item: 41,
         morale: 0.7,
       },
@@ -53,8 +56,11 @@ function first(overrides: Partial<FloorData> = {}): FloorData {
         number: 'E0002',
         name: 'Kofi Boateng',
         job_title: 'Data Officer',
+        desk: 'DATA_OPERATIONS',
         room: 'DATA_OPERATIONS',
-        state: 'IDLE',
+        place: 'DESK',
+        activity: 'FREE',
+        doing: 'at their desk, nothing to do',
         item: null,
         morale: 0.7,
       },
@@ -62,8 +68,11 @@ function first(overrides: Partial<FloorData> = {}): FloorData {
         number: 'E0003',
         name: 'Esi Owusu',
         job_title: 'Junior Data Officer',
-        room: 'DATA_OPERATIONS',
-        state: 'AWAY',
+        desk: 'DATA_OPERATIONS',
+        room: null,
+        place: 'OUT',
+        activity: 'TRAINING',
+        doing: 'out on a training course',
         item: null,
         morale: 0.7,
       },
@@ -163,7 +172,12 @@ describe('layOut', () => {
     const floor = layOut(first(), 7)
     expect(floor.rooms.map((r) => r.index)).toEqual([1, 2, 3, 4, 5, 6])
     expect(floor.rooms[0].label).toBe('DATA_OPERATIONS: About DATA_OPERATIONS.')
-    expect(floor.summary).toMatch(/3 staff here: 1 working, 1 free, 1 away/)
+    expect(floor.summary).toMatch(/3 staff work here: 1 working, 1 free, 1 away from their desks/)
+    expect(floor.people.map((p) => p.label)).toEqual([
+      'Ama Mensah, Senior Data Officer: working on an item',
+      'Kofi Boateng, Data Officer: at their desk, nothing to do',
+      'Esi Owusu, Junior Data Officer: out on a training course',
+    ])
   })
 
   it("lays a Startup's 45 desks inside its open-plan office", () => {
@@ -182,6 +196,80 @@ describe('layOut', () => {
       expect(Math.abs(d.position[0] - open.centre[0])).toBeLessThan(open.size[0] / 2)
       expect(Math.abs(d.position[2] - open.centre[2])).toBeLessThan(open.size[1] / 2)
     }
+  })
+})
+
+describe('where people are', () => {
+  const inReview = (): FloorData => {
+    const data = first()
+    data.staff[0] = {
+      ...data.staff[0],
+      room: 'TECH_MEETING',
+      place: 'MEETING_ROOM',
+      activity: 'DATA_QUALITY_REVIEW',
+      doing: 'in the Data Quality Review',
+      item: null,
+    }
+    return data
+  }
+
+  it('stands people in the meeting room, with their desk left empty', () => {
+    const floor = layOut(inReview(), 7)
+    const desk = floor.desks.find((d) => d.person?.name === 'Ama Mensah')!
+    expect(desk.person?.seated).toBe(false)
+    expect(desk.pile).toBe(0)
+    expect(floor.visitors.map((v) => [v.room, v.label])).toEqual([
+      ['TECH_MEETING', 'Ama Mensah, Senior Data Officer: in the Data Quality Review'],
+    ])
+    const room = floor.rooms.find((r) => r.code === 'TECH_MEETING')!
+    const [x, , z] = floor.visitors[0].position
+    expect(Math.abs(x - room.centre[0])).toBeLessThan(room.size[0] / 2)
+    expect(Math.abs(z - room.centre[2])).toBeLessThan(room.size[1] / 2)
+    expect(floor.people).toHaveLength(3) // listed once, though drawn at the desk and the table
+  })
+
+  it('shows someone from another floor in this one, with no desk here', () => {
+    const data: FloorData = {
+      code: 'ground',
+      name: 'Ground floor',
+      level: 0,
+      plan: 'GROUND',
+      rooms: [room('CAFETERIA', 0, 'FACILITY'), room('SALES')],
+      staff: [
+        {
+          number: 'E0002',
+          name: 'Kofi Boateng',
+          job_title: 'Data Officer',
+          desk: null,
+          room: 'CAFETERIA',
+          place: 'CAFETERIA',
+          activity: 'BREAK',
+          doing: 'on a break',
+          item: null,
+          morale: 0.7,
+        },
+      ],
+    }
+    const floor = layOut(data, 7)
+    expect(floor.desks).toHaveLength(0)
+    expect(floor.visitors.map((v) => v.room)).toEqual(['CAFETERIA'])
+    expect(floor.summary).not.toMatch(/staff work here/)
+  })
+
+  it('empties the office after hours', () => {
+    const data = first({ after_hours: true })
+    data.staff = data.staff.map((s) => ({
+      ...s,
+      room: null,
+      place: 'OUT',
+      activity: 'AFTER_HOURS',
+      doing: 'gone home for the day',
+      item: null,
+    }))
+    const floor = layOut(data, 7)
+    expect(floor.desks.filter((d) => d.person?.seated)).toHaveLength(0)
+    expect(floor.visitors).toHaveLength(0)
+    expect(floor.summary).toMatch(/After hours/)
   })
 })
 
