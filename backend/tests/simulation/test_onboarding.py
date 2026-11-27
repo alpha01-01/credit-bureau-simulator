@@ -269,3 +269,35 @@ def test_a_counter_offer_and_a_standard_deal_handled_by_the_staff(
     copy = controls.replay(Game.objects.get(pk=game.pk), start_game(world))
     game = Game.objects.get(pk=game.pk)
     assert fingerprint(copy) == fingerprint(game), differences(copy, game)
+
+
+def test_a_day_compliance_gives_to_a_review_holds_up_the_check(
+    world: World, monkeypatch: Any
+) -> None:
+    """P4.0, balance finding 9: Compliance's officer does one thing a day (A-088)."""
+    _always(monkeypatch, accept=True)
+    monkeypatch.setattr(onboarding, "CONCERN_MISSING", 1000)  # nothing for the heads to settle
+    game = _game(world)
+    lender = sales.prospects(game)[0].code
+    controls.send_proposal(game, lender, REFERENCE_PRICE)
+    game = _days(game, sales.ANSWER_DAYS + 1)
+    o = Onboarding.objects.get(game=game)
+    check = o.steps.get(code="SUBSCRIBER_CHECK")
+    assert check.status == "READY" and check.due_on is not None
+    due = check.due_on
+
+    controls.review_access(Game.objects.get(pk=game.pk))  # done on Compliance's next day
+    game = _days(game, 1)
+    check.refresh_from_db()
+    assert check.due_on == add_working_days(due, 1)
+    assert "access review" in check.held
+    game.organization.refresh_from_db()
+    assert not game.organization.access_review_requested
+
+    game = _until(game, add_working_days(due, 2))
+    check.refresh_from_db()
+    assert check.status == "DONE" and check.done_on == add_working_days(due, 1)
+
+    copy = controls.replay(Game.objects.get(pk=game.pk), start_game(world))
+    game = Game.objects.get(pk=game.pk)
+    assert fingerprint(copy) == fingerprint(game), differences(copy, game)

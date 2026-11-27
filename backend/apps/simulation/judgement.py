@@ -1,3 +1,4 @@
+# ruff: noqa: S608  (SQL is built from model table names only, never from input)
 """Turning bureau review cases into work items, with the answer key (roadmap S5).
 
 Only the simulation may do this: the correct answer comes from the world.
@@ -15,8 +16,10 @@ from decimal import Decimal
 from functools import lru_cache
 
 import numpy as np
+from django.db import connection
 
 from apps.bureau.core.models import ProviderCustomerLink
+from apps.bureau.providers.models import Institution
 from apps.bureau.quality.disputes import latest_record
 from apps.bureau.quality.models import CaseType, CorrectionRecord, Decision, ReviewCase
 from apps.org.models import Employee
@@ -211,12 +214,20 @@ def first_link(customer_id: int) -> ProviderCustomerLink | None:
     the links on a customer now are not always the ones it had. The links it lost are
     named by its corrections; the first of all of them, by id, never changes (P3.3).
     """
-    ids = set(
-        ProviderCustomerLink.objects.filter(customer_id=customer_id).values_list("pk", flat=True)
+    links = list(
+        ProviderCustomerLink.objects.filter(customer_id=customer_id)
+        .select_related("institution")
+        .order_by("pk")
     )
-    for correction in CorrectionRecord.objects.filter(from_customer_id=customer_id).select_related(
-        "credit_account"
-    ):
+    corrections = list(
+        CorrectionRecord.objects.filter(from_customer_id=customer_id).select_related(
+            "credit_account"
+        )
+    )
+    if not corrections:  # the usual case: the links it has are all it ever had (P4.0)
+        return links[0] if links else None
+    ids = {link.pk for link in links}
+    for correction in corrections:
         record = latest_record(correction.credit_account)
         if record is None:
             continue
@@ -233,9 +244,39 @@ def first_link(customer_id: int) -> ProviderCustomerLink | None:
     )
 
 
+# The usual case in one query (P4.0): the borrower behind a customer's first link, and
+# whether the customer ever lost a link to a correction (then ``first_link`` decides).
+_FIRST_BORROWER = f"""
+SELECT
+    EXISTS (SELECT 1 FROM {CorrectionRecord._meta.db_table} c
+            WHERE c.from_customer_id = %(customer)s),
+    (SELECT lc.person_id FROM {LenderCustomer._meta.db_table} lc
+     JOIN {Lender._meta.db_table} wl ON wl.id = lc.lender_id
+     WHERE lc.world_id = %(world)s AND wl.code = i.institution_code
+       AND lc.customer_number = pcl.provider_customer_number),
+    (SELECT lc.business_id FROM {LenderCustomer._meta.db_table} lc
+     JOIN {Lender._meta.db_table} wl ON wl.id = lc.lender_id
+     WHERE lc.world_id = %(world)s AND wl.code = i.institution_code
+       AND lc.customer_number = pcl.provider_customer_number)
+FROM {ProviderCustomerLink._meta.db_table} pcl
+JOIN {Institution._meta.db_table} i ON i.id = pcl.institution_id
+WHERE pcl.customer_id = %(customer)s
+ORDER BY pcl.id
+LIMIT 1
+"""
+
+
 # A customer's first provider link never changes, so neither does its answer (P2.1).
 @lru_cache(maxsize=1 << 17)
 def _customer_borrower(world_id: int, customer_id: int) -> Borrower:
+    with connection.cursor() as cursor:
+        cursor.execute(_FIRST_BORROWER, {"world": world_id, "customer": customer_id})
+        row = cursor.fetchone()
+    if row is not None and not row[0]:  # no corrections: the first link it has is its first
+        if row[1] is not None:
+            return ("person", int(row[1]))
+        if row[2] is not None:
+            return ("business", int(row[2]))
     link = first_link(customer_id)
     if link is None:
         raise LookupError(f"Bureau customer {customer_id} has no provider link")

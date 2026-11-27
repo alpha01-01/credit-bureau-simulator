@@ -26,12 +26,16 @@ def active_contract(subscriber_id: int, product: Product, on: object) -> Contrac
 
 
 def record_usage(
-    enquiry: Enquiry, product: Product | None = None, contract: Contract | None = None
+    enquiry: Enquiry,
+    product: Product | None = None,
+    contract: Contract | None = None,
+    save: bool = True,
 ) -> UsageRecord:
     """One billable unit per enquiry, priced by the subscriber's contract.
 
     A caller that has already looked up the product and the contract in force
-    may pass them in.
+    may pass them in. With ``save=False`` the record is returned unsaved, for a caller
+    that saves many at once (P4.0: the simulation's tick).
     """
     if product is None:
         product = Product.objects.get(
@@ -39,7 +43,7 @@ def record_usage(
         )
     if contract is None:
         contract = active_contract(enquiry.subscriber_id, product, enquiry.enquired_at.date())
-    return UsageRecord.objects.create(
+    record = UsageRecord(
         organization_id=enquiry.organization_id,
         subscriber_id=enquiry.subscriber_id,
         contract=contract,
@@ -49,3 +53,6 @@ def record_usage(
         unit_price=contract.unit_price,
         usage_at=enquiry.enquired_at,
     )
+    if save:
+        record.save()
+    return record

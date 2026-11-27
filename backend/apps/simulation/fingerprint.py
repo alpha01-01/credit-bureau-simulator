@@ -524,7 +524,7 @@ def _fingerprint(game: Game) -> _Hasher:
             *ConsentCheck.objects.filter(game=game)
             .order_by("number")
             .values_list("number", "subscriber_code", "month", "sample", "requested_tick",
-                         "answer_tick", "answered", "missing"),
+                         "answer_tick", "answered", "missing", "review_days_left", "reviewed"),
             *Sanction.objects.filter(game=game)
             .order_by("number")
             .values_list("number", "subscriber_code", "kind", "tick", "until_tick"),

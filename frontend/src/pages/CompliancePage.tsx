@@ -130,7 +130,15 @@ export function CompliancePage() {
       <Card title="Consent: sample a subscriber's enquiries">
         <p className="mb-2 text-sm text-slate-600">
           Ask a lender for the signed application forms behind some of its enquiries. It answers in
-          three working days; forms it cannot send are a finding.
+          three working days. Compliance then reads them, {d.officer.forms_per_day} forms a working
+          day; forms the lender could not send are a finding.
+        </p>
+        <p className="mb-2 text-sm" data-testid="compliance-day">
+          {d.officer.busy_today
+            ? `Today Compliance is on ${d.officer.busy_with}. `
+            : 'Compliance is free today for the checks on new subscribers. '}
+          {d.officer.days_queued > 0 &&
+            `${d.officer.days_queued} working day${d.officer.days_queued === 1 ? '' : 's'} of reviews queued: each holds up the checks on new subscribers by a day.`}
         </p>
         <form
           className="flex flex-wrap items-end gap-3 text-sm"
@@ -197,6 +205,11 @@ export function CompliancePage() {
                   <Td>
                     {!c.answered ? (
                       <Badge tone="neutral">awaited</Badge>
+                    ) : !c.reviewed ? (
+                      <Badge tone="neutral">
+                        forms in; {c.review_days_left} day{c.review_days_left === 1 ? '' : 's'} to
+                        read
+                      </Badge>
                     ) : c.missing.length === 0 ? (
                       <Badge tone="good">all shown</Badge>
                     ) : (
@@ -204,7 +217,7 @@ export function CompliancePage() {
                     )}
                   </Td>
                   <Td>
-                    {c.answered && c.missing.length > 0 && (
+                    {c.reviewed && c.missing.length > 0 && (
                       <span className="flex gap-2">
                         {(['WARNING', 'SUSPENSION'] as const).map((kind) => (
                           <button
@@ -279,13 +292,15 @@ export function CompliancePage() {
           </p>
           <button
             type="button"
-            disabled={act.isPending}
+            disabled={act.isPending || d.access.review_requested}
             onClick={() => act.mutate({ action: 'access_review' })}
             className={`mt-2 ${BUTTON}`}
           >
-            Review access now
+            {d.access.review_requested ? 'Review asked for' : 'Review access'}
           </button>
-          <p className="mt-2 text-xs text-slate-500">Due each quarter.</p>
+          <p className="mt-2 text-xs text-slate-500">
+            Due each quarter. Compliance does it on its next working day, before anything else.
+          </p>
         </Card>
       </div>
 

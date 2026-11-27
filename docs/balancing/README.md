@@ -144,14 +144,14 @@ six months without an error or a failure ending.
 8. **Difficulty works in every scenario.** The same strategy ends with more cash and
    a smaller loss at Beginner than at Expert, in a Startup and in a Sandbox whose
    starting cash is the same at both (there, from supplier prices alone).
-9. **Open: diligent compliance costs nothing.** It dominates laxity: the same money,
+9. **Decided (P4.0, A-088): diligent compliance costs nothing.** It dominates laxity: the same money,
    better health. A consent check and a warning take none of Compliance's time and
    no subscriber minds them. Options for the owner: a consent check as a work item for
    Compliance (time a team must find), a warned subscriber's goodwill falling a little,
    or both. A retention period beyond the law (7 years) brought no breach in six
    months of a small world, whose history is a year long; the default world's three
    years of history should show it (not yet run).
-10. **Open: the score does not pay for itself within six months of a small world**
+10. **Decided (P4.0, A-089): the score does not pay for itself within six months of a small world**
     (GHS 3,165 of score sales against GHS 120,000 to develop it). On the default
     world, with about ten times the enquiries, it would take roughly two years at
     this uptake; the development cost or the score's price may want tuning (R8
@@ -163,3 +163,37 @@ six months without an error or a failure ending.
 12. **Every scenario loses money on a small world** (finding 1 still holds): 2,000
     people cannot pay for an Accra office. The default world is where profit is
     possible; the full-size performance run (below) plays it.
+
+## P4.0: month speed and findings 9 and 10
+
+**Month speed** (`manage.py perf --months 1`, default world seed 44, 12 months of history,
+run back to back on 26 November 2026 on the code before and after P4.0, each from a
+fresh game after a `VACUUM ANALYZE`):
+
+| | Setup | First month | Revenue | Reports | Health |
+| --- | --- | --- | --- | --- | --- |
+| Before P4.0 | 354 s | 341 s | GHS 50,880 | 2,919 | 83.2 |
+| After P4.0 | 250 s | 247 s | GHS 50,880 | 2,919 | 83.2 |
+
+The month is 28% faster, with the same outcomes (`perf-p4.0-before.json`,
+`perf-p4.0-after.json`). The machine was slower that day than when P3.15 measured 252 s
+(setup took 354 s against 240 s), so on P3.15's footing the month would take about
+252 x 247 / 341 = 183 s. Where it went: a loan application went from about 20 queries
+to 10 (the tick's lookups made once, its usage and judgements written once, the
+borrower and the consequence trace in one query each, cheques and judgments looked up
+only for customers that have any), 34.8 ms to 23.7 ms each on the same 500 applications,
+with byte-identical reports, judgements, usage and subscriber views; and the missions
+are no longer checked each tick while their questions wait for an answer.
+
+**Finding 9** (A-088): Compliance's officer now gives each working day to one task; a
+day spent reading consent forms or reviewing access holds the checks on new
+subscribers back a day. **Finding 10** (A-089): a score's uptake rises faster the better
+it is; on the default world the score sells with some 4,800 reports a month, so the
+"two years" estimate above was a small world's.
+
+
+**Score payback** (`runs-p4.0-score.jsonl`, `score_careful`, default world seed 44, 12
+months of history, 11.4 months played): 27,386 scores sold, which at GHS 5 a score is
+GHS 136,930 against the GHS 120,000 development cost, so the validated score now pays
+for itself within the year. Its AUC was 0.78. The 5 access-review findings come from
+the strategy, which never reviews access; P3.15's shorter run showed 3 of the same.

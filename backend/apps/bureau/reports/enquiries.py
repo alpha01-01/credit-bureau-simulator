@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Max
 
 from apps.bureau.core.models import (
@@ -35,10 +35,10 @@ from apps.org.models import Organization
 from apps.standards.compliance_rules import LEGAL_RETENTION_YEARS
 from apps.standards.enquiry import PURPOSES
 from apps.standards.submission_template import (
-    CLOSED_STATUS_CODES,
+    CLOSED_STATUS_ON_FILE,
     CODE_LISTS,
-    OPEN_STATUS_CODES,
-    WRITTEN_OFF_STATUS_CODES,
+    OPEN_STATUS_ON_FILE,
+    WRITTEN_OFF_STATUS_ON_FILE,
 )
 
 REPORT_LAYOUT = "SIMB-R1"  # R1 adds dishonoured cheques and judgments (P2.0c)
@@ -62,8 +62,13 @@ def enquire(
     subject_name: str,
     at: datetime,
     include_score: bool = False,
+    memo: dict[Any, Any] | None = None,
 ) -> Enquiry:
-    """Search for a subject and log the enquiry, with the report delivered on a hit."""
+    """Search for a subject and log the enquiry, with the report delivered on a hit.
+
+    ``memo`` carries lookups a caller knows cannot change meanwhile (P4.0: the
+    simulation's tick), see ``build_report``.
+    """
     if purpose not in PURPOSES:
         raise EnquiryError(f"{purpose!r} is not a permissible purpose")
     if not consent_reference:
@@ -83,7 +88,7 @@ def enquire(
         if customer is not None and product_code == BUSINESS_REPORT:
             report = build_business_report(customer, at)
         elif customer is not None:
-            report = build_report(customer, at, include_score)
+            report = build_report(customer, at, include_score, memo)
         seq = organization.allocate("last_enquiry_seq")
         return Enquiry.objects.create(
             organization=organization,
@@ -103,9 +108,25 @@ def enquire(
         )
 
 
-def build_report(customer: Customer, at: datetime, include_score: bool = False) -> dict[str, Any]:
+# Keys in a caller's memo (P4.0): the bureau's retention period, and the accounts under
+# an open dispute. A caller that files a dispute or changes the retention period while
+# the memo lives drops the key.
+RETENTION, DISPUTED, HOLDERS = "retention-years", "disputed-accounts", "cheque-holders"
+
+
+def build_report(
+    customer: Customer,
+    at: datetime,
+    include_score: bool = False,
+    memo: dict[Any, Any] | None = None,
+) -> dict[str, Any]:
+    memo = {} if memo is None else memo
     as_of = at.date()
-    accounts, held_too_long = _retained(customer, as_of)
+    if RETENTION not in memo:
+        memo[RETENTION] = Organization.objects.values_list("retention_years", flat=True).get(
+            pk=customer.organization_id
+        )
+    accounts, held_too_long = _retained(customer, as_of, memo[RETENTION])
     since = (as_of.replace(day=1) - timedelta(days=HISTORY_MONTHS * 31)).replace(day=1)
     history: dict[int, list[AccountObservation]] = defaultdict(list)
     for obs in AccountObservation.objects.filter(
@@ -116,7 +137,9 @@ def build_report(customer: Customer, at: datetime, include_score: bool = False) 
 
     rows: list[dict[str, Any]] = []
     states: list[tuple[str, Decimal | None, int | None]] = []  # status, balance, days past due
-    disputed = disputed_accounts(customer.organization_id)  # flagged while open (P2.7)
+    if DISPUTED not in memo:
+        memo[DISPUTED] = disputed_accounts(customer.organization_id)
+    disputed = memo[DISPUTED]  # flagged while open (P2.7)
     for account in accounts:
         observations = history.get(account.pk, [])
         latest = observations[-1] if observations else None
@@ -155,12 +178,14 @@ def build_report(customer: Customer, at: datetime, include_score: bool = False) 
             }
         )
 
-    open_states = [st for st in states if st[0] in OPEN_STATUS_CODES]
+    open_states = [st for st in states if st[0] in OPEN_STATUS_ON_FILE]
     total = sum((st[1] for st in open_states if st[1] is not None), Decimal("0"))
     previous_enquiries = Enquiry.objects.filter(
         customer=customer, enquired_at__gte=at - timedelta(days=365), enquired_at__lt=at
     ).count()
-    cheques, judgments = cheques_on_file(customer, as_of), judgments_on_file(customer, as_of)
+    cheques_held, judgments_held = _holders(customer.organization_id, memo)
+    cheques = cheques_on_file(customer, as_of) if customer.pk in cheques_held else []
+    judgments = judgments_on_file(customer, as_of) if customer.pk in judgments_held else []
     score = _score(customer) if include_score else None
     return {
         "layout": REPORT_LAYOUT,
@@ -171,7 +196,7 @@ def build_report(customer: Customer, at: datetime, include_score: bool = False) 
             "open_accounts": len(open_states),
             "total_outstanding": str(total),
             "accounts_in_arrears": sum(1 for st in open_states if (st[2] or 0) > 0),
-            "written_off": sum(1 for st in states if st[0] in WRITTEN_OFF_STATUS_CODES),
+            "written_off": sum(1 for st in states if st[0] in WRITTEN_OFF_STATUS_ON_FILE),
             "enquiries_last_12_months": previous_enquiries,
             "dishonoured_cheques": len(cheques),
             "judgments": len(judgments),
@@ -204,6 +229,45 @@ def build_business_report(customer: Customer, at: datetime) -> dict[str, Any]:
         }
     report["facilities"] = report.pop("accounts")
     return report
+
+
+# The customers with any dishonoured cheque or court judgment on file, for each bureau,
+# with the (row count, latest id) of each table they were read at (P4.0: most customers
+# have neither, and asking for each customer's was two queries a report). Only the
+# pipeline adds these rows and nothing moves them, so the sets hold until either changes.
+_HOLDERS: dict[int, tuple[tuple[int, ...], frozenset[int], frozenset[int]]] = {}
+_VERSION = f"""
+SELECT (SELECT COUNT(*) FROM {DishonouredCheque._meta.db_table} WHERE organization_id = %(org)s),
+       (SELECT MAX(id) FROM {DishonouredCheque._meta.db_table} WHERE organization_id = %(org)s),
+       (SELECT COUNT(*) FROM {CourtJudgment._meta.db_table} WHERE organization_id = %(org)s),
+       (SELECT MAX(id) FROM {CourtJudgment._meta.db_table} WHERE organization_id = %(org)s)
+"""  # noqa: S608 - table names only
+
+
+def _holders(organization_id: int, memo: dict[Any, Any]) -> tuple[frozenset[int], frozenset[int]]:
+    if HOLDERS not in memo:
+        with connection.cursor() as cursor:
+            cursor.execute(_VERSION, {"org": organization_id})
+            version = tuple(int(v or 0) for v in cursor.fetchone())
+        cached = _HOLDERS.get(organization_id)
+        if cached is None or cached[0] != version:
+            cached = (
+                version,
+                frozenset(
+                    DishonouredCheque.objects.filter(organization_id=organization_id)
+                    .values_list("customer_id", flat=True)
+                    .distinct()
+                ),
+                frozenset(
+                    CourtJudgment.objects.filter(organization_id=organization_id)
+                    .values_list("customer_id", flat=True)
+                    .distinct()
+                ),
+            )
+            _HOLDERS[organization_id] = cached
+        memo[HOLDERS] = (cached[1], cached[2])
+    holders: tuple[frozenset[int], frozenset[int]] = memo[HOLDERS]
+    return holders
 
 
 def cheques_on_file(customer: Customer, as_of: date) -> list[dict[str, Any]]:
@@ -285,15 +349,12 @@ def years_before(day: date, years: int) -> date:
         return day.replace(year=day.year - years, day=28)
 
 
-def _retained(customer: Customer, as_of: date) -> tuple[list[CreditAccount], int]:
+def _retained(customer: Customer, as_of: date, keep: int) -> tuple[list[CreditAccount], int]:
     """The customer's accounts a report may show (rule RETENTION, P3.7).
 
-    A closed account goes once the bureau's retention period has passed since it was
-    last reported. Also counts those shown although past the legal limit.
+    A closed account goes once the bureau's retention period (``keep`` years) has passed
+    since it was last reported. Also counts those shown although past the legal limit.
     """
-    keep = Organization.objects.values_list("retention_years", flat=True).get(
-        pk=customer.organization_id
-    )
     drop_before, legal_before = (
         years_before(as_of, keep),
         years_before(as_of, LEGAL_RETENTION_YEARS),
@@ -306,7 +367,9 @@ def _retained(customer: Customer, as_of: date) -> tuple[list[CreditAccount], int
         .annotate(last_reported=Max("observations__reporting_date"))
         .order_by("institution__institution_code", "facility_account_number")
     ):
-        closed_on = account.last_reported if account.account_status in CLOSED_STATUS_CODES else None
+        closed_on = (
+            account.last_reported if account.account_status in CLOSED_STATUS_ON_FILE else None
+        )
         if closed_on is not None and closed_on < drop_before:
             continue
         if closed_on is not None and closed_on < legal_before:

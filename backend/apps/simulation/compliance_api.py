@@ -122,7 +122,10 @@ def overview(game: Game) -> dict[str, Any]:
                 "month": c.month,
                 "size": len(c.sample),
                 "answered": c.answered,
-                "missing": c.missing,
+                "reviewed": c.reviewed,
+                "review_days_left": c.review_days_left,
+                # The bureau knows which forms are missing once Compliance has read them.
+                "missing": c.missing if c.reviewed else [],
                 "answer_tick": c.answer_tick,
             }
             for c in game.consent_checks.order_by("-number")[:30]
@@ -143,7 +146,18 @@ def overview(game: Game) -> dict[str, Any]:
             "legal_years": LEGAL_RETENTION_YEARS,
             "choices": list(duties.RETENTION_CHOICES),
         },
+        "officer": {  # Compliance's working day (P4.0)
+            "busy_today": org.compliance_busy_on == today,
+            "busy_with": org.compliance_busy_with or None,
+            "forms_per_day": duties.FORMS_PER_DAY,
+            "days_queued": sum(
+                c.review_days_left
+                for c in game.consent_checks.filter(answered=True, reviewed=False)
+            )
+            + int(org.access_review_requested),
+        },
         "access": {
+            "review_requested": org.access_review_requested,
             "staff": Employee.objects.filter(organization=org, has_system_access=True).count(),
             "leavers_with_access": [
                 f"{e.first_name} {e.last_name} ({e.job_title})"

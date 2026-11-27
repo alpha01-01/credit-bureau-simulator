@@ -1,0 +1,281 @@
+{
+ "seed": 44,
+ "size": "default",
+ "world": 22,
+ "world_seconds": 0,
+ "game": 194,
+ "setup_seconds": 250,
+ "months": [
+  {
+   "month": 0,
+   "seconds": 247.1,
+   "steps": 635
+  }
+ ],
+ "outcomes": {
+  "scenario": "ESTABLISHED",
+  "difficulty": "INTERMEDIATE",
+  "ended": null,
+  "months": 0.9,
+  "revenue": 50880.0,
+  "expenses": 217456.0,
+  "net_profit": -166576.0,
+  "bank": 1781027.87,
+  "reports_sold": 2919,
+  "report_price": 15.0,
+  "score_auc": 0.7828,
+  "scores_sold": 0,
+  "accuracy_true": 0.9952,
+  "false_merge_rate": 0.0002,
+  "false_split_rate": 0.0017,
+  "coverage": 0.9176,
+  "freshness_days": 29,
+  "enquiries": 2919,
+  "hit_rate": 0.8506,
+  "wrong_person_rate": 0.0,
+  "subscribers": 4,
+  "loans_fell_behind": 0.0,
+  "checked_share": 0.9079,
+  "disputes": 9,
+  "findings": 0,
+  "findings_by_kind": {},
+  "compliance_findings": {
+   "ACCESS_REVIEW_DUE": 1
+  },
+  "consent_checks": 0,
+  "improper_enquiry_rate": 0.0247,
+  "staff": 3,
+  "morale": 0.706,
+  "health": 83.2,
+  "health_parts": {
+   "financial": 70.0,
+   "data_quality": 96.0,
+   "reputation": 88.3,
+   "compliance": 100.0,
+   "team": 70.6
+  },
+  "board": []
+ },
+ "screens": {
+  "game": {
+   "status": 200,
+   "slowest_ms": 30,
+   "median_ms": 11
+  },
+  "dashboard/": {
+   "status": 200,
+   "slowest_ms": 185,
+   "median_ms": 91
+  },
+  "briefing/": {
+   "status": 200,
+   "slowest_ms": 57,
+   "median_ms": 32
+  },
+  "submissions/": {
+   "status": 200,
+   "slowest_ms": 56,
+   "median_ms": 54
+  },
+  "customers/": {
+   "status": 200,
+   "slowest_ms": 12,
+   "median_ms": 11
+  },
+  "accounts/": {
+   "status": 200,
+   "slowest_ms": 421,
+   "median_ms": 408
+  },
+  "ledger/": {
+   "status": 200,
+   "slowest_ms": 11,
+   "median_ms": 11
+  },
+  "invoices/": {
+   "status": 200,
+   "slowest_ms": 131,
+   "median_ms": 10
+  },
+  "clock/": {
+   "status": 200,
+   "slowest_ms": 11,
+   "median_ms": 11
+  },
+  "feed/": {
+   "status": 200,
+   "slowest_ms": 8,
+   "median_ms": 6
+  },
+  "data-assets/": {
+   "status": 200,
+   "slowest_ms": 10,
+   "median_ms": 9
+  },
+  "reviews/": {
+   "status": 200,
+   "slowest_ms": 8,
+   "median_ms": 7
+  },
+  "work-items/": {
+   "status": 200,
+   "slowest_ms": 16,
+   "median_ms": 15
+  },
+  "employees/": {
+   "status": 200,
+   "slowest_ms": 6,
+   "median_ms": 5
+  },
+  "rejection-policy/": {
+   "status": 200,
+   "slowest_ms": 4,
+   "median_ms": 4
+  },
+  "matching-policy/": {
+   "status": 200,
+   "slowest_ms": 5,
+   "median_ms": 4
+  },
+  "rules/": {
+   "status": 200,
+   "slowest_ms": 7,
+   "median_ms": 7
+  },
+  "providers/": {
+   "status": 200,
+   "slowest_ms": 50,
+   "median_ms": 49
+  },
+  "disputes/": {
+   "status": 200,
+   "slowest_ms": 23,
+   "median_ms": 20
+  },
+  "market/": {
+   "status": 200,
+   "slowest_ms": 50,
+   "median_ms": 49
+  },
+  "staff/": {
+   "status": 200,
+   "slowest_ms": 8,
+   "median_ms": 7
+  },
+  "sales/": {
+   "status": 200,
+   "slowest_ms": 31,
+   "median_ms": 31
+  },
+  "onboarding/": {
+   "status": 200,
+   "slowest_ms": 14,
+   "median_ms": 14
+  },
+  "support/": {
+   "status": 200,
+   "slowest_ms": 16,
+   "median_ms": 16
+  },
+  "products/": {
+   "status": 200,
+   "slowest_ms": 18,
+   "median_ms": 16
+  },
+  "batches/": {
+   "status": 200,
+   "slowest_ms": 6,
+   "median_ms": 6
+  },
+  "economy/": {
+   "status": 200,
+   "slowest_ms": 17,
+   "median_ms": 15
+  },
+  "startup/": {
+   "status": 200,
+   "slowest_ms": 21,
+   "median_ms": 21
+  },
+  "it/": {
+   "status": 200,
+   "slowest_ms": 6,
+   "median_ms": 6
+  },
+  "health/": {
+   "status": 200,
+   "slowest_ms": 42,
+   "median_ms": 42
+  },
+  "missions/": {
+   "status": 200,
+   "slowest_ms": 16,
+   "median_ms": 13
+  },
+  "assistance/": {
+   "status": 200,
+   "slowest_ms": 5,
+   "median_ms": 4
+  },
+  "role/": {
+   "status": 200,
+   "slowest_ms": 11,
+   "median_ms": 11
+  },
+  "office/": {
+   "status": 200,
+   "slowest_ms": 9,
+   "median_ms": 9
+  },
+  "analytics/": {
+   "status": 200,
+   "slowest_ms": 2053,
+   "median_ms": 8
+  },
+  "scorecards/": {
+   "status": 200,
+   "slowest_ms": 12,
+   "median_ms": 11
+  },
+  "compliance/": {
+   "status": 200,
+   "slowest_ms": 29,
+   "median_ms": 29
+  },
+  "handbook/": {
+   "status": 200,
+   "slowest_ms": 6,
+   "median_ms": 5
+  },
+  "enquiries/": {
+   "status": 200,
+   "slowest_ms": 205,
+   "median_ms": 97
+  },
+  "finance/": {
+   "status": 200,
+   "slowest_ms": 25,
+   "median_ms": 23
+  },
+  "finance/bills/": {
+   "status": 200,
+   "slowest_ms": 12,
+   "median_ms": 11
+  },
+  "finance/bank/": {
+   "status": 200,
+   "slowest_ms": 19,
+   "median_ms": 18
+  },
+  "finance/budget/": {
+   "status": 200,
+   "slowest_ms": 19,
+   "median_ms": 19
+  },
+  "finance/close/": {
+   "status": 200,
+   "slowest_ms": 16,
+   "median_ms": 15
+  }
+ }
+}

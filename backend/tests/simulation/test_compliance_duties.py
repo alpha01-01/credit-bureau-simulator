@@ -147,10 +147,13 @@ def test_consent_sampling_leads_to_a_sanction(busy_world: World, monkeypatch: An
     check = ConsentCheck.objects.get(game=game)
     assert check.sample and not check.answered
 
-    # The lender answers three working days later; the forms it cannot send are a finding.
+    # The lender answers three working days later. Compliance reads the forms that
+    # morning (ten forms, one working day: P4.0); those it could not send are a finding.
     game = _days(Game.objects.get(pk=game.pk), 4)
     check.refresh_from_db()
-    assert check.answered and check.missing
+    assert check.answered and check.reviewed and check.missing
+    game.organization.refresh_from_db()
+    assert f"check {check.number}" in game.organization.compliance_busy_with
     held = dict(
         EnquiryJudgement.objects.filter(game=game, enquiry__enquiry_reference__in=check.sample)
         .values_list("enquiry__enquiry_reference", "grounds_held")
@@ -233,15 +236,22 @@ def test_breaches_climb_the_regulators_ladder(world: World) -> None:
     with pytest.raises(ClockError, match="Retention"):
         controls.set_retention(game, 10)
 
-    # The quarter's access review finds the leavers; reviewing removes their access.
+    # The quarter's access review finds the leavers; reviewing removes their access, on
+    # Compliance's next working day (P4.0).
     first = today.replace(day=1)
     quarter = first.replace(month=((first.month - 1) // 3) * 3 + 1)
     duties.month_start(game, quarter, game.current_tick, now, duties.quietly)
     due = ComplianceFinding.objects.get(game=game, kind="ACCESS_REVIEW_DUE")
     assert "leaver" in due.detail
-    assert (
+    controls.review_access(game)
+    with pytest.raises(ClockError, match="already due"):
         controls.review_access(game)
-        == Employee.objects.filter(organization=game.organization).count()
-    )
+    due.refresh_from_db()
+    assert due.resolved_tick is None  # asked for, not yet done
+    assert duties.leavers_with_access(game)
+    duties.compliance_day(game, today, game.current_tick, now, duties.quietly)
+    game.organization.refresh_from_db()
+    assert not game.organization.access_review_requested
+    assert game.organization.compliance_busy_with == "the staff access review"
     due.refresh_from_db()
     assert due.resolved_tick is not None and not duties.leavers_with_access(game)

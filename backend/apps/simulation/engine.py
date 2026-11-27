@@ -29,6 +29,7 @@ from apps.bureau.core.models import (
     ProviderCustomerLink,
 )
 from apps.bureau.quality.models import TransformationLog, ValidationIssue
+from apps.bureau.reports.enquiries import DISPUTED
 from apps.bureau.submissions.models import StagingRecord, Submission, SubmissionStatus
 from apps.bureau.submissions.pipeline import process_submission
 from apps.finance.events import run_payroll
@@ -65,7 +66,12 @@ from . import (
 from .bridge import deliver
 from .checkpoints import take_checkpoint
 from .clock import DAY_START, TICK_MINUTES, TICKS_PER_DAY, Calendar, previous_month_end
-from .enquiries import handle_application, schedule_applications
+from .enquiries import (
+    handle_application,
+    prefetch_applications,
+    save_views,
+    schedule_applications,
+)
 from .feed import Feed, money
 from .judgement import rng_for, sync_work_items
 from .models import (
@@ -226,16 +232,22 @@ def run_tick(game_id: int, tick: int) -> bool:
                 game, cal.tick_start(tick).date(), cal.tick_start(tick), tick, feed.add
             )
 
-        due = ScheduledEvent.objects.filter(
-            game=game, status=EventStatus.PENDING, due_tick__lte=tick
-        ).order_by("due_tick", "sequence")
+        due = list(
+            ScheduledEvent.objects.filter(
+                game=game, status=EventStatus.PENDING, due_tick__lte=tick
+            ).order_by("due_tick", "sequence")
+        )
         handled = []
         memo: dict[object, Any] = {}  # lookups that cannot change within a tick
+        prefetch_applications(
+            game, [e.payload for e in due if e.event_type == EventType.CREDIT_APPLICATION], memo
+        )
         for event in due:
             _handle(game, event, cal.tick_start(tick), memo, feed)
             event.status = EventStatus.DONE
             event.processed_tick = tick
             handled.append(event)
+        save_views(memo)
         ScheduledEvent.objects.bulk_update(handled, ["status", "processed_tick"], batch_size=1000)
         processed += len(handled)
 
@@ -392,6 +404,7 @@ def _handle(
         sales.answer(game, event.payload, at, feed.add)
         return
     if event.event_type == EventType.DISPUTE_FILED:
+        memo.pop(DISPUTED, None)  # reports later this tick flag the new dispute
         dispute = compliance.file_dispute(game, event.payload, at)
         if dispute is not None:
             feed.add(

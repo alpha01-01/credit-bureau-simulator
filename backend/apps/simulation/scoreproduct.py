@@ -3,9 +3,12 @@
 **The score.** A subscriber may buy the score with a report (a separate line, GHS 5;
 R8 placeholder, A-076). How many of its enquiries come with the score depends on how
 well the score has been predicting: lenders back-test it on the loans they make. Each
-month a subscriber's uptake moves halfway towards what the score's quality warrants
-(its AUC against the world's true defaults, as its debrief measures it): nothing below
-0.65, everything from 0.80. A poor score is soon dropped.
+month a subscriber's uptake moves towards what the score's quality warrants (its AUC
+against the world's true defaults, as its debrief measures it): nothing below 0.65,
+everything from 0.80. It falls halfway there each month, so a poor score is soon
+dropped; it rises faster the better the score (P4.0, balance finding 10): half the way
+for a score that barely passes, all of it for one that warrants full uptake, since
+lenders back-testing a strong score see it at once (ASSUMPTION A-089).
 
 **The mobile loan report.** Mobile lenders check the bureau for their mobile loans in
 bulk, too many and too small for a full enquiry each (P3.3). Each working night the
@@ -36,7 +39,14 @@ PRODUCTS = {
     MOBILE_REPORT: ("Mobile loan report", Decimal("2.00")),
 }
 UPTAKE_FLOOR, UPTAKE_FULL = 0.65, 0.80  # the score's AUC against the truth
-UPTAKE_SPEED = 0.5  # share of the way to the warranted uptake each month
+UPTAKE_SPEED = 0.5  # share of the way to the warranted uptake each month, falling
+
+
+def uptake_speed(current: float, target: float) -> float:
+    """The share of the way a subscriber moves this month (A-089): faster up, the better."""
+    if target <= current:
+        return UPTAKE_SPEED
+    return UPTAKE_SPEED + (1 - UPTAKE_SPEED) * target
 
 
 def product(game: Game, code: str) -> Product:
@@ -91,9 +101,8 @@ def update_uptake(game: Game) -> None:
     """At the month's end: each subscriber moves towards the uptake the score warrants."""
     target = warranted_uptake(game)
     for view in SubscriberView.objects.filter(game=game).order_by("subscriber_code"):
-        view.score_uptake = round(
-            view.score_uptake + UPTAKE_SPEED * (target - view.score_uptake), 6
-        )
+        speed = uptake_speed(view.score_uptake, target)
+        view.score_uptake = round(view.score_uptake + speed * (target - view.score_uptake), 6)
         view.save(update_fields=["score_uptake"])
 
 

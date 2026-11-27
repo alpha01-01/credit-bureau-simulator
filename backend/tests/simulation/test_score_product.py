@@ -177,9 +177,17 @@ def test_a_poor_score_loses_its_buyers(world: World) -> None:
     good = scoreproduct.warranted_uptake(game)
     _everyone_buys(game, 0.0)
     scoreproduct.update_uptake(game)
-    assert SubscriberView.objects.filter(game=game).first().score_uptake == pytest.approx(  # type: ignore[union-attr]
-        scoreproduct.UPTAKE_SPEED * good
+    # Rising, it moves faster the better the score (P4.0, A-089).
+    speed = scoreproduct.uptake_speed(0.0, good)
+    assert speed == pytest.approx(
+        scoreproduct.UPTAKE_SPEED + (1 - scoreproduct.UPTAKE_SPEED) * good
     )
+    assert SubscriberView.objects.filter(game=game).first().score_uptake == pytest.approx(  # type: ignore[union-attr]
+        speed * good
+    )
+    assert scoreproduct.uptake_speed(0.0, 1.0) == 1.0  # a full-uptake score is taken at once
+    assert scoreproduct.uptake_speed(0.0, 0.2) < scoreproduct.uptake_speed(0.0, 0.8)
+    assert scoreproduct.uptake_speed(0.9, 0.1) == scoreproduct.UPTAKE_SPEED  # dropped as before
     # Replace the composite with a scorecard that cannot rank anyone.
     ScoreModel.objects.filter(game=game, status="DEPLOYED").update(status="RETIRED")
     observation = date.fromisoformat(scorecards.observation_dates(game, 6)[0])

@@ -114,7 +114,7 @@ def _w3(p: Workspaces, m: dict[str, Any]) -> None:
                 assert "made no enquiries" in asked.json()["detail"], asked.content
         return  # nobody has enquired yet: wait
     first = min(screen["consent_checks"], key=lambda c: c["number"])
-    if first["answered"]:
+    if first["reviewed"]:  # the forms are in and Compliance has read them (P4.0)
         p.answer_ready(m, len(first["missing"]))
 
 
@@ -225,3 +225,12 @@ def test_handbook_v2_covers_every_mission_and_marks_what_is_unconfirmed() -> Non
                 assert c.instrument == DSC, (entry.key, c.instrument)
     for rule in RULES.values():
         assert rule.status == "TO_CONFIRM", rule.code
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_missions_update_skips_are_exactly_those_that_always_ask() -> None:
+    """P4.0: ``update`` leaves a mission in ``ASKS`` unchecked until its question is
+    answered; that is only safe if its check asks a question from the very start."""
+    game = start_game(_world())
+    asks = {m.code for m in missions.MISSIONS if m.check(game).question is not None}
+    assert asks == missions.ASKS

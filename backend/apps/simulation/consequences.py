@@ -44,7 +44,7 @@ def _t(model: type[models.Model]) -> str:
 
 # The accounts on a bureau customer, with the provider customer behind each and whose it is.
 _ON_CUSTOMER = f"""
-SELECT i.institution_code, lc.customer_number, lc.person_id, lc.business_id
+SELECT 'on', i.institution_code, lc.customer_number, lc.person_id, lc.business_id
 FROM {_t(CreditAccount)} ca
 JOIN {_t(Institution)} i ON i.id = ca.institution_id
 JOIN {_t(WorldLender)} wl ON wl.world_id = %(world)s AND wl.code = i.institution_code
@@ -55,7 +55,7 @@ WHERE ca.customer_id = %(customer)s
 
 # The applicant's accounts the bureau holds under other customers.
 _ELSEWHERE = f"""
-SELECT i.institution_code, lc.customer_number, ca.customer_id
+SELECT 'elsewhere', i.institution_code, lc.customer_number, NULL::bigint, NULL::bigint
 FROM {_t(LenderCustomer)} lc
 JOIN {_t(WorldLender)} wl ON wl.id = lc.lender_id
 JOIN {_t(Loan)} l ON l.customer_id = lc.id
@@ -84,17 +84,17 @@ def trace(
         "borrower": applicant[1],
     }
     foreign: dict[tuple[str, str], int] = defaultdict(int)  # wrong link -> accounts shown
-    with connection.cursor() as cursor:
-        cursor.execute(_ON_CUSTOMER, params)
-        for provider, number, person, business in cursor.fetchall():
+    missing: dict[tuple[str, str], int] = defaultdict(int)
+    column = "person_id" if applicant[0] == "person" else "business_id"
+    with connection.cursor() as cursor:  # both in one query (P4.0)
+        cursor.execute(f"{_ON_CUSTOMER} UNION ALL {_ELSEWHERE.replace('{column}', column)}", params)
+        for where, provider, number, person, business in cursor.fetchall():
+            if where == "elsewhere":
+                missing[(provider, number)] += 1
+                continue
             who = ("person", person) if person is not None else ("business", business)
             if who != applicant:
                 foreign[(provider, number)] += 1
-        column = "person_id" if applicant[0] == "person" else "business_id"
-        cursor.execute(_ELSEWHERE.replace("{column}", column), params)
-        missing: dict[tuple[str, str], int] = defaultdict(int)
-        for provider, number, _other in cursor.fetchall():
-            missing[(provider, number)] += 1
 
     found = []
     for effect, links, decision in (

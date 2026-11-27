@@ -761,7 +761,7 @@ def _w2_debrief(game: Game, check: Check) -> dict[str, Any]:
 
 def _w3(game: Game) -> Check:
     first = ConsentCheck.objects.filter(game=game).order_by("number").first()
-    answered = first is not None and first.answered
+    answered = first is not None and first.reviewed  # read by Compliance (P4.0)
     return Check(
         [
             Objective(
@@ -769,7 +769,10 @@ def _w3(game: Game) -> Check:
                 "(Compliance, as Head of Compliance)",
                 first is not None,
             ),
-            Objective("The subscriber answers", answered),
+            Objective(
+                "The subscriber sends its forms, and Compliance reads them",
+                answered,
+            ),
         ],
         Question(
             f"For how many enquiries in consent check {first.number} could "
@@ -995,13 +998,24 @@ def _complete(check: Check, record: MissionState) -> bool:
     return all(o.done for o in check.objectives) and (check.question is None or answered(record))
 
 
+# Missions whose check always asks a question: none is complete until it is answered
+# right, so ``update`` need not check their objectives every tick until then (P4.0).
+ASKS = frozenset({"M1", "M4", "M5", "M6", "M7", "M8", "W1", "W2", "W3", "W5"})
+
+
 def update(game: Game, tick: int, add: Any) -> None:
     """After a tick or an answer: has an open mission been completed?"""
-    for mission in open_missions(game):
+    missions = open_missions(game)
+    if not missions:
+        return
+    states = {r.code: r for r in MissionState.objects.filter(game=game)}
+    for mission in missions:
         if mission.code == "M7":
             arrange_dispute(game, tick)
+        record = states.get(mission.code) or _state(game, mission.code)
+        if mission.code in ASKS and not answered(record):
+            continue  # it cannot be complete yet
         check = mission.check(game)
-        record = _state(game, mission.code)
         if not _complete(check, record):
             continue
         record.completed_tick = tick

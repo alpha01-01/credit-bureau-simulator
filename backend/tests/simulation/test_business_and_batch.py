@@ -104,7 +104,7 @@ def test_a_business_report_shows_exactly_what_was_loaded(world: World) -> None:
         assert report["layout"] == "SIMB-B1"
         assert report["subject"]["registration_number"] == (profile.registration_number or None)
         assert report["subject"]["registered_name"] == profile.registered_name
-        retained, _ = _retained(customer, at.date())
+        retained, _ = _retained(customer, at.date(), game.organization.retention_years)
         assert sorted(
             (f["lender"], f["account"], f["original_amount"]) for f in report["facilities"]
         ) == sorted(

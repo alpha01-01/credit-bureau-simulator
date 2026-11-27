@@ -689,13 +689,16 @@ def set_retention(game: Game, years: int) -> Game:
     return game
 
 
-def review_access(game: Game) -> int:
-    """The quarter's access review: leavers lose their access. Returns how many did."""
-    tick, _ = _now(game)
+def review_access(game: Game) -> Game:
+    """Ask for the quarter's access review: Compliance does it on its next working day,
+    and leavers lose their access then (P4.0)."""
     with transaction.atomic():
-        removed = duties.review_access(game, tick)
+        try:
+            duties.request_access_review(game)
+        except duties.DutyError as exc:
+            raise ClockError(str(exc)) from exc
         record(game, "ACCESS_REVIEW")
-    return removed
+    return game
 
 
 # --- The Finance department (P3.8) -------------------------------------------------------

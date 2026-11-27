@@ -243,8 +243,12 @@ def _compliance_duties(game: Game) -> None:
     ):  # fmt: skip
         with contextlib.suppress(ClockError):
             controls.sanction_subscriber(game, code, "WARNING")
-    if open_findings.filter(kind="ACCESS_REVIEW_DUE").exists():
-        controls.review_access(game)
+    game.organization.refresh_from_db()
+    if (
+        open_findings.filter(kind="ACCESS_REVIEW_DUE").exists()
+        and not game.organization.access_review_requested
+    ):
+        controls.review_access(game)  # Compliance does it on its next working day (P4.0)
 
 
 def compliance_lax(game: Game, month: int) -> Game:

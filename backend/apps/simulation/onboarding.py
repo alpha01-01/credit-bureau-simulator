@@ -7,7 +7,8 @@ waits for the step before it, so a step left undone holds up every step after it
 ASSUMPTION A-079 (the hand-offs; working days):
 
 * Compliance's staff check the subscriber in 3 days: its licence and permissible
-  purpose, and a sample of 40 of its consent forms. Two or more missing is a concern
+  purpose, and a sample of 40 of its consent forms. A day Compliance gives to a review
+  of its own (an access review, or a subscriber's consent forms) adds a day (A-088). Two or more missing is a concern
   the staff cannot settle: the check waits for the Head of Compliance, who approves,
   approves under a warning (the P3.7 sanction, which makes the lender more careful)
   or refuses the subscriber.
@@ -167,7 +168,10 @@ def morning(game: Game, day: date, tick: int, at: datetime, add: Any) -> None:
     from .startup import systems_ready
 
     down = it.systems_down(game, tick)
-    slots = CONNECTIONS_AT_ONCE.get(game.organization.it_capacity, 1)
+    org = game.organization
+    org.refresh_from_db(fields=["compliance_busy_on", "compliance_busy_with"])
+    busy = org.compliance_busy_on == day  # its day went to a review (duties.compliance_day)
+    slots = CONNECTIONS_AT_ONCE.get(org.it_capacity, 1)
     connecting = 0
     for onboarding in onboardings:
         step = current(onboarding)
@@ -209,6 +213,11 @@ def morning(game: Game, day: date, tick: int, at: datetime, add: Any) -> None:
             else:
                 _done(step, day, tick, "Support", "Questions answered; its staff trained")
             _ready(game, onboarding, day, add)
+        elif step.code == "SUBSCRIBER_CHECK" and busy:
+            # Compliance's officer spent the day on a review: the check waits a day (A-088).
+            step.due_on = add_working_days(max(step.due_on or day, day), 1)
+            step.held = f"Compliance spent the day on {org.compliance_busy_with}"
+            step.save(update_fields=["due_on", "held"])
         elif step.due_on is not None and step.due_on <= day:
             if step.code == "SUBSCRIBER_CHECK":
                 _done(step, day, tick, "Compliance staff", "Approved: no concerns found")

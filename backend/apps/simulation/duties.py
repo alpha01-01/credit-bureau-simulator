@@ -13,8 +13,14 @@
   data, and removes leavers' access.
 * Findings (rule FINDINGS): each finding has a remedy and a deadline; one left past its
   deadline goes to the regulator, and climbs the same ladder as missed disputes.
+* Compliance's working day (P4.0, balance finding 9): one compliance officer gives each
+  working day to one task, the oldest first: a staff access review the player asked
+  for, then the consent forms a subscriber sent (a working day for each 25 forms), and
+  otherwise the checks on new subscribers being taken on (``onboarding``). A day spent
+  on a review holds every subscriber check back a day, so diligence costs the bureau
+  the time it takes to sign new business.
 
-The rates and periods are ASSUMPTION A-077.
+The rates and periods are ASSUMPTION A-077; Compliance's day is A-088.
 """
 
 from __future__ import annotations
@@ -55,6 +61,7 @@ WARNING_FACTOR, SUSPENSION_FACTOR = 0.5, 0.25  # what a sanction does to that sh
 SUSPENSION_WORKING_DAYS = 22  # about a month
 SAMPLE_SIZES = (10, 25, 50)
 RETENTION_CHOICES = (3, 4, 5, 6, 7)  # years; above 5 breaks the rule
+FORMS_PER_DAY = 25  # consent forms the compliance officer reads in a working day (A-088)
 WARNING, SUSPENSION = "WARNING", "SUSPENSION"
 
 
@@ -147,6 +154,16 @@ def leavers_with_access(game: Game) -> list[Employee]:
     )
 
 
+def request_access_review(game: Game) -> None:
+    """Ask Compliance to review staff access: done on its next working day (P4.0)."""
+    org = game.organization
+    org.refresh_from_db(fields=["access_review_requested"])
+    if org.access_review_requested:
+        raise DutyError("Compliance is already due to review access")
+    org.access_review_requested = True
+    org.save(update_fields=["access_review_requested"])
+
+
 def review_access(game: Game, tick: int) -> int:
     """Remove every leaver's access and settle the access findings. Returns how many lost it."""
     removed = Employee.objects.filter(
@@ -215,8 +232,12 @@ def sample_consent(game: Game, code: str, month: date, size: int, tick: int) -> 
     )  # fmt: skip
 
 
+def review_days(forms: int) -> int:
+    return max(1, -(-forms // FORMS_PER_DAY))
+
+
 def answer_consent_checks(game: Game, tick: int, at: datetime, add: Any) -> None:
-    """Subscribers send what consent forms they have; the forms missing are a finding."""
+    """Subscribers send what consent forms they have; Compliance has them to read (P4.0)."""
     for check in ConsentCheck.objects.filter(
         game=game, answered=False, answer_tick__lte=tick
     ).order_by("number"):
@@ -227,27 +248,72 @@ def answer_consent_checks(game: Game, tick: int, at: datetime, add: Any) -> None
         )
         check.missing = [ref for ref in check.sample if not held.get(ref, True)]
         check.answered = True
-        check.save(update_fields=["missing", "answered"])
-        code = check.subscriber_code
-        if not check.missing:
-            add(
-                "CONSENT_CHECKED", Severity.INFO, f"{code} showed consent for every enquiry asked",
-                f"{len(check.sample)} enquiries from {check.month:%B %Y}.",
-                {"screen": "compliance", "params": {}},
-            )  # fmt: skip
-            continue
-        detail = (
-            f"{code} could not show the subject's consent for {len(check.missing)} of the "
-            f"{len(check.sample)} enquiries from {check.month:%B %Y} asked about."
-        )
-        finding = raise_finding(
-            game, "CONSENT_MISSING", f"{code}-CHECK-{check.number}", detail,
-            f"Warn {code}, or suspend its enquiries for a month.", tick, at,
-        )  # fmt: skip
+        check.review_days_left = review_days(len(check.sample))
+        check.save(update_fields=["missing", "answered", "review_days_left"])
+
+
+def _reviewed(game: Game, check: ConsentCheck, tick: int, at: datetime, add: Any) -> None:
+    """Compliance has read the forms: those missing are a finding."""
+    code = check.subscriber_code
+    if not check.missing:
         add(
-            "COMPLIANCE_FINDING", Severity.WARNING, f"Compliance finding: {code} lacks consent",
-            f"{detail} Act by {finding.due_date:%d %B}.", {"screen": "compliance", "params": {}},
+            "CONSENT_CHECKED", Severity.INFO, f"{code} showed consent for every enquiry asked",
+            f"{len(check.sample)} enquiries from {check.month:%B %Y}.",
+            {"screen": "compliance", "params": {}},
         )  # fmt: skip
+        return
+    detail = (
+        f"{code} could not show the subject's consent for {len(check.missing)} of the "
+        f"{len(check.sample)} enquiries from {check.month:%B %Y} asked about."
+    )
+    finding = raise_finding(
+        game, "CONSENT_MISSING", f"{code}-CHECK-{check.number}", detail,
+        f"Warn {code}, or suspend its enquiries for a month.", tick, at,
+    )  # fmt: skip
+    add(
+        "COMPLIANCE_FINDING", Severity.WARNING, f"Compliance finding: {code} lacks consent",
+        f"{detail} Act by {finding.due_date:%d %B}.", {"screen": "compliance", "params": {}},
+    )  # fmt: skip
+
+
+def compliance_day(game: Game, today: date, tick: int, at: datetime, add: Any) -> None:
+    """The compliance officer's working day goes to the oldest review waiting (A-088).
+
+    Whatever the day goes to is recorded on the organisation, so that the checks on new
+    subscribers (``onboarding.morning``, later this morning) wait a day for it.
+    """
+    org = game.organization
+    # The request may have been saved through another copy of the organisation.
+    org.refresh_from_db(fields=["access_review_requested"])
+    if org.access_review_requested:
+        removed = review_access(game, tick)
+        org.access_review_requested = False
+        org.compliance_busy_on, org.compliance_busy_with = today, "the staff access review"
+        org.save(
+            update_fields=["access_review_requested", "compliance_busy_on", "compliance_busy_with"]
+        )
+        add(
+            "ACCESS_REVIEWED", Severity.INFO, "Compliance reviewed staff access",
+            f"{removed} leaver{'s' if removed != 1 else ''} lost access."
+            if removed else "No leaver held access.",
+            {"screen": "compliance", "params": {}},
+        )  # fmt: skip
+        return
+    check = (
+        ConsentCheck.objects.filter(game=game, answered=True, reviewed=False)
+        .order_by("number")
+        .first()
+    )
+    if check is None:
+        return
+    check.review_days_left = max(0, check.review_days_left - 1)
+    check.reviewed = check.review_days_left == 0
+    check.save(update_fields=["review_days_left", "reviewed"])
+    org.compliance_busy_on = today
+    org.compliance_busy_with = f"{check.subscriber_code}'s consent forms (check {check.number})"
+    org.save(update_fields=["compliance_busy_on", "compliance_busy_with"])
+    if check.reviewed:
+        _reviewed(game, check, tick, at, add)
 
 
 def sanction(game: Game, code: str, kind: str, tick: int) -> Sanction:
@@ -307,6 +373,7 @@ def morning(game: Game, today: date, tick: int, at: datetime, add: Any) -> None:
     Runs before the regulator's own morning review, which climbs the ladder.
     """
     answer_consent_checks(game, tick, at, add)
+    compliance_day(game, today, tick, at, add)
     for late in RegulatoryReturn.objects.filter(
         organization=game.organization, filed_at__isnull=True, due_date__lt=today
     ).order_by("period"):
