@@ -26,6 +26,7 @@ import {
   type LaidRoom,
   layOut,
   type Turn,
+  type Visitor,
   turned,
 } from '../lib/office'
 
@@ -117,6 +118,15 @@ function DeskGroup({ desk, hover, go }: { desk: Desk; hover: Hover; go: Go }) {
         />
       )}
       {desk.person?.seated && <Person at={[0, 0.25, 0.75]} colour={desk.person.colour} />}
+    </group>
+  )
+}
+
+/** Someone standing in a room away from their desk: a meeting, the boardroom, a break. */
+function Standing({ visitor, hover, go }: { visitor: Visitor; hover: Hover; go: Go }) {
+  return (
+    <group position={visitor.position} {...pickable(visitor, hover, go)}>
+      <Person at={[0, 0.35, 0]} colour={visitor.colour} />
     </group>
   )
 }
@@ -325,6 +335,9 @@ function Scene({
       {floor.desks.map((d) => (
         <DeskGroup key={d.key} desk={d} hover={hover} go={go} />
       ))}
+      {floor.visitors.map((v) => (
+        <Standing key={v.key} visitor={v} hover={hover} go={go} />
+      ))}
       {floor.fixtures.map((f) => (
         <FixtureMesh key={f.key} fixture={f} lights={floor.lights} hover={hover} go={go} />
       ))}
@@ -393,7 +406,7 @@ export function OfficePage() {
     }
   }
 
-  const people = floor?.desks.filter((d) => d.person) ?? []
+  const people = floor?.people ?? []
   const empty = floor?.desks.filter((d) => !d.person) ?? []
   return (
     <Page
@@ -499,7 +512,7 @@ export function OfficePage() {
           <p className="text-sm text-slate-700">{floor.summary}</p>
           <div className="grid gap-4 text-sm md:grid-cols-2">
             <section>
-              <h2 className="mb-1 font-medium">Rooms on the {current.name.toLowerCase()}</h2>
+              <h2 className="mb-1 font-medium">Rooms: {current.name}</h2>
               <ul className="space-y-1" data-testid="office-rooms">
                 {floor.rooms.map((r) => (
                   <li key={r.code}>

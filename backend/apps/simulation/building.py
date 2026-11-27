@@ -177,10 +177,29 @@ def floor(game: Game, code: str) -> Floor | None:
     return next((f for f in floors(game) if f.code == code), None)
 
 
-def room_for(game: Game, department: str) -> Room | None:
-    """The room a department's staff sit in, if the building has one for it."""
+# Where each place that is not a desk is, in each kind of building, first match wins (P4.2):
+# the established building's rooms, then a Startup office's.
+PLACE_ROOMS: dict[str, tuple[str, ...]] = {
+    "MEETING_ROOM": ("TECH_MEETING", "MEETING"),
+    "BOARDROOM": ("BOARDROOM", "MEETING"),
+    "CAFETERIA": ("CAFETERIA", "KITCHEN"),
+}
+
+
+def room_for_place(game: Game, place: str) -> tuple[Floor, Room] | None:
+    """The floor and room a place (``places.MEETING_ROOM``, ...) is in, in this building."""
+    for code in PLACE_ROOMS.get(place, ()):
+        for f in floors(game):
+            for r in f.rooms:
+                if r.code == code:
+                    return f, r
+    return None
+
+
+def desk_room(game: Game, department: str) -> tuple[Floor, Room] | None:
+    """The floor and room where a department's staff have their desks."""
     for f in floors(game):
         for r in f.rooms:
             if department in r.departments or EVERYONE in r.departments:
-                return r
+                return f, r
     return None

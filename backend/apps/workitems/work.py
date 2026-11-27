@@ -49,11 +49,13 @@ def work_tick(
     rng_for: RngFor,
     minutes: float = 15.0,
     held: frozenset[str] = frozenset(),
+    absent: frozenset[int] = frozenset(),
 ) -> int:
     """Let every active employee work for one tick. Returns the number of items finished.
 
     Open items of the ``held`` types are left in the queue for the player (a mission
-    that asks the player to decide them, P3.0).
+    that asks the player to decide them, P3.0). The ``absent`` (employee pks) are in a
+    meeting this tick and do no work (P4.2).
     """
     finished = 0
     for employee in Employee.objects.filter(organization=organization, is_active=True).order_by(
@@ -61,6 +63,8 @@ def work_tick(
     ):
         if employee.away_until_tick >= tick:
             continue  # away on a training course (P2.9)
+        if employee.pk in absent:
+            continue  # in a meeting (P4.2)
         if employee.work_day != day_index:
             employee.work_day, employee.done_today = day_index, 0
         budget = minutes

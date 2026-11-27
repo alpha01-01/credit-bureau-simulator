@@ -104,12 +104,13 @@ def test_a_floor_shows_who_is_where_the_queue_and_the_systems(world: World) -> N
     assert not plan["no_office"]
 
     calm = client.get(f"{base}first/").json()
-    assert [s["state"] for s in calm["staff"]] == ["IDLE"] * 3
+    assert [s["activity"] for s in calm["staff"]] == ["FREE"] * 3
     assert {s["room"] for s in calm["staff"]} == {"DATA_OPERATIONS"}
+    assert {s["desk"] for s in calm["staff"]} == {"DATA_OPERATIONS"}
     assert calm["systems"]["down"] is False and calm["queue"]["open"] == 0
     rooms = {r["code"]: r for r in calm["rooms"]}
     assert rooms["DATA_OPERATIONS"]["desks"] == 6  # three staff, room to hire
-    assert rooms["DATA_OPERATIONS"]["summary"].startswith("3 staff: 0 working, 3 free, 0 away")
+    assert rooms["DATA_OPERATIONS"]["summary"].startswith("3 staff: 0 working, 3 free;")
     assert rooms["SERVER_ROOM"]["summary"].startswith("Systems up")
     assert all(r["screen"] for r in calm["rooms"])
 
@@ -123,8 +124,9 @@ def test_a_floor_shows_who_is_where_the_queue_and_the_systems(world: World) -> N
     controls.train_employee(game, officer.employee_number, "MATCH_REVIEW")
     it.start_outage(game, game.current_tick + 1, "Test outage.", lambda *a: None)
     busy = client.get(f"{base}first/").json()
-    states = {s["number"]: s["state"] for s in busy["staff"]}
-    assert states[officer.employee_number] == "AWAY"
+    states = {s["number"]: s["activity"] for s in busy["staff"]}
+    assert states[officer.employee_number] == "TRAINING"
+    assert ", 1 out;" in next(r for r in busy["rooms"] if r["code"] == "DATA_OPERATIONS")["summary"]
     assert busy["systems"]["down"] is True and busy["systems"]["detail"] == "Test outage."
     server = next(r for r in busy["rooms"] if r["code"] == "SERVER_ROOM")
     assert server["summary"] == "Systems down: Test outage."
@@ -135,7 +137,10 @@ def test_a_floor_shows_who_is_where_the_queue_and_the_systems(world: World) -> N
     shown = client.get(f"{base}first/").json()
     items = WorkItem.objects.filter(organization=game.organization)
     assert shown["queue"]["open"] == items.filter(status=ItemStatus.OPEN).count()
-    assert shown["queue"]["in_progress"] == sum(s["state"] == "WORKING" for s in shown["staff"])
+    assert shown["queue"]["in_progress"] == items.filter(status=ItemStatus.IN_PROGRESS).count()
+    for s in shown["staff"]:  # shown working only on their own item in progress
+        if s["activity"] == "WORKING":
+            assert items.get(item_number=s["item"]).status == ItemStatus.IN_PROGRESS
     assert sum(shown["queue"]["by_type"].values()) == shown["queue"]["open"]
 
     # A leaver is no longer in the building.

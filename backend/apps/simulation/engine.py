@@ -54,6 +54,7 @@ from . import (
     lending,
     missions,
     onboarding,
+    places,
     products,
     providers,
     sales,
@@ -260,6 +261,7 @@ def run_tick(game_id: int, tick: int) -> bool:
                 cal.tick_end(tick),
                 rng_for(game),
                 held=held,
+                absent=places.in_meetings(game, tick),
             )
 
         if cal.is_last_tick_of_day(tick):

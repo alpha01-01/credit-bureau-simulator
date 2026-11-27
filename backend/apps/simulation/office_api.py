@@ -20,7 +20,7 @@ from rest_framework.response import Response
 from apps.org.models import Employee
 from apps.workitems.models import ItemStatus, WorkItem
 
-from . import building, it, startup
+from . import building, controls, it, places, sales, startup
 from .api import _game
 from .models import ComplianceFinding, Game
 
@@ -51,35 +51,41 @@ def building_view(request: Request, game_id: int) -> Response:
     )
 
 
-def _staff(game: Game, rooms: dict[str, building.Room]) -> list[dict[str, Any]]:
-    """The people who sit on this floor: in the room their department works in."""
-    tick = game.current_tick + 1  # the tick under way, as the IT page counts it
-    org = game.organization
-    working = {
-        w.assignee_id: w
-        for w in WorkItem.objects.filter(organization=org, status=ItemStatus.IN_PROGRESS)
-    }
-    everyone = next((r for r in rooms.values() if building.EVERYONE in r.departments), None)
+def _staff(game: Game, here: building.Floor) -> list[dict[str, Any]]:
+    """The people this floor shows: those with a desk here, and those in its rooms now.
+
+    Where each one is comes from ``places``, from the game's state alone (P4.2).
+    """
+    where = places.whereabouts(game)
     people = []
-    for e in Employee.objects.filter(organization=org, is_active=True).order_by("employee_number"):
-        room = everyone or next((r for r in rooms.values() if e.department in r.departments), None)
-        if room is None:
-            continue  # sits on another floor
-        item = working.get(e.pk)
-        if e.away_until_tick >= tick:
-            state = "AWAY"
-        elif item is not None:
-            state = "WORKING"
-        else:
-            state = "IDLE"
+    for e in Employee.objects.filter(organization=game.organization, is_active=True).order_by(
+        "employee_number"
+    ):
+        w = where[e.pk]
+        desk = building.desk_room(game, e.department)
+        now = (
+            desk if w.place in (places.DESK, places.OUT) else building.room_for_place(game, w.place)
+        )
+        if now is None:
+            now = desk  # the building has no such room: they stay in their own
+        desk_here = desk is not None and desk[0].code == here.code
+        now_here = now is not None and now[0].code == here.code and w.place != places.OUT
+        if not (desk_here or now_here):
+            continue  # on another floor, with their desk there too
+        doing = w.words
+        if not now_here and w.place != places.OUT and now is not None:
+            doing += f" ({now[1].name}, {now[0].name.lower()})"
         people.append(
             {
                 "number": e.employee_number,
                 "name": f"{e.first_name} {e.last_name}",
                 "job_title": e.job_title,
-                "room": room.code,
-                "state": state,
-                "item": item.item_number if item is not None else None,
+                "desk": desk[1].code if desk is not None and desk_here else None,
+                "room": now[1].code if now is not None and now_here else None,
+                "place": w.place,
+                "activity": w.activity,
+                "doing": doing,
+                "item": w.item,
                 "morale": e.morale,
             }
         )
@@ -88,7 +94,7 @@ def _staff(game: Game, rooms: dict[str, building.Room]) -> list[dict[str, Any]]:
 
 def _desks(game: Game, room: building.Room, people: list[dict[str, Any]]) -> int:
     """Desks in a room: a Startup's are its office's; a department's, its staff and more."""
-    here = len([p for p in people if p["room"] == room.code])
+    here = len([p for p in people if p["desk"] == room.code])
     if building.EVERYONE in room.departments:
         found = startup.office(game)
         return found.desks if found is not None else here
@@ -97,20 +103,43 @@ def _desks(game: Game, room: building.Room, people: list[dict[str, Any]]) -> int
     return here
 
 
+ELSEWHERE = (
+    ("in a meeting", (places.REVIEW, places.BOARD)),
+    ("on a break", (places.BREAK,)),
+    ("out", (places.TRAINING, places.AFTER_HOURS)),
+)
+GATHERED = {
+    places.REVIEW: "The Data Quality Review",
+    places.BOARD: "The board review",
+    places.BREAK: "On a break",
+}
+
+
+def _names(people: list[dict[str, Any]]) -> str:
+    names = [p["name"] for p in people]
+    return ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
+
+
 def _summary(
     game: Game, room: building.Room, people: list[dict[str, Any]], extra: dict[str, Any]
 ) -> str:
     """One line on the room, from the game's state where it has one, else what it is for."""
-    here = [p for p in people if p["room"] == room.code]
-    if here and room.kind == building.DEPARTMENT:
-        working = sum(p["state"] == "WORKING" for p in here)
-        away = sum(p["state"] == "AWAY" for p in here)
-        line = (
-            f"{len(here)} staff: {working} working, {len(here) - working - away} free, {away} away"
-        )
+    desks = [p for p in people if p["desk"] == room.code]
+    present = [p for p in people if p["room"] == room.code and p["place"] != places.DESK]
+    if desks and room.kind == building.DEPARTMENT:
+        working = sum(p["activity"] == places.WORKING for p in desks)
+        free = sum(p["activity"] == places.FREE for p in desks)
+        line = f"{len(desks)} staff: {working} working, {free} free"
+        for words, activities in ELSEWHERE:
+            n = sum(p["activity"] in activities for p in desks)
+            if n:
+                line += f", {n} {words}"
         if "queue" in extra:
             line += f"; {extra['queue']['open']} item(s) waiting in the queue"
         return line + "."
+    if present:
+        by = present[0]["activity"]
+        return f"{GATHERED.get(by, 'Here')}: {_names(present)}."
     if room.kind == building.SERVERS and "systems" in extra:
         systems = extra["systems"]
         if not systems["installed"]:
@@ -118,6 +147,10 @@ def _summary(
         if systems["down"]:
             return f"Systems down: {systems['detail']}"
         return f"Systems up; {systems['files_waiting']} file(s) waiting to process."
+    if room.code == "SALES" and not places.after_hours(game):
+        met = sales.meetings_on(game, controls.state(game).now.date())
+        if met:
+            return f"Sales is out at the prospect today, meeting {', '.join(met)}."
     if room.code == "COMPLIANCE":
         open_findings = ComplianceFinding.objects.filter(
             game=game, resolved_tick__isnull=True
@@ -136,8 +169,7 @@ def floor_view(request: Request, game_id: int, floor: str) -> Response:
     if found is None:
         raise Http404("No such floor in this game's building")
     org = game.organization
-    rooms = {r.code: r for r in found.rooms}
-    people = _staff(game, rooms)
+    people = _staff(game, found)
     extra: dict[str, Any] = {}
     if any(
         "DATA_OPERATIONS" in r.departments or building.EVERYONE in r.departments
@@ -146,7 +178,9 @@ def floor_view(request: Request, game_id: int, floor: str) -> Response:
         open_items = WorkItem.objects.filter(organization=org, status=ItemStatus.OPEN)
         extra["queue"] = {
             "open": open_items.count(),
-            "in_progress": sum(p["state"] == "WORKING" for p in people),
+            "in_progress": WorkItem.objects.filter(
+                organization=org, status=ItemStatus.IN_PROGRESS
+            ).count(),
             "by_type": {
                 row["item_type"]: row["n"]
                 for row in open_items.values("item_type").annotate(n=Count("pk"))
@@ -176,6 +210,7 @@ def floor_view(request: Request, game_id: int, floor: str) -> Response:
                 for r in found.rooms
             ],
             "staff": people,
+            "after_hours": places.after_hours(game),
             **extra,
         }
     )
