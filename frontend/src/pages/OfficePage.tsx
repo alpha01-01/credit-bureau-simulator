@@ -4,11 +4,22 @@
  * ``layOut`` gives for the floor in view, refreshed every two seconds. The player moves
  * between floors, turns the view a quarter at a time and zooms to a room, by mouse or
  * keyboard; clicking a desk, a person or a piece of furniture opens its 2D screen.
+ *
+ * P4.3: people are figures of a few parts, seated at their desks or standing, and walk
+ * between places when the game moves them (``lib/movement``); the light follows the
+ * clock, and the office goes dark after hours.
  */
 import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
-import { type KeyboardEvent, useRef, useState } from 'react'
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import type { Mesh, MeshStandardMaterial } from 'three'
+import {
+  BoxGeometry,
+  CylinderGeometry,
+  type Group,
+  IcosahedronGeometry,
+  type Mesh,
+  MeshStandardMaterial,
+} from 'three'
 
 import { useBuilding, useOfficeFloor } from '../api/game'
 import { useGameId } from '../app/useGameId'
@@ -26,9 +37,9 @@ import {
   type LaidRoom,
   layOut,
   type Turn,
-  type Visitor,
   turned,
 } from '../lib/office'
+import { type Actor, crowded, daylight, poseOf, stage, step } from '../lib/movement'
 
 type Point = [number, number, number]
 type Pick = { label: string; to: string }
@@ -78,17 +89,149 @@ function Box({
   )
 }
 
-function Person({ at, colour }: { at: Point; colour: string }) {
+// One set of shapes for every figure, shared: a figure is six meshes and no new geometry.
+const LEG = new BoxGeometry(0.13, 0.5, 0.13).translate(0, -0.25, 0)
+const ARM = new BoxGeometry(0.09, 0.45, 0.09).translate(0, -0.22, 0)
+const TORSO = new CylinderGeometry(0.17, 0.2, 0.55, 6)
+const HEAD = new IcosahedronGeometry(0.15, 0)
+const materials = new Map<string, MeshStandardMaterial>()
+function material(colour: string): MeshStandardMaterial {
+  let m = materials.get(colour)
+  if (!m) {
+    m = new MeshStandardMaterial({ color: colour, flatShading: true })
+    materials.set(colour, m)
+  }
+  return m
+}
+const TROUSERS = '#334155'
+const SEATED_DROP = -0.05 // hips from standing height (0.5) to the chair's seat (0.45)
+
+/** The moving parts of one figure, set every frame from its actor. */
+type Parts = { root: Group | null; legs: (Group | null)[]; arms: (Group | null)[] }
+
+function applyPose(p: Parts, a: Actor, time: number) {
+  if (!p.root) return
+  const pose = poseOf(a)
+  p.root.position.set(a.at[0], pose === 'seated' ? SEATED_DROP : 0, a.at[2])
+  p.root.rotation.y = a.heading
+  const swing = pose === 'walking' ? Math.sin(time * 9) * 0.55 : 0
+  p.legs.forEach((leg, i) => {
+    if (leg) leg.rotation.x = pose === 'seated' ? -Math.PI / 2 : i === 0 ? swing : -swing
+  })
+  p.arms.forEach((arm, i) => {
+    if (arm) arm.rotation.x = pose === 'seated' ? -1.2 : (i === 0 ? -swing : swing) * 0.8
+  })
+}
+
+/** A person: legs, body, arms and head, low-poly (brief, finding 2). */
+function Body({
+  actor,
+  onParts,
+  hover,
+  go,
+}: {
+  actor: Actor
+  onParts: (key: string, parts: Parts | null) => void
+  hover: Hover
+  go: Go
+}) {
+  const parts = useRef<Parts>({ root: null, legs: [null, null], arms: [null, null] })
+  const key = actor.key
+  useEffect(() => {
+    onParts(key, parts.current)
+    return () => onParts(key, null)
+  }, [key, onParts])
+  const shirt = material(actor.figure.colour)
+  return (
+    <group
+      ref={(g) => {
+        parts.current.root = g
+      }}
+      position={actor.at}
+      {...pickable(actor.figure, hover, go)}
+    >
+      {[-0.09, 0.09].map((x, i) => (
+        <group
+          key={x}
+          position={[x, 0.5, 0]}
+          ref={(g) => {
+            parts.current.legs[i] = g
+          }}
+        >
+          <mesh geometry={LEG} material={material(TROUSERS)} />
+        </group>
+      ))}
+      <mesh geometry={TORSO} material={shirt} position={[0, 0.78, 0]} />
+      {[-0.25, 0.25].map((x, i) => (
+        <group
+          key={x}
+          position={[x, 1.0, 0]}
+          ref={(g) => {
+            parts.current.arms[i] = g
+          }}
+        >
+          <mesh geometry={ARM} material={shirt} />
+        </group>
+      ))}
+      <mesh geometry={HEAD} material={material(COLOURS.skin)} position={[0, 1.22, 0]} />
+    </group>
+  )
+}
+
+/**
+ * Everyone on the floor. Each refresh stages the walks from where people are drawn to
+ * where the game now has them; each frame moves them along and sets their pose.
+ */
+function Cast({ floor, hover, go }: { floor: Floor; hover: Hover; go: Go }) {
+  const actors = useRef(new Map<string, Actor>())
+  const parts = useRef(new Map<string, Parts>())
+  const floorShown = useRef<string | null>(null)
+  const [shown, setShown] = useState<Actor[]>([])
+  useEffect(() => {
+    const fresh = floorShown.current !== floor.code
+    floorShown.current = floor.code
+    actors.current = stage(actors.current, floor.figures, floor, fresh)
+    setShown([...actors.current.values()])
+  }, [floor])
+  useFrame(({ clock }, delta) => {
+    const seconds = Math.min(delta, 0.1)
+    let gone = false
+    for (const [key, a] of actors.current) {
+      if (!step(a, seconds)) {
+        actors.current.delete(key)
+        gone = true
+        continue
+      }
+      const p = parts.current.get(key)
+      if (p) applyPose(p, a, clock.elapsedTime)
+    }
+    if (gone) setShown([...actors.current.values()])
+  })
+  const onParts = useCallback((key: string, p: Parts | null) => {
+    if (p) parts.current.set(key, p)
+    else parts.current.delete(key)
+  }, [])
+  return (
+    <>
+      {shown.map((a) => (
+        <Body key={a.key} actor={a} onParts={onParts} hover={hover} go={go} />
+      ))}
+    </>
+  )
+}
+
+/** The stairs everyone comes and goes by, at the front of the floor. */
+function Stairs({ at }: { at: Point }) {
   return (
     <group position={at}>
-      <mesh position={[0, 0.55, 0]}>
-        <cylinderGeometry args={[0.18, 0.24, 0.7, 6]} />
-        <meshStandardMaterial color={colour} flatShading />
-      </mesh>
-      <mesh position={[0, 1.05, 0]}>
-        <icosahedronGeometry args={[0.17, 0]} />
-        <meshStandardMaterial color={COLOURS.skin} flatShading />
-      </mesh>
+      {[0, 1, 2].map((i) => (
+        <Box
+          key={i}
+          size={[1.6, 0.12, 0.35]}
+          at={[0, -0.1 - i * 0.12, 0.1 + i * 0.3]}
+          colour={COLOURS.seat}
+        />
+      ))}
     </group>
   )
 }
@@ -117,16 +260,6 @@ function DeskGroup({ desk, hover, go }: { desk: Desk; hover: Hover; go: Go }) {
           colour={COLOURS.paper}
         />
       )}
-      {desk.person?.seated && <Person at={[0, 0.25, 0.75]} colour={desk.person.colour} />}
-    </group>
-  )
-}
-
-/** Someone standing in a room away from their desk: a meeting, the boardroom, a break. */
-function Standing({ visitor, hover, go }: { visitor: Visitor; hover: Hover; go: Go }) {
-  return (
-    <group position={visitor.position} {...pickable(visitor, hover, go)}>
-      <Person at={[0, 0.35, 0]} colour={visitor.colour} />
     </group>
   )
 }
@@ -320,10 +453,12 @@ function Scene({
   onRate: (fps: number) => void
 }) {
   const view = framing(floor, room)
+  const light = daylight(floor.time, floor.afterHours)
   return (
     <>
-      <ambientLight intensity={0.75} />
-      <directionalLight position={[6, 12, 8]} intensity={1.6} />
+      <color attach="background" args={[light.sky]} />
+      <ambientLight intensity={light.ambient} />
+      <directionalLight position={light.sunAt} intensity={light.sun} color={light.sunColour} />
       <Box
         size={[floor.size[0] + 1, 0.1, floor.size[1] + 1]}
         at={[0, -0.16, 0]}
@@ -335,9 +470,8 @@ function Scene({
       {floor.desks.map((d) => (
         <DeskGroup key={d.key} desk={d} hover={hover} go={go} />
       ))}
-      {floor.visitors.map((v) => (
-        <Standing key={v.key} visitor={v} hover={hover} go={go} />
-      ))}
+      <Cast floor={floor} hover={hover} go={go} />
+      <Stairs at={floor.stairs} />
       {floor.fixtures.map((f) => (
         <FixtureMesh key={f.key} fixture={f} lights={floor.lights} hover={hover} go={go} />
       ))}
@@ -354,12 +488,24 @@ export function OfficePage() {
   const gameId = useGameId()
   const building = useBuilding(gameId)
   const [params, setParams] = useSearchParams()
-  const floors = [...(building.data?.floors ?? [])].sort((a, b) => a.level - b.level)
+  const floors = (building.data?.floors ?? []).toSorted((a, b) => a.level - b.level)
   const asked = params.get('floor')
   // The first floor, where the data work is, unless another is asked for.
   const current =
     floors.find((f) => f.code === asked) ?? floors.find((f) => f.code === 'first') ?? floors[0]
   const floorData = useOfficeFloor(gameId, current?.code ?? null)
+  // The budget's busiest case (dev only): ?crowd=45 fills the floor and moves everyone
+  // between their desks and a meeting room every four seconds.
+  const crowd = import.meta.env.DEV ? Number(params.get('crowd')) || 0 : 0
+  const phase = crowd ? Math.floor(floorData.dataUpdatedAt / 4000) : 0
+  const data = floorData.data
+  const code = current?.code ?? null
+  // Laid out once per refresh, not per render: the walks restage whenever ``floor`` changes.
+  const floor = useMemo(() => {
+    if (!data || data.code !== code) return null
+    return layOut(crowd ? crowded(data, crowd, phase) : data, gameId)
+    // oxlint-disable-next-line react/preserve-manual-memoization
+  }, [data, code, gameId, crowd, phase])
   const navigate = useNavigate()
   const [hovered, setHovered] = useState<string | null>(null)
   const [fps, setFps] = useState<number | null>(null)
@@ -387,8 +533,6 @@ export function OfficePage() {
     setParams({ floor: code }, { replace: true })
   }
   const index = floors.indexOf(current)
-  const floor =
-    floorData.data && floorData.data.code === current.code ? layOut(floorData.data, gameId) : null
   const zoomed = floor?.rooms.find((r) => r.code === room) ?? null
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {

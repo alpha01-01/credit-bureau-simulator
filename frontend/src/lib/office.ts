@@ -53,6 +53,8 @@ export type FloorData = {
     morale: number
   }[]
   after_hours?: boolean
+  /** The clock's time of day, "HH:MM" (P4.3): the office's light follows it. */
+  time?: string
   queue?: { open: number; in_progress: number; by_type: Record<string, number> }
   systems?: {
     installed: boolean
@@ -63,7 +65,7 @@ export type FloorData = {
   }
 }
 
-type Point = [number, number, number]
+export type Point = [number, number, number]
 /** A room on the plan: its corner and size, in metres from the plan's back left corner. */
 type Rect = { x: number; z: number; w: number; d: number }
 type Plan = { size: [number, number]; rooms: Record<string, Rect> }
@@ -159,6 +161,23 @@ export const ROOM_TINT: Record<RoomKind, string> = {
   OFFICE: '#fef3c7',
 }
 
+/** Where a seated person sits, from their desk's centre: the chair, facing the screen. */
+export const SEAT: Point = [0, 0, 0.75]
+const SEATED_FACING = Math.PI
+
+/** The stairs (and lift) on every floor stand at the middle of its front edge. */
+function stairsOf(plan: Plan): [number, number] {
+  return [plan.size[0] / 2, plan.size[1] + 0.3]
+}
+
+/** A room's door: the point on its edge nearest the stairs, just inside the room. */
+function doorOf(rect: Rect, stairs: [number, number]): [number, number] {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+  const x = clamp(stairs[0], rect.x + 0.6, rect.x + rect.w - 0.6)
+  const z = clamp(stairs[1], rect.z + 0.4, rect.z + rect.d - 0.4)
+  return [x, z]
+}
+
 const DESK_SPACING_X = 2.2
 const DESK_SPACING_Z = 2.4
 /** Most sheets drawn on one desk: beyond it the pile stops growing. */
@@ -203,6 +222,7 @@ export type Fixture = {
 /** Someone standing in a room that is not their desk's: a meeting, the boardroom, a break. */
 export type Visitor = {
   key: string
+  number: string
   room: string
   position: Point
   colour: string
@@ -227,6 +247,23 @@ export type LaidRoom = {
   to: string
 }
 
+/**
+ * One person drawn on the floor (P4.3): where they belong now, and how they rest there.
+ * The page walks them there from where they were; the walk is never part of the state.
+ */
+export type Figure = {
+  key: string
+  /** The room they are in: their desk's, or the one they have gone to. */
+  room: string
+  spot: Point
+  pose: 'seated' | 'standing'
+  /** The way they face at rest, as a turn about the vertical (0 faces the viewer's +z). */
+  facing: number
+  colour: string
+  label: string
+  to: string
+}
+
 export type Floor = {
   code: string
   name: string
@@ -234,6 +271,13 @@ export type Floor = {
   rooms: LaidRoom[]
   desks: Desk[]
   visitors: Visitor[]
+  /** Everyone drawn on the floor, seated or standing: the desks' people and the visitors. */
+  figures: Figure[]
+  /** Where each room's door is, and the stairs everyone comes and goes by. */
+  doors: Record<string, Point>
+  stairs: Point
+  time: string | null
+  afterHours: boolean
   people: Listed[]
   fixtures: Fixture[]
   /** The server room's lights: off before IT is set up, red while the systems are down. */
@@ -370,6 +414,7 @@ export function layOut(data: FloorData, gameId: number): Floor {
       const angle = (2 * Math.PI * i) / here.length
       visitors.push({
         key: `${s.number}-in-${r.code}`,
+        number: s.number,
         room: r.code,
         position: [
           r.centre[0] + Math.cos(angle) * radius,
@@ -382,6 +427,44 @@ export function layOut(data: FloorData, gameId: number): Floor {
       })
     })
   }
+  const figures: Figure[] = [
+    ...desks.flatMap((d): Figure[] =>
+      d.person?.seated
+        ? [
+            {
+              key: d.person.number,
+              room: d.room,
+              spot: [d.position[0] + SEAT[0], 0, d.position[2] + SEAT[2]],
+              pose: 'seated',
+              facing: SEATED_FACING,
+              colour: d.person.colour,
+              label: d.label,
+              to: d.to,
+            },
+          ]
+        : [],
+    ),
+    ...visitors.map((v): Figure => {
+      const centre = rooms.find((r) => r.code === v.room)?.centre ?? v.position
+      return {
+        key: v.number,
+        room: v.room,
+        spot: v.position,
+        pose: 'standing',
+        facing: Math.atan2(centre[0] - v.position[0], centre[2] - v.position[2]),
+        colour: v.colour,
+        label: v.label,
+        to: v.to,
+      }
+    }),
+  ]
+  const stairs = stairsOf(plan)
+  const doors: Record<string, Point> = {}
+  for (const r of rooms) {
+    const [x, z] = doorOf(plan.rooms[r.code], stairs)
+    doors[r.code] = centred(x, z)
+  }
+
   const people: Listed[] = data.staff.map((s) => ({
     key: s.number,
     label: labelOf(s),
@@ -420,6 +503,11 @@ export function layOut(data: FloorData, gameId: number): Floor {
     rooms,
     desks,
     visitors,
+    figures,
+    doors,
+    stairs: centred(...stairs),
+    time: data.time ?? null,
+    afterHours: Boolean(data.after_hours),
     people,
     fixtures,
     lights,
