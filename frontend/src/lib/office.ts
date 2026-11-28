@@ -7,10 +7,19 @@
  * floor, with x to the right and z towards the viewer at the first quarter turn.
  */
 
+import { day } from './format'
+
 /** Where a person is, from the game's state (P4.2, A-091). */
-export type Place = 'DESK' | 'MEETING_ROOM' | 'BOARDROOM' | 'CAFETERIA' | 'OUT'
+export type Place = 'DESK' | 'MEETING_ROOM' | 'BOARDROOM' | 'CAFETERIA' | 'SERVER_ROOM' | 'OUT'
 export type Activity =
-  'WORKING' | 'FREE' | 'BREAK' | 'DATA_QUALITY_REVIEW' | 'BOARD_REVIEW' | 'TRAINING' | 'AFTER_HOURS'
+  | 'WORKING'
+  | 'FREE'
+  | 'BREAK'
+  | 'DATA_QUALITY_REVIEW'
+  | 'BOARD_REVIEW'
+  | 'TRAINING'
+  | 'AFTER_HOURS'
+  | 'RESTORING'
 export type RoomKind = 'DEPARTMENT' | 'FACILITY' | 'MEETING' | 'SERVERS' | 'OFFICE'
 export type PlanCode = 'GROUND' | 'FIRST' | 'SECOND' | 'SMALL' | 'STANDARD'
 
@@ -50,7 +59,13 @@ export type FloorData = {
     activity: Activity
     doing: string
     item: number | null
-    morale: number
+    morale: number | null
+    /** A managed department's derived team (P4.4, A-093): not on the payroll. */
+    managed?: boolean
+    /** The screen this person opens, where it is not the staff list or their item. */
+    screen?: string
+    model?: ScoreModelShown
+    product?: string
   }[]
   after_hours?: boolean
   /** The clock's time of day, "HH:MM" (P4.3): the office's light follows it. */
@@ -62,8 +77,19 @@ export type FloorData = {
     detail: string
     files_waiting: number
     capacity: string
+    /** What the server room shows when selected (P4.4, PRD 6.3). */
+    utilisation?: number
+    tonight?: { waiting: number; capacity: number }
+    storage?: { customers: number; accounts: number }
+    availability?: number
+    maintenance?: string
+    racks?: number
   }
+  analytics?: { models: ScoreModelShown[] }
+  developments?: { code: string; name: string; progress: number; ready_on: string }[]
 }
+
+export type ScoreModelShown = { number: number; term: string; status: 'DRAFT' | 'DEPLOYED' }
 
 export type Point = [number, number, number]
 /** A room on the plan: its corner and size, in metres from the plan's back left corner. */
@@ -150,6 +176,10 @@ export const COLOURS = {
   skin: '#8d5524',
   seat: '#475569',
   screen: '#1e293b',
+  screenDeployed: '#16a34a',
+  screenDraft: '#d97706',
+  restoring: '#dc2626',
+  progress: '#0f766e',
 } as const
 
 /** Each kind of room has its own floor tint, so the plan reads at a glance. */
@@ -188,6 +218,7 @@ function colourOf(activity: Activity): string {
   if (activity === 'WORKING') return COLOURS.working
   if (activity === 'DATA_QUALITY_REVIEW' || activity === 'BOARD_REVIEW') return COLOURS.meeting
   if (activity === 'BREAK') return COLOURS.break
+  if (activity === 'RESTORING') return COLOURS.restoring
   return COLOURS.idle
 }
 
@@ -205,6 +236,10 @@ export type Desk = {
   } | null
   /** Sheets of paper on the desk: the open queue, shared across the desks in use. */
   pile: number
+  /** The screen's colour: a deployed scorecard, a draft, or plain (P4.4). */
+  screen: string
+  /** A product's progress in development, 0 to 1, shown beside the desk (P4.4). */
+  progress: number | null
   label: string
   to: string
 }
@@ -225,6 +260,8 @@ export type Visitor = {
   number: string
   room: string
   position: Point
+  /** The way they face, when not towards the room's middle: IT faces the racks. */
+  facing?: number
   colour: string
   label: string
   to: string
@@ -243,6 +280,8 @@ export type LaidRoom = {
   size: [number, number]
   tint: string
   summary: string
+  /** What the room shows when looked at closely: the server room's readings, say. */
+  details: string[]
   label: string
   to: string
 }
@@ -317,6 +356,55 @@ const FACILITY_FURNITURE: Record<string, Fixture['kind'][]> = {
   KITCHEN: ['table'],
 }
 
+/** Rooms whose empty desks are room to hire: the departments the bureau hires into. */
+const HIRING_ROOMS = new Set(['DATA_OPERATIONS', 'OPEN_PLAN'])
+const MOST_RACKS = 5
+
+function furnitureOf(r: FloorData['rooms'][number], data: FloorData): Fixture['kind'][] {
+  if (r.kind === 'SERVERS' && data.systems?.racks)
+    return Array.from({ length: Math.min(MOST_RACKS, data.systems.racks) }, () => 'rack')
+  return FACILITY_FURNITURE[r.code] ?? FURNITURE[r.kind]
+}
+
+const percent = (f: number, digits = 0) => `${(f * 100).toFixed(digits)}%`
+const TERMS: Record<string, string> = {
+  SHORT: 'short term',
+  MID: 'mid term',
+  LONG: 'long term',
+  ALL: 'all terms',
+  COMPOSITE: 'composite',
+}
+
+/**
+ * What a room shows when looked at closely (P4.4): the server room's utilisation,
+ * storage, availability and maintenance (PRD 6.3); the scorecards Analytics looks after;
+ * the products in development, with their progress. Empty for the other rooms.
+ */
+export function detailsOf(r: FloorData['rooms'][number], data: FloorData): string[] {
+  const s = data.systems
+  if (r.kind === 'SERVERS' && s && s.utilisation !== undefined) {
+    if (!s.installed) return ['No systems yet: IT has not been set up.']
+    return [
+      `Utilisation: ${percent(s.utilisation)} (${s.tonight?.waiting ?? 0} of ${s.tonight?.capacity ?? 0} files tonight, ${s.capacity.toLowerCase()} capacity)`,
+      `Storage: ${(s.storage?.customers ?? 0).toLocaleString('en-GB')} customers, ${(s.storage?.accounts ?? 0).toLocaleString('en-GB')} credit accounts`,
+      `Availability: ${percent(s.availability ?? 0, 1)} over the last 20 working days`,
+      `Maintenance: ${s.maintenance ?? ''}`,
+    ]
+  }
+  if (r.code === 'DATA_ANALYTICS' && data.analytics) {
+    return data.analytics.models.map(
+      (m) =>
+        `Scorecard ${m.number} (${TERMS[m.term] ?? m.term.toLowerCase()}): ${m.status === 'DEPLOYED' ? 'deployed' : 'a draft'}`,
+    )
+  }
+  if (r.code === 'PRODUCT' && data.developments) {
+    return data.developments.map(
+      (d) => `${d.name}: ${percent(d.progress)} done, ready on ${day(d.ready_on)}`,
+    )
+  }
+  return []
+}
+
 export function layOut(data: FloorData, gameId: number): Floor {
   const plan = PLANS[data.plan]
   const [width, depth] = plan.size
@@ -336,6 +424,7 @@ export function layOut(data: FloorData, gameId: number): Floor {
         size: [rect.w, rect.d],
         tint: ROOM_TINT[r.kind],
         summary: r.summary,
+        details: detailsOf(r, data),
         label: `${r.name}: ${r.summary}`,
         to: screen(r.screen),
       }
@@ -344,7 +433,15 @@ export function layOut(data: FloorData, gameId: number): Floor {
   const seated = (s: FloorData['staff'][number]) => s.desk !== null && s.place === 'DESK'
   const labelOf = (s: FloorData['staff'][number]) => `${s.name}, ${s.job_title}: ${s.doing}`
   const toOf = (s: FloorData['staff'][number]) =>
-    s.item ? screen(`queue/${s.item}`) : screen('staff')
+    s.screen ? screen(s.screen) : s.item ? screen(`queue/${s.item}`) : screen('staff')
+  const screenOf = (s: FloorData['staff'][number]) =>
+    s.model?.status === 'DEPLOYED'
+      ? COLOURS.screenDeployed
+      : s.model?.status === 'DRAFT'
+        ? COLOURS.screenDraft
+        : COLOURS.screen
+  const progressOf = (s: FloorData['staff'][number]) =>
+    data.developments?.find((d) => d.code === s.product)?.progress ?? null
   // The queue is shared across the desks in use, as in the trial.
   const inUse = data.staff.filter(seated).length
   const perDesk = inUse && data.queue ? Math.ceil(data.queue.open / inUse) : 0
@@ -360,14 +457,19 @@ export function layOut(data: FloorData, gameId: number): Floor {
         const position = centred(x, z)
         const s = here[i]
         if (!s) {
+          const hiring = HIRING_ROOMS.has(r.code)
           desks.push({
             key: `${r.code}-empty-${i}`,
             room: r.code,
             position,
             person: null,
             pile: 0,
-            label: `An empty desk in ${r.name}: room to hire (Staff)`,
-            to: screen('staff'),
+            screen: COLOURS.screen,
+            progress: null,
+            label: hiring
+              ? `An empty desk in ${r.name}: room to hire (Staff)`
+              : `An empty desk in ${r.name}: ${r.summary}`,
+            to: screen(hiring ? 'staff' : r.screen),
           })
           return
         }
@@ -384,22 +486,28 @@ export function layOut(data: FloorData, gameId: number): Floor {
             seated: sitting,
             colour: colourOf(s.activity),
           },
-          pile: sitting ? Math.min(MAX_PILE, perDesk) : 0,
+          pile: sitting && !s.managed ? Math.min(MAX_PILE, perDesk) : 0,
+          screen: screenOf(s),
+          progress: progressOf(s),
           label: labelOf(s),
           to: toOf(s),
         })
       })
       continue
     }
-    const kinds = FACILITY_FURNITURE[r.code] ?? FURNITURE[r.kind]
+    const kinds = furnitureOf(r, data)
     const spread = rect.w / (kinds.length + 1)
+    const details = detailsOf(r, data)
     kinds.forEach((kind, i) => {
       fixtures.push({
         key: `${r.code}-${i}`,
         room: r.code,
         kind,
         position: centred(rect.x + spread * (i + 1), rect.z + rect.d / 2),
-        label: `${r.name}: ${r.summary}`,
+        label:
+          kind === 'rack' && details.length
+            ? `Server rack ${i + 1}: ${details.join('; ')}`
+            : `${r.name}: ${r.summary}`,
         to: screen(r.screen),
       })
     })
@@ -410,17 +518,20 @@ export function layOut(data: FloorData, gameId: number): Floor {
   for (const r of rooms) {
     const here = data.staff.filter((s) => s.room === r.code && s.place !== 'DESK')
     const radius = Math.min(r.size[0], r.size[1]) / 2 - 0.7
+    // In the server room, IT stands at the racks, in front of their lights.
+    const racks = fixtures.filter((f) => f.room === r.code && f.kind === 'rack')
     here.forEach((s, i) => {
       const angle = (2 * Math.PI * i) / here.length
+      const rack = racks.length ? racks[i % racks.length] : undefined
+      const row = racks.length ? Math.floor(i / racks.length) : 0
       visitors.push({
         key: `${s.number}-in-${r.code}`,
         number: s.number,
         room: r.code,
-        position: [
-          r.centre[0] + Math.cos(angle) * radius,
-          0,
-          r.centre[2] + Math.sin(angle) * radius,
-        ],
+        position: rack
+          ? [rack.position[0] + (row % 2 ? 0.35 : -0.15), 0, rack.position[2] + 0.9 + row * 0.5]
+          : [r.centre[0] + Math.cos(angle) * radius, 0, r.centre[2] + Math.sin(angle) * radius],
+        facing: rack ? Math.PI : undefined,
         colour: colourOf(s.activity),
         label: labelOf(s),
         to: toOf(s),
@@ -451,7 +562,7 @@ export function layOut(data: FloorData, gameId: number): Floor {
         room: v.room,
         spot: v.position,
         pose: 'standing',
-        facing: Math.atan2(centre[0] - v.position[0], centre[2] - v.position[2]),
+        facing: v.facing ?? Math.atan2(centre[0] - v.position[0], centre[2] - v.position[2]),
         colour: v.colour,
         label: v.label,
         to: v.to,
@@ -478,7 +589,8 @@ export function layOut(data: FloorData, gameId: number): Floor {
       : data.systems.down
         ? 'down'
         : 'ok'
-  const based = data.staff.filter((s) => s.desk !== null)
+  const based = data.staff.filter((s) => s.desk !== null && !s.managed)
+  const teams = data.staff.filter((s) => s.managed).length
   const working = based.filter((s) => s.activity === 'WORKING').length
   const free = based.filter((s) => s.activity === 'FREE').length
   const parts = [`${data.name}: ${rooms.length} rooms.`]
@@ -487,6 +599,8 @@ export function layOut(data: FloorData, gameId: number): Floor {
     parts.push(
       `${based.length} staff work here: ${working} working, ${free} free, ${based.length - working - free} away from their desks.`,
     )
+  if (!data.after_hours && teams)
+    parts.push(`${teams} more in the managed departments' teams (not on the payroll).`)
   if (data.queue) parts.push(`${data.queue.open} item(s) waiting in the queue.`)
   if (data.systems)
     parts.push(

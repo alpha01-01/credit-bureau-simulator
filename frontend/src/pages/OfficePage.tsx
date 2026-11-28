@@ -8,6 +8,10 @@
  * P4.3: people are figures of a few parts, seated at their desks or standing, and walk
  * between places when the game moves them (``lib/movement``); the light follows the
  * clock, and the office goes dark after hours.
+ *
+ * P4.4: the whole first floor. The server room's racks follow the IT state and IT walks
+ * to them during an outage; Analytics' screens show the scorecards, Product
+ * Development's desks the products' progress; a room looked at closely lists its figures.
  */
 import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -236,13 +240,22 @@ function Stairs({ at }: { at: Point }) {
   )
 }
 
-/** A workstation: desk, screen and chair. */
-function Workstation() {
+/** A workstation: desk, screen and chair; the screen lit by what is on it (P4.4). */
+function Workstation({ screen = COLOURS.screen }: { screen?: string }) {
+  const lit = screen !== COLOURS.screen
   return (
     <>
       <Box size={[1.4, 0.08, 0.8]} at={[0, 0.75, 0]} colour={COLOURS.deskTop} />
       <Box size={[1.3, 0.7, 0.1]} at={[0, 0.36, -0.3]} colour={COLOURS.desk} />
-      <Box size={[0.5, 0.35, 0.05]} at={[0, 1.0, -0.2]} colour={COLOURS.screen} />
+      <mesh position={[0, 1.0, -0.2]}>
+        <boxGeometry args={[0.5, 0.35, 0.05]} />
+        <meshStandardMaterial
+          color={screen}
+          emissive={screen}
+          emissiveIntensity={lit ? 0.6 : 0}
+          flatShading
+        />
+      </mesh>
       <Box size={[0.5, 0.45, 0.5]} at={[0, 0.23, 0.75]} colour={COLOURS.seat} />
     </>
   )
@@ -251,7 +264,18 @@ function Workstation() {
 function DeskGroup({ desk, hover, go }: { desk: Desk; hover: Hover; go: Go }) {
   return (
     <group position={desk.position} {...pickable(desk, hover, go)}>
-      <Workstation />
+      <Workstation screen={desk.screen} />
+      {desk.progress !== null && (
+        // A product's progress: a bar along the desk's front, filled as far as it has got.
+        <>
+          <Box size={[1.2, 0.06, 0.06]} at={[0, 0.82, 0.37]} colour={COLOURS.wall} />
+          <Box
+            size={[Math.max(0.02, 1.2 * desk.progress), 0.08, 0.08]}
+            at={[-0.6 + (1.2 * desk.progress) / 2, 0.82, 0.38]}
+            colour={COLOURS.progress}
+          />
+        </>
+      )}
       {desk.pile > 0 && (
         // One box for the pile, its height the sheets on it: a mesh a desk, however busy.
         <Box
@@ -639,6 +663,16 @@ export function OfficePage() {
         <p className="pointer-events-none absolute top-3 left-3 max-w-[70%] rounded bg-slate-900/80 px-3 py-1.5 text-sm text-white empty:hidden">
           {hovered ?? (zoomed ? zoomed.label : '')}
         </p>
+        {zoomed && zoomed.details.length > 0 && (
+          <ul
+            className="absolute top-14 left-3 max-w-[60%] space-y-0.5 rounded bg-white/90 px-3 py-2 text-xs text-slate-800 shadow"
+            data-testid="office-details"
+          >
+            {zoomed.details.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        )}
         <p className="absolute bottom-2 left-3 text-xs text-slate-400" data-testid="office-place">
           {current.name}
           {zoomed ? ` › ${zoomed.name}` : ''}
@@ -664,6 +698,13 @@ export function OfficePage() {
                       {r.name}
                     </Link>
                     : {r.summary}
+                    {r.details.length > 0 && (
+                      <ul className="ml-4 list-disc text-slate-600">
+                        {r.details.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    )}
                   </li>
                 ))}
               </ul>
