@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router'
 
 import { type HealthPart, useGameCommand, useHealth } from '../api/game'
 import { useGameId } from '../app/useGameId'
@@ -31,6 +32,11 @@ export function HealthPage() {
   const health = useHealth(gameId)
   const act = useGameCommand(gameId, '/health/')
   const [amount, setAmount] = useState('')
+  // The office's boardroom opens the board's reviews (P4.6): /health#board.
+  const { hash } = useLocation()
+  useEffect(() => {
+    if (hash && health.data) document.getElementById(hash.slice(1))?.scrollIntoView()
+  }, [hash, health.data])
   if (health.isPending) return <Loading what="the bureau's health" />
   if (health.isError) return <Failed error={health.error} />
   const h = health.data
@@ -154,26 +160,28 @@ export function HealthPage() {
         </div>
       </Card>
 
-      <Card title="Quarterly board reviews">
-        {h.board_reviews.length === 0 ? (
-          <Empty>The board reviews each quarter once the management has run a full one.</Empty>
-        ) : (
-          <Table head={['Quarter ending', 'Confidence', 'Verdict', 'What it said']}>
-            {h.board_reviews.map((r) => (
-              <tr key={r.period}>
-                <Td>{day(r.period)}</Td>
-                <Td right>{Math.round(r.confidence)}</Td>
-                <Td>
-                  <Badge tone={VERDICT_TONE[r.verdict] ?? 'neutral'}>
-                    {r.verdict.toLowerCase().replaceAll('_', ' ')}
-                  </Badge>
-                </Td>
-                <Td>{r.detail}</Td>
-              </tr>
-            ))}
-          </Table>
-        )}
-      </Card>
+      <section id="board" className="scroll-mt-4">
+        <Card title="Quarterly board reviews">
+          {h.board_reviews.length === 0 ? (
+            <Empty>The board reviews each quarter once the management has run a full one.</Empty>
+          ) : (
+            <Table head={['Quarter ending', 'Confidence', 'Verdict', 'What it said']}>
+              {h.board_reviews.map((r) => (
+                <tr key={r.period}>
+                  <Td>{day(r.period)}</Td>
+                  <Td right>{Math.round(r.confidence)}</Td>
+                  <Td>
+                    <Badge tone={VERDICT_TONE[r.verdict] ?? 'neutral'}>
+                      {r.verdict.toLowerCase().replaceAll('_', ' ')}
+                    </Badge>
+                  </Td>
+                  <Td>{r.detail}</Td>
+                </tr>
+              ))}
+            </Table>
+          )}
+        </Card>
+      </section>
 
       <Card title="Ask the shareholders for capital">
         <p className="mb-3 text-sm text-slate-600">

@@ -108,7 +108,7 @@ SECOND = Floor(
              "The chief executive's desk: the company at a glance.", ("CEO",)),
         Room("EXECUTIVE", "Executive Management", DEPARTMENT, "health",
              "The heads of department and the company's health."),
-        Room("BOARDROOM", "Boardroom", MEETING, "health",
+        Room("BOARDROOM", "Boardroom", MEETING, "health#board",
              "Where the board reviews the company each quarter."),
         Room("COMPLIANCE", "Risk and Compliance", DEPARTMENT, "compliance",
              "Keeps the bureau within the law and the regulator's rules.", ("COMPLIANCE",)),

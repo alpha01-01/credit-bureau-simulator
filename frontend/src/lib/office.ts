@@ -114,6 +114,43 @@ export type FloorData = {
     items: { title: string; done: boolean }[]
   }
   welfare?: Welfare
+  /** The executive floor (P4.6): the boardroom, Compliance and the notice board. */
+  board?: {
+    in_session: boolean
+    last: {
+      period: string
+      quarter: string
+      confidence: number
+      verdict: string
+      words: string
+      detail: string
+    } | null
+    next_on: string
+  }
+  compliance?: {
+    open: number
+    findings: {
+      number: number
+      kind: string
+      words: string
+      due: string | null
+      escalated: boolean
+    }[]
+    samples: { number: number; subscriber: string; state: string }[]
+    today: string
+  }
+  notices?: Notices
+}
+
+export type Notices = {
+  mission: {
+    code: string
+    title: string
+    objectives: { text: string; done: boolean; progress: string }[]
+  } | null
+  campaign: boolean
+  targets: string[]
+  regulator: string[]
 }
 
 export type Welfare = {
@@ -224,6 +261,7 @@ export const COLOURS = {
   restoring: '#dc2626',
   progress: '#0f766e',
   visitor: '#0369a1',
+  cork: '#b08968',
 } as const
 
 /** Each kind of room has its own floor tint, so the plan reads at a glance. */
@@ -293,7 +331,7 @@ export type Desk = {
 export type Fixture = {
   key: string
   room: string
-  kind: 'workstation' | 'table' | 'counter' | 'sofa' | 'bigdesk' | 'rack'
+  kind: 'workstation' | 'table' | 'counter' | 'sofa' | 'bigdesk' | 'rack' | 'noticeboard'
   position: Point
   label: string
   to: string
@@ -400,6 +438,10 @@ const FACILITY_FURNITURE: Record<string, Fixture['kind'][]> = {
   CAFETERIA: ['table', 'table', 'table'],
   KITCHEN: ['table'],
 }
+/** Departments' rooms with something of their own to stand in them (P4.6). */
+const ROOM_FURNITURE: Record<string, Fixture['kind'][]> = {
+  EXECUTIVE: ['noticeboard', 'table'],
+}
 
 /** Rooms whose empty desks are room to hire: the departments the bureau hires into. */
 const HIRING_ROOMS = new Set(['DATA_OPERATIONS', 'OPEN_PLAN'])
@@ -408,7 +450,7 @@ const MOST_RACKS = 5
 function furnitureOf(r: FloorData['rooms'][number], data: FloorData): Fixture['kind'][] {
   if (r.kind === 'SERVERS' && data.systems?.racks)
     return Array.from({ length: Math.min(MOST_RACKS, data.systems.racks) }, () => 'rack')
-  return FACILITY_FURNITURE[r.code] ?? FURNITURE[r.kind]
+  return FACILITY_FURNITURE[r.code] ?? ROOM_FURNITURE[r.code] ?? FURNITURE[r.kind]
 }
 
 const percent = (f: number, digits = 0) => `${(f * 100).toFixed(digits)}%`
@@ -447,7 +489,57 @@ export function detailsOf(r: FloorData['rooms'][number], data: FloorData): strin
       (d) => `${d.name}: ${percent(d.progress)} done, ready on ${day(d.ready_on)}`,
     )
   }
-  return groundDetails(r, data)
+  return groundDetails(r, data) ?? executiveDetails(r, data)
+}
+
+/**
+ * The executive floor's rooms looked at closely (P4.6): the board's last review,
+ * Compliance's open findings and samples, and the notice board.
+ */
+function executiveDetails(r: FloorData['rooms'][number], data: FloorData): string[] {
+  const b = data.board
+  if (r.code === 'BOARDROOM' && b) {
+    const next = `Next review: the first working day of ${monthOf(b.next_on)}`
+    if (!b.last) return ['No board review yet', next]
+    return [
+      `Last review, ${b.last.quarter}: confidence ${b.last.confidence}, ${b.last.words}`,
+      b.last.detail,
+      next,
+    ]
+  }
+  const c = data.compliance
+  if (r.code === 'COMPLIANCE' && c) {
+    const lines = c.findings.map(
+      (f) =>
+        `Finding ${f.number}: ${f.words}${f.due ? `, to put right by ${day(f.due)}` : ''}${f.escalated ? ' (reported to the regulator)' : ''}`,
+    )
+    lines.push(...c.samples.map((x) => `Consent sample ${x.number} (${x.subscriber}): ${x.state}`))
+    if (c.today) lines.push(`Today: ${c.today}`)
+    return lines.length ? lines : ['No finding open and no sample in progress.']
+  }
+  if (r.code === 'EXECUTIVE' && data.notices) return noticeLines(data.notices)
+  return []
+}
+
+/** What the notice board shows: the mission, the month's targets, the regulator. */
+export function noticeLines(n: Notices): string[] {
+  const lines: string[] = []
+  if (n.mission) {
+    lines.push(`Mission ${n.mission.code}: ${n.mission.title}`)
+    for (const o of n.mission.objectives)
+      lines.push(`  ${o.done ? 'Done' : 'To do'}: ${o.text}${o.progress ? ` (${o.progress})` : ''}`)
+  } else lines.push(n.campaign ? 'The campaign is complete.' : 'No campaign in this game.')
+  lines.push(
+    ...(n.targets.length
+      ? n.targets.map((t) => `Target: ${t}`)
+      : ["Targets: no budget set for this month (Finance's budget screen)"]),
+  )
+  lines.push(
+    ...(n.regulator.length
+      ? n.regulator.map((t) => `Regulator: ${t}`)
+      : ['Regulator: nothing open; the bureau is in good standing']),
+  )
+  return lines
 }
 
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -457,7 +549,7 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
  * Support's tickets, Sales' prospects, Finance's close checklist, and the cafeteria's
  * welfare figures (Document 05, Section 5.3).
  */
-function groundDetails(r: FloorData['rooms'][number], data: FloorData): string[] {
+function groundDetails(r: FloorData['rooms'][number], data: FloorData): string[] | null {
   if (r.code === 'RECEPTION' && data.visits)
     return data.visits.length ? data.visits : ['No visitors yet today.']
   const t = data.tickets
@@ -493,7 +585,7 @@ function groundDetails(r: FloorData['rooms'][number], data: FloorData): string[]
       `${hours}; ${w.done_today} item(s) done today, ${w.on_course} on a course`,
     ]
   }
-  return []
+  return null
 }
 
 /** "2027-01-31" as "January 2027". */
@@ -558,9 +650,15 @@ export function layOut(data: FloorData, gameId: number): Floor {
   const perDesk = inUse && data.queue ? Math.ceil(data.queue.open / inUse) : 0
   // Support's open tickets are shared across its agents' desks, or, with nobody there to
   // answer them, pile up on its empty desks (P4.5).
+  // Compliance's open findings lie on its desks the same way (P4.6).
+  const open: Record<string, number | undefined> = {
+    SUPPORT: data.tickets?.open,
+    COMPLIANCE: data.compliance?.open,
+  }
   const ticketsOn = (room: string, desks: number, seatedHere: number) => {
-    if (room !== 'SUPPORT' || !data.tickets) return null
-    return Math.min(MAX_PILE, Math.ceil(data.tickets.open / Math.max(1, seatedHere || desks)))
+    const n = open[room]
+    if (n === undefined) return null
+    return Math.min(MAX_PILE, Math.ceil(n / Math.max(1, seatedHere || desks)))
   }
 
   const desks: Desk[] = []
@@ -627,8 +725,10 @@ export function layOut(data: FloorData, gameId: number): Floor {
         label:
           kind === 'rack' && details.length
             ? `Server rack ${i + 1}: ${details.join('; ')}`
-            : `${r.name}: ${r.summary}`,
-        to: screen(r.screen),
+            : kind === 'noticeboard' && data.notices
+              ? `The notice board: ${noticeLines(data.notices).join('; ')}`
+              : `${r.name}: ${r.summary}`,
+        to: screen(kind === 'noticeboard' ? 'missions' : r.screen),
       })
     })
   }
