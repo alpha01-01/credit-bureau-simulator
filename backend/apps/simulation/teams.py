@@ -18,6 +18,8 @@ ASSUMPTION A-093 (the teams and the server room's figures):
 * Teams go home after hours with everyone else, and take no breaks or meetings. Only a
   department with a room of its own has a team: in a Startup's open-plan office the
   managed departments are the founder's own work, so none is drawn.
+* The ground floor's Customer Support, Sales, Finance and HR teams are A-094's
+  (``ground``).
 * **The server room:** utilisation is tonight's batch against the capacity; storage
   the customers and credit accounts held (counting every monthly observation is too
   slow for a two-second refresh); availability the share of the last 20
@@ -34,7 +36,7 @@ from typing import Any
 from apps.bureau.core.models import CreditAccount, Customer
 from apps.org.models import Employee
 
-from . import building, controls, it, places, products, startup
+from . import building, ground, it, places, products, startup
 from .clock import TICKS_PER_DAY, TICKS_PER_HOUR
 from .models import Game, Incident, ProductDevelopment, ScoreModel
 
@@ -51,7 +53,18 @@ TERMS = {
 }
 # Where a team member is, beyond the places people have (A-091).
 SERVER_ROOM, RESTORING = "SERVER_ROOM", "RESTORING"
-TEAM_NAMES = {"IT": "IT", "DATA_ANALYTICS": "Analytics", "PRODUCT": "Product"}
+TEAM_NAMES = {
+    "IT": "IT",
+    "DATA_ANALYTICS": "Analytics",
+    "PRODUCT": "Product",
+    "CUSTOMER_SUPPORT": "Support",
+    "SALES": "Sales",
+    "FINANCE": "Finance",
+    "HR": "HR",
+}
+MOST_SALES = 4
+FINANCE_TEAM = ("Finance manager", "Accountant")
+HR_PER_STAFF, MOST_HR = 20, 3
 
 
 def _own_room(game: Game, department: str) -> building.Room | None:
@@ -190,18 +203,91 @@ def _product_team(game: Game, today: date) -> list[dict[str, Any]]:
     return out
 
 
-def team(game: Game, incident: Incident | None, today: date) -> list[dict[str, Any]]:
+def _support_team(game: Game, today: date) -> list[dict[str, Any]]:
+    """The contact centre's agents (P3.10), answering the open tickets."""
+    agents = min(ground.MOST_AGENTS, game.organization.support_staff)
+    waiting = ground.tickets(game, today)["open"] if agents else 0
+    doing = (
+        f"answering tickets: {waiting} waiting, oldest first" if waiting else "no tickets waiting"
+    )
+    return [
+        _person("CUSTOMER_SUPPORT", n, "Support agent (contact centre)",
+                places.WORKING if waiting else places.FREE, doing, "support")
+        for n in range(1, agents + 1)
+    ]  # fmt: skip
+
+
+def _sales_team(game: Game, today: date) -> list[dict[str, Any]]:
+    found = ground.prospects(game, today)[:MOST_SALES]
+    if not found:
+        return [
+            _person("SALES", 1, "Business development officer", places.FREE,
+                    "no prospect in play: research a lender from the Sales screen", "sales")
+        ]  # fmt: skip
+    out = []
+    for n, p in enumerate(found, start=1):
+        person = _person(
+            "SALES", n, "Business development officer", places.WORKING,
+            ground.prospect_words(p, today), "sales",
+        )  # fmt: skip
+        person["prospect"] = p["code"]
+        out.append(person)
+    return out
+
+
+def _finance_team(game: Game, today: date) -> list[dict[str, Any]]:
+    close = ground.month_close(game, today)
+    done, total = close["done"], close["total"]
+    month = f"{close['period']:%B %Y}"
+    busy = close["ended"] and done < total
+    doing = (
+        f"closing {month}: {done} of {total} done"
+        if close["ended"]
+        else f"keeping the books; {month} closes after its end ({done} of {total} done)"
+    )
+    out = []
+    for n, title in enumerate(FINANCE_TEAM, start=1):
+        person = _person("FINANCE", n, title, places.WORKING if busy else places.FREE,
+                         doing, "close")  # fmt: skip
+        person["progress"] = round(done / total, 2) if total else 0.0
+        out.append(person)
+    return out
+
+
+def _hr_team(game: Game) -> list[dict[str, Any]]:
+    payroll = Employee.objects.filter(organization=game.organization, is_active=True).count()
+    size = min(MOST_HR, 1 + payroll // HR_PER_STAFF)
+    return [
+        _person("HR", n, "HR and administration officer", places.FREE,
+                f"looking after {payroll} staff on the payroll", "staff")
+        for n in range(1, size + 1)
+    ]  # fmt: skip
+
+
+def team(
+    game: Game,
+    incident: Incident | None,
+    today: date,
+    departments: set[str] | None = None,
+) -> list[dict[str, Any]]:
     """Everyone the managed departments' rooms draw, in the order the floor lists them.
 
-    Only where the department has its own room, and no real staff of its own.
+    Only where the department has its own room, and no real staff of its own; only
+    ``departments`` (a floor's) when given.
     """
     makers: tuple[tuple[str, Callable[[], list[dict[str, Any]]]], ...] = (
         ("DATA_ANALYTICS", lambda: _analysts(game)),
         ("IT", lambda: _it_team(game, incident)),
         ("PRODUCT", lambda: _product_team(game, today)),
+        ("CUSTOMER_SUPPORT", lambda: _support_team(game, today)),
+        ("SALES", lambda: _sales_team(game, today)),
+        ("FINANCE", lambda: _finance_team(game, today)),
+        ("HR", lambda: _hr_team(game)),
     )
     out: list[dict[str, Any]] = []
     for department, make in makers:
+        if departments is not None and department not in departments:
+            continue
         if _own_room(game, department) is None or _has_staff(game, department):
             continue
         out.extend(make())
@@ -253,4 +339,4 @@ def server_room(game: Game, incident: Incident | None, today: date) -> dict[str,
 
 
 def today_of(game: Game) -> date:
-    return controls.state(game).now.date()
+    return ground.now_of(game).date()

@@ -20,12 +20,13 @@ from rest_framework.response import Response
 from apps.org.models import Employee
 from apps.workitems.models import ItemStatus, WorkItem
 
-from . import building, controls, it, places, sales, startup, teams
+from . import building, ground, it, places, startup, teams
 from .api import _game
 from .clock import TICK_MINUTES, TICKS_PER_DAY
 from .models import ComplianceFinding, Game, Incident
 
 MIN_DESKS = 6  # an established department's room shows room to hire
+MIN_SUPPORT_DESKS = 2  # tickets pile up on them when there are no agents
 
 
 def _plain(f: building.Floor) -> dict[str, Any]:
@@ -99,7 +100,8 @@ def _teams(
     """The managed departments' derived teams on this floor (P4.4, A-093)."""
     codes = {r.code for r in here.rooms}
     out = []
-    for p in teams.team(game, incident, today):
+    departments = {d for r in here.rooms for d in r.departments}
+    for p in teams.team(game, incident, today, departments):
         desk = next((r.code for r in here.rooms if p["department"] in r.departments), None)
         room = p["room"] if p["room"] in codes else None
         if desk is None and room is None:
@@ -123,6 +125,8 @@ def _desks(game: Game, room: building.Room, people: list[dict[str, Any]]) -> int
         return found.desks if found is not None else here
     if "DATA_OPERATIONS" in room.departments:  # the department the bureau hires into
         return max(MIN_DESKS, here)
+    if "CUSTOMER_SUPPORT" in room.departments:
+        return max(MIN_SUPPORT_DESKS, here)
     return here
 
 
@@ -169,6 +173,9 @@ def _summary(
             + ", ".join(f"the {d['name'].lower()} ({d['progress']:.0%})" for d in building_now)
             + "."
         )
+    line = _ground_line(game, room, present, extra)
+    if line is not None:
+        return line
     if managed and "IT" in room.departments:
         away = sum(p["place"] == teams.SERVER_ROOM for p in managed)
         line = f"IT team of {len(managed)}"
@@ -189,19 +196,69 @@ def _summary(
     if present:
         by = present[0]["activity"]
         return f"{GATHERED.get(by, 'Here')}: {_names(present)}."
-    if room.code == "SALES" and not places.after_hours(game):
-        met = sales.meetings_on(game, controls.state(game).now.date())
-        if met:
-            return f"Sales is out at the prospect today, meeting {', '.join(met)}."
     if room.code == "COMPLIANCE":
         open_findings = ComplianceFinding.objects.filter(
             game=game, resolved_tick__isnull=True
         ).count()
         return f"{open_findings} compliance finding(s) open."
+    return room.purpose
+
+
+def _ground_line(
+    game: Game, room: building.Room, present: list[dict[str, Any]], extra: dict[str, Any]
+) -> str | None:
+    """The ground floor's rooms (P4.5, A-094): from their own state, or None."""
+    guests = [p for p in present if p.get("visitor")]
+    if room.code == "RECEPTION" and "visits" in extra:
+        if guests:
+            return f"Signing in: {_names(guests)}."
+        n = len(extra["visits"])
+        return (
+            f"{n} visit(s) in the book today; nobody at the desk now."
+            if n
+            else ("No visitors yet today.")
+        )
+    if room.code == "WAITING" and "visits" in extra:
+        return f"Waiting: {_names(guests)}." if guests else "Nobody is waiting."
+    if "CUSTOMER_SUPPORT" in room.departments and "tickets" in extra:
+        t = extra["tickets"]
+        line = (
+            f"{t['agents']} agent(s), answering {t['per_day']} a day; "
+            f"{t['open']} ticket(s) open, {t['overdue']} past their time"
+        )
+        if t["today"]:
+            line += f"; {t['today']} came in today"
+            if t["outage_today"]:
+                line += f", {t['outage_today']} about the outage"
+        return line + "."
+    if "SALES" in room.departments and "prospects" in extra:
+        if guests:
+            return f"Meeting {_names(guests)}, until 15:00."
+        today = [p for p in extra["prospects"] if p["stage"] == "MEETING" and p.get("today")]
+        if today:
+            names = ", ".join(p["name"] for p in today)
+            return f"Meeting {names} here today, {ground.MEETING_TIME}."
+        n = len(extra["prospects"])
+        if not n:
+            return "No prospect in play: research a lender from the Sales screen."
+        return f"Working on {n} prospect(s)."
+    if "FINANCE" in room.departments and "close" in extra:
+        c = extra["close"]
+        month = f"{c['period']:%B %Y}"
+        if not c["ended"]:
+            return f"Keeping the books; {month} closes after its end ({c['done']} of {c['total']} done)."
+        return f"Closing {month}: {c['done']} of {c['total']} done."
     if room.code == "HR":
         staff = Employee.objects.filter(organization=game.organization, is_active=True).count()
         return f"{staff} staff on the payroll."
-    return room.purpose
+    if room.code in ("CAFETERIA", "KITCHEN") and "welfare" in extra:
+        w = extra["welfare"]
+        on_break = [p for p in present if not p.get("visitor")]
+        line = f"On a break: {_names(on_break)}. " if on_break else ""
+        if not w["staff"]:
+            return line + "Nobody on the payroll yet."
+        return line + f"Morale {w['morale']:.2f} on average across {w['staff']} staff."
+    return None
 
 
 def _servers_line(systems: dict[str, Any], present: list[dict[str, Any]]) -> str:
@@ -236,9 +293,32 @@ def floor_view(request: Request, game_id: int, floor: str) -> Response:
     org = game.organization
     incident = it.active_incident(game, game.current_tick + 1)
     today = teams.today_of(game)
-    people = _staff(game, found) + _teams(game, found, incident, today)
+    codes = {r.code for r in found.rooms}
+    guests, book = ground.visitors(game, today)
+    people = (
+        _staff(game, found)
+        + _teams(game, found, incident, today)
+        + [v for v in guests if v["room"] in codes]
+    )
     extra: dict[str, Any] = {}
     departments = {d for r in found.rooms for d in r.departments}
+    if "RECEPTION" in codes:
+        extra["visits"] = book
+    if "CUSTOMER_SUPPORT" in departments:
+        extra["tickets"] = ground.tickets(game, today)
+    if "SALES" in departments:
+        extra["prospects"] = [
+            p
+            | {
+                "today": p["stage"] == "MEETING" and p["on"] == today,
+                "doing": ground.prospect_words(p, today),
+            }
+            for p in ground.prospects(game, today)
+        ]
+    if "FINANCE" in departments:
+        extra["close"] = ground.month_close(game, today)
+    if codes & {"CAFETERIA", "KITCHEN"}:
+        extra["welfare"] = ground.welfare(game, today)
     if "DATA_ANALYTICS" in departments:
         extra["analytics"] = {
             "models": [
