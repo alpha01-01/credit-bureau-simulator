@@ -20,7 +20,7 @@ from rest_framework.response import Response
 from apps.org.models import Employee
 from apps.workitems.models import ItemStatus, WorkItem
 
-from . import building, ground, it, places, startup, teams
+from . import building, executive, ground, it, places, startup, teams
 from .api import _game
 from .clock import TICK_MINUTES, TICKS_PER_DAY
 from .models import ComplianceFinding, Game, Incident
@@ -174,6 +174,8 @@ def _summary(
             + "."
         )
     line = _ground_line(game, room, present, extra)
+    if line is None:
+        line = _exec_line(room, desks, present, extra)
     if line is not None:
         return line
     if managed and "IT" in room.departments:
@@ -261,6 +263,47 @@ def _ground_line(
     return None
 
 
+def _exec_line(
+    room: building.Room,
+    desks: list[dict[str, Any]],
+    present: list[dict[str, Any]],
+    extra: dict[str, Any],
+) -> str | None:
+    """The executive floor's rooms (P4.6, A-095): from their own state, or None."""
+    if room.code == "BOARDROOM" and "board" in extra and not present:
+        b = extra["board"]
+        due = f"The next is due on the first working day of {b['next_on']:%B %Y}."
+        if b["last"] is None:
+            return (
+                "No board review yet: the board meets once the management has run a full quarter. "
+                + due
+            )
+        last = b["last"]
+        return (
+            f"Last review, {last['quarter']}: confidence {last['confidence']}, "
+            f"{last['words']}. {due}"
+        )
+    if "CEO" in room.departments and desks and desks[0].get("managed"):
+        return f"{desks[0]['name']}: {desks[0]['doing']}."
+    if "COMPLIANCE" in room.departments and "compliance" in extra:
+        c = extra["compliance"]
+        line = f"{c['open']} finding(s) open; {len(c['samples'])} consent sample(s) in progress"
+        if c["today"]:
+            line += f"; today on {c['today']}"
+        return line + "."
+    if room.code == "EXECUTIVE" and "notices" in extra:
+        n = extra["notices"]
+        mission = (
+            f"mission {n['mission']['code']}, {n['mission']['title']}"
+            if n["mission"]
+            else "no mission"
+        )
+        acts = len(n["regulator"])
+        regulator = f"{acts} item(s) from the regulator" if acts else "nothing from the regulator"
+        return f"Notice board: {mission}; {regulator}."
+    return None
+
+
 def _servers_line(systems: dict[str, Any], present: list[dict[str, Any]]) -> str:
     """The server room's line: its state, and its utilisation, storage and availability."""
     if not systems["installed"]:
@@ -298,7 +341,7 @@ def floor_view(request: Request, game_id: int, floor: str) -> Response:
     people = (
         _staff(game, found)
         + _teams(game, found, incident, today)
-        + [v for v in guests if v["room"] in codes]
+        + [v for v in guests + executive.directors(game) if v["room"] in codes]
     )
     extra: dict[str, Any] = {}
     departments = {d for r in found.rooms for d in r.departments}
@@ -319,6 +362,13 @@ def floor_view(request: Request, game_id: int, floor: str) -> Response:
         extra["close"] = ground.month_close(game, today)
     if codes & {"CAFETERIA", "KITCHEN"}:
         extra["welfare"] = ground.welfare(game, today)
+    boardroom = building.room_for_place(game, places.BOARDROOM)
+    if boardroom is not None and boardroom[0].code == found.code:
+        extra["board"] = executive.board(game, today)
+    if "COMPLIANCE" in departments:
+        extra["compliance"] = executive.compliance_state(game, today)
+    if "EXECUTIVE" in codes:
+        extra["notices"] = executive.notices(game, today)
     if "DATA_ANALYTICS" in departments:
         extra["analytics"] = {
             "models": [

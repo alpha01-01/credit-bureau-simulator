@@ -19,7 +19,7 @@ ASSUMPTION A-093 (the teams and the server room's figures):
   department with a room of its own has a team: in a Startup's open-plan office the
   managed departments are the founder's own work, so none is drawn.
 * The ground floor's Customer Support, Sales, Finance and HR teams are A-094's
-  (``ground``).
+  (``ground``); the chief executive and Compliance's officer are A-095's (``executive``).
 * **The server room:** utilisation is tonight's batch against the capacity; storage
   the customers and credit accounts held (counting every monthly observation is too
   slow for a two-second refresh); availability the share of the last 20
@@ -36,7 +36,7 @@ from typing import Any
 from apps.bureau.core.models import CreditAccount, Customer
 from apps.org.models import Employee
 
-from . import building, ground, it, places, products, startup
+from . import building, executive, ground, it, places, products, startup
 from .clock import TICKS_PER_DAY, TICKS_PER_HOUR
 from .models import Game, Incident, ProductDevelopment, ScoreModel
 
@@ -61,6 +61,8 @@ TEAM_NAMES = {
     "SALES": "Sales",
     "FINANCE": "Finance",
     "HR": "HR",
+    "COMPLIANCE": "Compliance",
+    "CEO": "CEO",
 }
 MOST_SALES = 4
 FINANCE_TEAM = ("Finance manager", "Accountant")
@@ -264,6 +266,34 @@ def _hr_team(game: Game) -> list[dict[str, Any]]:
     ]  # fmt: skip
 
 
+def _ceo(game: Game) -> list[dict[str, Any]]:
+    """The player, at their desk, or in the boardroom for a board review (A-095)."""
+    where = executive.ceo_place(game)
+    if where is None:
+        where = (places.OUT, places.AFTER_HOURS, places.WORDS[places.AFTER_HOURS])
+    place, activity, doing = where
+    room = None
+    if place == places.BOARDROOM:
+        found = building.room_for_place(game, places.BOARDROOM)
+        room = found[1].code if found is not None else None
+    person = _person("CEO", 1, "Chief executive", activity, doing, "dashboard",
+                     place=place, room=room)  # fmt: skip
+    person.update(number="CEO", name="The chief executive (you)")
+    return [person]
+
+
+def _compliance_team(game: Game, today: date) -> list[dict[str, Any]]:
+    """Compliance's one officer (A-088), at work on what their day went to."""
+    state = executive.compliance_state(game, today)
+    if state["today"]:
+        activity, doing = places.WORKING, f"working on {state['today']}"
+    elif state["open"]:
+        activity, doing = places.WORKING, f"following up {state['open']} open finding(s)"
+    else:
+        activity, doing = places.FREE, "no finding open"
+    return [_person("COMPLIANCE", 1, "Compliance officer", activity, doing, "compliance")]
+
+
 def team(
     game: Game,
     incident: Incident | None,
@@ -283,6 +313,8 @@ def team(
         ("SALES", lambda: _sales_team(game, today)),
         ("FINANCE", lambda: _finance_team(game, today)),
         ("HR", lambda: _hr_team(game)),
+        ("CEO", lambda: _ceo(game)),
+        ("COMPLIANCE", lambda: _compliance_team(game, today)),
     )
     out: list[dict[str, Any]] = []
     for department, make in makers:

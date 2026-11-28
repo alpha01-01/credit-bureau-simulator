@@ -16,6 +16,10 @@
  * P4.5: the ground floor. Visitors (blue) come in for a dispute or a meeting with Sales;
  * Support's tickets pile up on its desks; Finance's desks show the month's close; the
  * cafeteria, looked at closely, gives the staff's welfare.
+ *
+ * P4.6: the executive floor. The board fills the boardroom for a review; the chief
+ * executive works at their desk; Compliance's open findings lie on its desk; the notice
+ * board gives the current mission, the month's targets and the regulator's open actions.
  */
 import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -368,9 +372,30 @@ function FixtureMesh({
           <Box size={[0.6, 0.9, 0.6]} at={[0, 0.45, 0.9]} colour={COLOURS.seat} />
         </>
       )}
+      {fixture.kind === 'noticeboard' && (
+        <>
+          {/* A cork board on two legs, with notices pinned to it (P4.6). */}
+          <Box size={[0.08, 1.7, 0.08]} at={[-0.9, 0.85, 0]} colour={COLOURS.desk} />
+          <Box size={[0.08, 1.7, 0.08]} at={[0.9, 0.85, 0]} colour={COLOURS.desk} />
+          <Box size={[2.0, 1.1, 0.08]} at={[0, 1.35, 0]} colour={COLOURS.cork} />
+          {NOTICES.map(([x, y], i) => (
+            <Box key={i} size={[0.34, 0.26, 0.02]} at={[x, y, 0.05]} colour={COLOURS.paper} />
+          ))}
+        </>
+      )}
     </group>
   )
 }
+
+/** Where the notices are pinned on the notice board. */
+const NOTICES: [number, number][] = [
+  [-0.6, 1.6],
+  [-0.15, 1.55],
+  [0.35, 1.62],
+  [-0.45, 1.15],
+  [0.1, 1.1],
+  [0.6, 1.2],
+]
 
 /** A room's floor and low partition walls; clicking the floor looks closer at the room. */
 function RoomTile({
