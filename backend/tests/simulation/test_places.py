@@ -90,6 +90,7 @@ def test_each_activity_puts_the_person_in_its_place_at_its_tick(world: World) ->
     assert game.current_tick == 0
     assert {w.activity for w in _where(game).values()} == {places.FREE}
     first = _floor(client, game, "first")
+    assert first["time"] == "08:00" and not first["after_hours"]
     assert {p["desk"] for p in first["staff"]} == {"DATA_OPERATIONS"}
     assert {p["room"] for p in first["staff"]} == {"DATA_OPERATIONS"}
 
@@ -126,6 +127,7 @@ def test_each_activity_puts_the_person_in_its_place_at_its_tick(world: World) ->
 
     # The lunch hour: the free go to the cafeteria, on the ground floor.
     game = _hours(game, 2)  # 12:00
+    assert _floor(client, game, "ground")["time"] == "12:00"
     assert {w.activity for w in _where(game).values()} == {places.BREAK}
     ground = _floor(client, game, "ground")
     assert {p["room"] for p in ground["staff"]} == {"CAFETERIA"}
@@ -157,6 +159,7 @@ def test_each_activity_puts_the_person_in_its_place_at_its_tick(world: World) ->
     assert {w.activity for w in _where(game).values()} == {places.AFTER_HOURS}
     shown = _floor(client, game, "first")
     assert shown["after_hours"] and {p["room"] for p in shown["staff"]} == {None}
+    assert shown["time"] == "17:00"  # the office's light goes down (P4.3)
 
 
 def test_a_startups_office_has_a_place_for_each_activity() -> None:

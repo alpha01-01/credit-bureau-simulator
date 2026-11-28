@@ -22,6 +22,7 @@ from apps.workitems.models import ItemStatus, WorkItem
 
 from . import building, controls, it, places, sales, startup
 from .api import _game
+from .clock import TICK_MINUTES, TICKS_PER_DAY
 from .models import ComplianceFinding, Game
 
 MIN_DESKS = 6  # an established department's room shows room to hire
@@ -162,6 +163,13 @@ def _summary(
     return room.purpose
 
 
+def _time(game: Game) -> str:
+    """The clock's time of day, "HH:MM", for the office's light (P4.3): 17:00 after hours."""
+    at = TICKS_PER_DAY if places.after_hours(game) else game.current_tick % TICKS_PER_DAY
+    minutes = 8 * 60 + at * TICK_MINUTES
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
 @api_view(["GET"])
 def floor_view(request: Request, game_id: int, floor: str) -> Response:
     game = _game(request, game_id)
@@ -211,6 +219,7 @@ def floor_view(request: Request, game_id: int, floor: str) -> Response:
             ],
             "staff": people,
             "after_hours": places.after_hours(game),
+            "time": _time(game),
             **extra,
         }
     )
