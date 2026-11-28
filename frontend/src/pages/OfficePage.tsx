@@ -12,6 +12,10 @@
  * P4.4: the whole first floor. The server room's racks follow the IT state and IT walks
  * to them during an outage; Analytics' screens show the scorecards, Product
  * Development's desks the products' progress; a room looked at closely lists its figures.
+ *
+ * P4.5: the ground floor. Visitors (blue) come in for a dispute or a meeting with Sales;
+ * Support's tickets pile up on its desks; Finance's desks show the month's close; the
+ * cafeteria, looked at closely, gives the staff's welfare.
  */
 import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -660,19 +664,22 @@ export function OfficePage() {
         ) : (
           <Loading what={current.name.toLowerCase()} />
         )}
-        <p className="pointer-events-none absolute top-3 left-3 max-w-[70%] rounded bg-slate-900/80 px-3 py-1.5 text-sm text-white empty:hidden">
-          {hovered ?? (zoomed ? zoomed.label : '')}
-        </p>
-        {zoomed && zoomed.details.length > 0 && (
-          <ul
-            className="absolute top-14 left-3 max-w-[60%] space-y-0.5 rounded bg-white/90 px-3 py-2 text-xs text-slate-800 shadow"
-            data-testid="office-details"
-          >
-            {zoomed.details.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        )}
+        {/* The label, then the room's details under it, however many lines the label takes. */}
+        <div className="pointer-events-none absolute top-3 left-3 flex max-w-[70%] flex-col items-start gap-1.5">
+          <p className="rounded bg-slate-900/80 px-3 py-1.5 text-sm text-white empty:hidden">
+            {hovered ?? (zoomed ? zoomed.label : '')}
+          </p>
+          {zoomed && zoomed.details.length > 0 && (
+            <ul
+              className="space-y-0.5 rounded bg-white/90 px-3 py-2 text-xs text-slate-800 shadow"
+              data-testid="office-details"
+            >
+              {zoomed.details.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
+        </div>
         <p className="absolute bottom-2 left-3 text-xs text-slate-400" data-testid="office-place">
           {current.name}
           {zoomed ? ` › ${zoomed.name}` : ''}

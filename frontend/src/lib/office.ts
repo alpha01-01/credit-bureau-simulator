@@ -10,7 +10,8 @@
 import { day } from './format'
 
 /** Where a person is, from the game's state (P4.2, A-091). */
-export type Place = 'DESK' | 'MEETING_ROOM' | 'BOARDROOM' | 'CAFETERIA' | 'SERVER_ROOM' | 'OUT'
+export type Place =
+  'DESK' | 'MEETING_ROOM' | 'BOARDROOM' | 'CAFETERIA' | 'SERVER_ROOM' | 'OUT' | 'VISIT'
 export type Activity =
   | 'WORKING'
   | 'FREE'
@@ -20,6 +21,7 @@ export type Activity =
   | 'TRAINING'
   | 'AFTER_HOURS'
   | 'RESTORING'
+  | 'VISITING'
 export type RoomKind = 'DEPARTMENT' | 'FACILITY' | 'MEETING' | 'SERVERS' | 'OFFICE'
 export type PlanCode = 'GROUND' | 'FIRST' | 'SECOND' | 'SMALL' | 'STANDARD'
 
@@ -66,6 +68,11 @@ export type FloorData = {
     screen?: string
     model?: ScoreModelShown
     product?: string
+    /** Someone visiting the bureau (P4.5, A-094): a data subject, a prospect. */
+    visitor?: boolean
+    /** A desk's progress, 0 to 1, where the person's work has one: Finance's close. */
+    progress?: number
+    prospect?: string
   }[]
   after_hours?: boolean
   /** The clock's time of day, "HH:MM" (P4.3): the office's light follows it. */
@@ -87,6 +94,42 @@ export type FloorData = {
   }
   analytics?: { models: ScoreModelShown[] }
   developments?: { code: string; name: string; progress: number; ready_on: string }[]
+  /** The ground floor (P4.5): reception's book for the day, and each room's state. */
+  visits?: string[]
+  tickets?: {
+    open: number
+    overdue: number
+    today: number
+    outage_today: number
+    agents: number
+    per_day: number
+    satisfaction: number | null
+  }
+  prospects?: { code: string; name: string; stage: string; doing: string; today: boolean }[]
+  close?: {
+    period: string
+    ended: boolean
+    done: number
+    total: number
+    items: { title: string; done: boolean }[]
+  }
+  welfare?: Welfare
+}
+
+export type Welfare = {
+  staff: number
+  day: string
+  lunch: string
+  morale?: number
+  lowest?: { name: string; morale: number }
+  low?: number
+  at_risk?: number
+  pay?: number
+  below_market?: number
+  queue_per_person?: number
+  heavy?: boolean
+  done_today?: number
+  on_course?: number
 }
 
 export type ScoreModelShown = { number: number; term: string; status: 'DRAFT' | 'DEPLOYED' }
@@ -180,6 +223,7 @@ export const COLOURS = {
   screenDraft: '#d97706',
   restoring: '#dc2626',
   progress: '#0f766e',
+  visitor: '#0369a1',
 } as const
 
 /** Each kind of room has its own floor tint, so the plan reads at a glance. */
@@ -219,6 +263,7 @@ function colourOf(activity: Activity): string {
   if (activity === 'DATA_QUALITY_REVIEW' || activity === 'BOARD_REVIEW') return COLOURS.meeting
   if (activity === 'BREAK') return COLOURS.break
   if (activity === 'RESTORING') return COLOURS.restoring
+  if (activity === 'VISITING') return COLOURS.visitor
   return COLOURS.idle
 }
 
@@ -234,11 +279,11 @@ export type Desk = {
     seated: boolean
     colour: string
   } | null
-  /** Sheets of paper on the desk: the open queue, shared across the desks in use. */
+  /** Sheets of paper on the desk: the open queue (or Support's tickets), shared out. */
   pile: number
   /** The screen's colour: a deployed scorecard, a draft, or plain (P4.4). */
   screen: string
-  /** A product's progress in development, 0 to 1, shown beside the desk (P4.4). */
+  /** Progress shown by the desk, 0 to 1: a product's (P4.4), the month's close (P4.5). */
   progress: number | null
   label: string
   to: string
@@ -402,8 +447,74 @@ export function detailsOf(r: FloorData['rooms'][number], data: FloorData): strin
       (d) => `${d.name}: ${percent(d.progress)} done, ready on ${day(d.ready_on)}`,
     )
   }
+  return groundDetails(r, data)
+}
+
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+/**
+ * The ground floor's rooms looked at closely (P4.5): reception's book of visitors,
+ * Support's tickets, Sales' prospects, Finance's close checklist, and the cafeteria's
+ * welfare figures (Document 05, Section 5.3).
+ */
+function groundDetails(r: FloorData['rooms'][number], data: FloorData): string[] {
+  if (r.code === 'RECEPTION' && data.visits)
+    return data.visits.length ? data.visits : ['No visitors yet today.']
+  const t = data.tickets
+  if (r.code === 'SUPPORT' && t) {
+    const lines = [
+      `Open tickets: ${t.open}, ${t.overdue} past their time`,
+      `Today: ${t.today} came in${t.outage_today ? `, ${t.outage_today} about the outage` : ''}`,
+      `Agents: ${t.agents}, answering ${t.per_day} a day, oldest first`,
+    ]
+    if (t.satisfaction !== null)
+      lines.push(`Answered on time: ${percent(t.satisfaction)} over three months`)
+    return lines
+  }
+  if (r.code === 'SALES' && data.prospects)
+    return data.prospects.length
+      ? data.prospects.map((p) => sentence(p.doing))
+      : ['No prospect in play.']
+  const c = data.close
+  if (r.code === 'FINANCE' && c)
+    return [
+      `Closing ${monthOf(c.period)}: ${c.done} of ${c.total} done${c.ended ? '' : ' (the month has not ended)'}`,
+      ...c.items.map((i) => `${i.done ? 'Done' : 'To do'}: ${i.title}`),
+    ]
+  const w = data.welfare
+  if ((r.code === 'CAFETERIA' || r.code === 'KITCHEN') && w) {
+    const hours = `Hours: ${w.day}, lunch ${w.lunch}; nobody works late (the game has no overtime)`
+    if (!w.staff || w.morale === undefined) return ['Nobody on the payroll yet.', hours]
+    return [
+      `Morale: ${w.morale.toFixed(2)} on average across ${w.staff} staff; lowest ${w.lowest?.name} (${w.lowest?.morale.toFixed(2)})`,
+      `Taking breaks for low morale (below 0.5): ${w.low}; may resign (below 0.4): ${w.at_risk}`,
+      `Pay: ${percent(w.pay ?? 0)} of the market rate on average; ${w.below_market} below it`,
+      `Workload: ${w.queue_per_person} open item(s) a person${w.heavy ? ', heavy: it lowers morale' : ' (heavy above 40)'}`,
+      `${hours}; ${w.done_today} item(s) done today, ${w.on_course} on a course`,
+    ]
+  }
   return []
 }
+
+/** "2027-01-31" as "January 2027". */
+function monthOf(iso: string): string {
+  const [y, m] = iso.split('-').map(Number)
+  return `${MONTHS[m - 1]} ${y}`
+}
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
 
 export function layOut(data: FloorData, gameId: number): Floor {
   const plan = PLANS[data.plan]
@@ -441,10 +552,16 @@ export function layOut(data: FloorData, gameId: number): Floor {
         ? COLOURS.screenDraft
         : COLOURS.screen
   const progressOf = (s: FloorData['staff'][number]) =>
-    data.developments?.find((d) => d.code === s.product)?.progress ?? null
+    s.progress ?? data.developments?.find((d) => d.code === s.product)?.progress ?? null
   // The queue is shared across the desks in use, as in the trial.
   const inUse = data.staff.filter(seated).length
   const perDesk = inUse && data.queue ? Math.ceil(data.queue.open / inUse) : 0
+  // Support's open tickets are shared across its agents' desks, or, with nobody there to
+  // answer them, pile up on its empty desks (P4.5).
+  const ticketsOn = (room: string, desks: number, seatedHere: number) => {
+    if (room !== 'SUPPORT' || !data.tickets) return null
+    return Math.min(MAX_PILE, Math.ceil(data.tickets.open / Math.max(1, seatedHere || desks)))
+  }
 
   const desks: Desk[] = []
   const fixtures: Fixture[] = []
@@ -453,7 +570,10 @@ export function layOut(data: FloorData, gameId: number): Floor {
     if (!rect) continue
     if (r.desks > 0) {
       const here = data.staff.filter((s) => s.desk === r.code)
-      deskGrid(rect, Math.max(r.desks, here.length)).forEach(([x, z], i) => {
+      const count = Math.max(r.desks, here.length)
+      const seatedHere = here.filter(seated).length
+      const tickets = ticketsOn(r.code, count, seatedHere)
+      deskGrid(rect, count).forEach(([x, z], i) => {
         const position = centred(x, z)
         const s = here[i]
         if (!s) {
@@ -463,7 +583,7 @@ export function layOut(data: FloorData, gameId: number): Floor {
             room: r.code,
             position,
             person: null,
-            pile: 0,
+            pile: tickets !== null && !seatedHere ? tickets : 0,
             screen: COLOURS.screen,
             progress: null,
             label: hiring
@@ -486,7 +606,7 @@ export function layOut(data: FloorData, gameId: number): Floor {
             seated: sitting,
             colour: colourOf(s.activity),
           },
-          pile: sitting && !s.managed ? Math.min(MAX_PILE, perDesk) : 0,
+          pile: !sitting ? 0 : (tickets ?? (s.managed ? 0 : Math.min(MAX_PILE, perDesk))),
           screen: screenOf(s),
           progress: progressOf(s),
           label: labelOf(s),
@@ -591,6 +711,7 @@ export function layOut(data: FloorData, gameId: number): Floor {
         : 'ok'
   const based = data.staff.filter((s) => s.desk !== null && !s.managed)
   const teams = data.staff.filter((s) => s.managed).length
+  const guests = data.staff.filter((s) => s.visitor).length
   const working = based.filter((s) => s.activity === 'WORKING').length
   const free = based.filter((s) => s.activity === 'FREE').length
   const parts = [`${data.name}: ${rooms.length} rooms.`]
@@ -601,6 +722,7 @@ export function layOut(data: FloorData, gameId: number): Floor {
     )
   if (!data.after_hours && teams)
     parts.push(`${teams} more in the managed departments' teams (not on the payroll).`)
+  if (guests) parts.push(`${guests} visitor(s) in the building.`)
   if (data.queue) parts.push(`${data.queue.open} item(s) waiting in the queue.`)
   if (data.systems)
     parts.push(

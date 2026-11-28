@@ -226,7 +226,7 @@ def test_over_a_month_nobody_is_shown_working_on_what_they_do_not_hold(
     client = APIClient()
     client.force_authenticate(owner)
 
-    # Sales researches a lender, then meets it: on that day Sales is out at the prospect.
+    # Sales researches a lender, then meets it: its representative comes in that day (A-094).
     lender = sales.prospects(game)[0]
     controls.research_lender(game, lender.code)
     while not game.research.get(lender_code=lender.code).reported:
@@ -237,7 +237,10 @@ def test_over_a_month_nobody_is_shown_working_on_what_they_do_not_hold(
     while controls.state(game).now.date() < meeting_on or places.after_hours(game):
         game = _hours(game, 1)
     summary = _rooms(_floor(client, game, "ground"))["SALES"]["summary"]
-    assert summary == f"Sales is out at the prospect today, meeting {lender.name}."
+    assert summary in (
+        f"Meeting {lender.name} here today, 14:00-15:00.",
+        f"Meeting {lender.name}'s representative, until 15:00.",
+    )
 
     # On to the month's end, then the next morning's Data Quality Review at 10:00.
     while not DataQualityReview.objects.filter(game=game).exists():

@@ -26,8 +26,8 @@ ASSUMPTION A-091 (the meetings' times and who goes; breaks):
 * A free person takes a break at the cafeteria (a Startup's kitchen) in the lunch hour,
   12:00-13:00, and at any time when their morale is below 0.5. Otherwise they wait at
   their desk. A break never stops work: a person with an item is at their desk.
-* Sales meetings (P3.9) take the Sales department to the prospect for the day. The game
-  has no Sales staff of its own yet, so the office shows that on the Sales room.
+* Sales meetings (P3.9) are held at the bureau: the prospect's representative comes in
+  (P4.5, A-094, which replaced this assumption's first reading, Sales out at the prospect).
 """
 
 from __future__ import annotations

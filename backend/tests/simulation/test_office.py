@@ -67,9 +67,10 @@ def world(db: None) -> World:
 
 
 def _payroll(floor: dict[str, Any]) -> dict[str, Any]:
-    """The floor with only the staff on the payroll: the first floor's managed teams
-    (P4.4) are tested in ``test_first_floor``."""
-    return {**floor, "staff": [p for p in floor["staff"] if not p.get("managed")]}
+    """The floor with only the staff on the payroll: the managed teams and the visitors
+    are tested in ``test_first_floor`` (P4.4) and ``test_ground_floor`` (P4.5)."""
+    staff = [p for p in floor["staff"] if not p.get("managed") and not p.get("visitor")]
+    return {**floor, "staff": staff}
 
 
 def _client(owner: User) -> APIClient:
@@ -122,7 +123,7 @@ def test_a_floor_shows_who_is_where_the_queue_and_the_systems(world: World) -> N
 
     # Only what the floor draws: no one sits on the ground floor; no queue or systems there.
     ground = client.get(f"{base}ground/").json()
-    assert ground["staff"] == [] and "queue" not in ground and "systems" not in ground
+    assert _payroll(ground)["staff"] == [] and "queue" not in ground and "systems" not in ground
     assert {r["name"] for r in ground["rooms"]} == PRD_ROOMS["ground"]
     assert client.get(f"{base}roof/").status_code == 404
 
