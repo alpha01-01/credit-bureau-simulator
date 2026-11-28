@@ -20,10 +20,10 @@ from rest_framework.response import Response
 from apps.org.models import Employee
 from apps.workitems.models import ItemStatus, WorkItem
 
-from . import building, controls, it, places, sales, startup
+from . import building, controls, it, places, sales, startup, teams
 from .api import _game
 from .clock import TICK_MINUTES, TICKS_PER_DAY
-from .models import ComplianceFinding, Game
+from .models import ComplianceFinding, Game, Incident
 
 MIN_DESKS = 6  # an established department's room shows room to hire
 
@@ -93,6 +93,28 @@ def _staff(game: Game, here: building.Floor) -> list[dict[str, Any]]:
     return people
 
 
+def _teams(
+    game: Game, here: building.Floor, incident: Incident | None, today: Any
+) -> list[dict[str, Any]]:
+    """The managed departments' derived teams on this floor (P4.4, A-093)."""
+    codes = {r.code for r in here.rooms}
+    out = []
+    for p in teams.team(game, incident, today):
+        desk = next((r.code for r in here.rooms if p["department"] in r.departments), None)
+        room = p["room"] if p["room"] in codes else None
+        if desk is None and room is None:
+            continue
+        out.append(
+            {
+                **p,
+                "desk": desk,
+                "room": room if room else (desk if p["place"] == places.DESK else None),
+                "morale": None,
+            }
+        )
+    return out
+
+
 def _desks(game: Game, room: building.Room, people: list[dict[str, Any]]) -> int:
     """Desks in a room: a Startup's are its office's; a department's, its staff and more."""
     here = len([p for p in people if p["desk"] == room.code])
@@ -127,6 +149,32 @@ def _summary(
     """One line on the room, from the game's state where it has one, else what it is for."""
     desks = [p for p in people if p["desk"] == room.code]
     present = [p for p in people if p["room"] == room.code and p["place"] != places.DESK]
+    managed = [p for p in desks if p.get("managed")]
+    if room.kind == building.SERVERS and "systems" in extra:
+        return _servers_line(extra["systems"], present)
+    if "DATA_ANALYTICS" in room.departments and "analytics" in extra:
+        models = extra["analytics"]["models"]
+        if not models:
+            return "No scorecard yet: the analysts build one in the workbench."
+        deployed = sum(m["status"] == "DEPLOYED" for m in models)
+        return (
+            f"{len(models)} scorecard(s): {deployed} deployed, {len(models) - deployed} draft(s)."
+        )
+    if "PRODUCT" in room.departments and "developments" in extra:
+        building_now = extra["developments"]
+        if not building_now:
+            return "Nothing in development: new products start from the Products screen."
+        return (
+            "Developing "
+            + ", ".join(f"the {d['name'].lower()} ({d['progress']:.0%})" for d in building_now)
+            + "."
+        )
+    if managed and "IT" in room.departments:
+        away = sum(p["place"] == teams.SERVER_ROOM for p in managed)
+        line = f"IT team of {len(managed)}"
+        if away:
+            return line + f": {away} in the server room, restoring the systems."
+        return line + ": at their desks."
     if desks and room.kind == building.DEPARTMENT:
         working = sum(p["activity"] == places.WORKING for p in desks)
         free = sum(p["activity"] == places.FREE for p in desks)
@@ -141,13 +189,6 @@ def _summary(
     if present:
         by = present[0]["activity"]
         return f"{GATHERED.get(by, 'Here')}: {_names(present)}."
-    if room.kind == building.SERVERS and "systems" in extra:
-        systems = extra["systems"]
-        if not systems["installed"]:
-            return "No systems yet: IT has not been set up."
-        if systems["down"]:
-            return f"Systems down: {systems['detail']}"
-        return f"Systems up; {systems['files_waiting']} file(s) waiting to process."
     if room.code == "SALES" and not places.after_hours(game):
         met = sales.meetings_on(game, controls.state(game).now.date())
         if met:
@@ -161,6 +202,22 @@ def _summary(
         staff = Employee.objects.filter(organization=game.organization, is_active=True).count()
         return f"{staff} staff on the payroll."
     return room.purpose
+
+
+def _servers_line(systems: dict[str, Any], present: list[dict[str, Any]]) -> str:
+    """The server room's line: its state, and its utilisation, storage and availability."""
+    if not systems["installed"]:
+        return "No systems yet: IT has not been set up."
+    if systems["down"]:
+        line = f"Systems down: {systems['detail']}"
+        if present:
+            line += f" {_names(present)} at the racks."
+        return line
+    return (
+        f"Systems up; {systems['files_waiting']} file(s) waiting to process "
+        f"({systems['utilisation']:.0%} of tonight's capacity); "
+        f"{systems['availability']:.1%} available over 20 working days."
+    )
 
 
 def _time(game: Game) -> str:
@@ -177,8 +234,20 @@ def floor_view(request: Request, game_id: int, floor: str) -> Response:
     if found is None:
         raise Http404("No such floor in this game's building")
     org = game.organization
-    people = _staff(game, found)
+    incident = it.active_incident(game, game.current_tick + 1)
+    today = teams.today_of(game)
+    people = _staff(game, found) + _teams(game, found, incident, today)
     extra: dict[str, Any] = {}
+    departments = {d for r in found.rooms for d in r.departments}
+    if "DATA_ANALYTICS" in departments:
+        extra["analytics"] = {
+            "models": [
+                {"number": m.number, "term": m.term, "status": m.status}
+                for m in teams.scorecards(game)
+            ],
+        }
+    if "PRODUCT" in departments:
+        extra["developments"] = teams.developments(game, today)
     if any(
         "DATA_OPERATIONS" in r.departments or building.EVERYONE in r.departments
         for r in found.rooms
@@ -195,13 +264,13 @@ def floor_view(request: Request, game_id: int, floor: str) -> Response:
             },
         }
     if any(r.kind == building.SERVERS for r in found.rooms):
-        incident = it.active_incident(game, game.current_tick + 1)
         extra["systems"] = {
             "installed": org.has_systems,
             "down": incident is not None,
             "detail": incident.detail if incident is not None else "",
             "files_waiting": it.waiting(game),
             "capacity": org.it_capacity,
+            **teams.server_room(game, incident, today),
         }
     return Response(
         {

@@ -63,6 +63,8 @@ def _hours(game: Game, n: int) -> Game:
 
 def _floor(client: APIClient, game: Game, code: str) -> dict[str, Any]:
     shown: dict[str, Any] = client.get(f"/api/v1/games/{game.pk}/office/{code}/").json()
+    # Only the staff on the payroll: the first floor's managed teams are P4.4's.
+    shown["staff"] = [p for p in shown["staff"] if not p.get("managed")]
     return shown
 
 

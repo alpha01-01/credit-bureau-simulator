@@ -66,6 +66,12 @@ def world(db: None) -> World:
     )
 
 
+def _payroll(floor: dict[str, Any]) -> dict[str, Any]:
+    """The floor with only the staff on the payroll: the first floor's managed teams
+    (P4.4) are tested in ``test_first_floor``."""
+    return {**floor, "staff": [p for p in floor["staff"] if not p.get("managed")]}
+
+
 def _client(owner: User) -> APIClient:
     client = APIClient()
     client.force_authenticate(owner)
@@ -103,7 +109,7 @@ def test_a_floor_shows_who_is_where_the_queue_and_the_systems(world: World) -> N
     assert [f["code"] for f in plan["floors"]] == ["ground", "first", "second"]
     assert not plan["no_office"]
 
-    calm = client.get(f"{base}first/").json()
+    calm = _payroll(client.get(f"{base}first/").json())
     assert [s["activity"] for s in calm["staff"]] == ["FREE"] * 3
     assert {s["room"] for s in calm["staff"]} == {"DATA_OPERATIONS"}
     assert {s["desk"] for s in calm["staff"]} == {"DATA_OPERATIONS"}
@@ -123,18 +129,18 @@ def test_a_floor_shows_who_is_where_the_queue_and_the_systems(world: World) -> N
     officer = Employee.objects.filter(organization=game.organization).order_by("pk")[1]
     controls.train_employee(game, officer.employee_number, "MATCH_REVIEW")
     it.start_outage(game, game.current_tick + 1, "Test outage.", lambda *a: None)
-    busy = client.get(f"{base}first/").json()
+    busy = _payroll(client.get(f"{base}first/").json())
     states = {s["number"]: s["activity"] for s in busy["staff"]}
     assert states[officer.employee_number] == "TRAINING"
     assert ", 1 out;" in next(r for r in busy["rooms"] if r["code"] == "DATA_OPERATIONS")["summary"]
     assert busy["systems"]["down"] is True and busy["systems"]["detail"] == "Test outage."
     server = next(r for r in busy["rooms"] if r["code"] == "SERVER_ROOM")
-    assert server["summary"] == "Systems down: Test outage."
+    assert server["summary"] == "Systems down: Test outage. IT team 1, IT team 2 at the racks."
 
     # Once files are processed, the queue on the desks is the work items' own count.
     while controls.state(game).now.day < 7:
         game = controls.advance_by(game, "next_event")
-    shown = client.get(f"{base}first/").json()
+    shown = _payroll(client.get(f"{base}first/").json())
     items = WorkItem.objects.filter(organization=game.organization)
     assert shown["queue"]["open"] == items.filter(status=ItemStatus.OPEN).count()
     assert shown["queue"]["in_progress"] == items.filter(status=ItemStatus.IN_PROGRESS).count()
@@ -146,7 +152,7 @@ def test_a_floor_shows_who_is_where_the_queue_and_the_systems(world: World) -> N
     # A leaver is no longer in the building.
     officer.is_active = False
     officer.save(update_fields=["is_active"])
-    gone = client.get(f"{base}first/").json()
+    gone = _payroll(client.get(f"{base}first/").json())
     assert officer.employee_number not in {s["number"] for s in gone["staff"]}
 
 
